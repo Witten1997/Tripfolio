@@ -1,0 +1,108 @@
+Version:
+  type: string
+  description: 资源版本，正整数十进制字符串
+  pattern: '^[1-9][0-9]*$'
+  example: '7'
+
+Instant:
+  type: string
+  format: date-time
+  description: RFC 3339 UTC 时间点，例如 2026-09-11T08:30:00Z
+
+Date:
+  type: string
+  description: YYYY-MM-DD，不带时区
+  pattern: '^\d{4}-\d{2}-\d{2}$'
+  example: '2026-10-01'
+
+LocalDateTime:
+  type: string
+  description: YYYY-MM-DDTHH:mm:ss，不带 Z 或偏移，按旅行 timezone 解释
+  pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$'
+  example: '2026-10-02T14:30:00'
+
+EntityRef:
+  type: object
+  required:
+    - type
+    - id
+    - version
+  properties:
+    type:
+      type: string
+    id:
+      type: string
+      format: uuid
+    version:
+      type: string
+      nullable: true
+      description: 资源版本；任务等没有版本时为 null
+      pattern: '^[1-9][0-9]*$'
+
+WriteResult:
+  type: object
+  description: 写操作的统一响应（接口设计 1.4）；data 为 primary 的当前规范资源
+  x-go-type: write.Result
+  x-go-type-import:
+    path: tripfolio/server/internal/foundation/write
+  required:
+    - operation_id
+    - primary
+    - affected
+    - commit_cursor
+    - warnings
+    - replayed
+    - data
+  properties:
+    operation_id:
+      type: string
+      format: uuid
+    primary:
+      type: object
+      nullable: true
+      allOf:
+        - $ref: '#/EntityRef'
+    affected:
+      type: array
+      items:
+        $ref: '#/EntityRef'
+    commit_cursor:
+      type: string
+      nullable: true
+    warnings:
+      type: array
+      items:
+        type: string
+    replayed:
+      type: boolean
+    data:
+      type: object
+      nullable: true
+      additionalProperties: true
+      description: primary 资源的当前表示，结构随资源类型而定；目标已永久清理时为 null
+
+WriteResponse:
+  type: object
+  required:
+    - data
+  properties:
+    data:
+      $ref: '#/WriteResult'
+
+IdempotencyKey:
+  name: Idempotency-Key
+  in: header
+  required: true
+  description: 写请求的操作编号（UUID）；相同成功操作重试复用同一键
+  schema:
+    type: string
+    format: uuid
+
+IfMatch:
+  name: If-Match
+  in: header
+  required: false
+  description: 客户端所基于的资源版本，形如 "7"（带引号）
+  schema:
+    type: string
+    pattern: '^"[1-9][0-9]*"$'

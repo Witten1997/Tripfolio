@@ -1,0 +1,127 @@
+collection:
+  get:
+    tags: [finance]
+    operationId: listExpenseCategories
+    summary: 本账号全部有效账单分类
+    responses:
+      '200':
+        description: 按 sort_order、id 排序
+        content:
+          application/json:
+            schema:
+              $ref: ../openapi.yaml#/components/schemas/ExpenseCategoryListResponse
+      '401':
+        $ref: ../openapi.yaml#/components/responses/Unauthorized
+  post:
+    tags: [finance]
+    operationId: createExpenseCategory
+    summary: 新建账单分类
+    parameters:
+      - $ref: ../openapi.yaml#/components/parameters/IdempotencyKey
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: ../openapi.yaml#/components/schemas/ExpenseCategoryCreate
+    responses:
+      '201':
+        description: 已创建
+        content:
+          application/json:
+            schema:
+              $ref: ../openapi.yaml#/components/schemas/WriteResponse
+      '401':
+        $ref: ../openapi.yaml#/components/responses/Unauthorized
+      '409':
+        $ref: ../openapi.yaml#/components/responses/Conflict
+      '422':
+        $ref: ../openapi.yaml#/components/responses/ValidationFailed
+
+item:
+  parameters:
+    - name: category_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  get:
+    tags: [finance]
+    operationId: getExpenseCategory
+    summary: 单个账单分类
+    responses:
+      '200':
+        description: 分类，带 ETag
+        headers:
+          ETag:
+            schema:
+              type: string
+        content:
+          application/json:
+            schema:
+              $ref: ../openapi.yaml#/components/schemas/ExpenseCategoryResponse
+      '401':
+        $ref: ../openapi.yaml#/components/responses/Unauthorized
+      '404':
+        $ref: ../openapi.yaml#/components/responses/NotFound
+      '410':
+        $ref: ../openapi.yaml#/components/responses/Gone
+  patch:
+    tags: [finance]
+    operationId: updateExpenseCategory
+    summary: 改名、改图标或排序
+    parameters:
+      - $ref: ../openapi.yaml#/components/parameters/IdempotencyKey
+      - $ref: ../openapi.yaml#/components/parameters/IfMatch
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: ../openapi.yaml#/components/schemas/ExpenseCategoryPatch
+    responses:
+      '200':
+        description: 已更新
+        content:
+          application/json:
+            schema:
+              $ref: ../openapi.yaml#/components/schemas/WriteResponse
+      '401':
+        $ref: ../openapi.yaml#/components/responses/Unauthorized
+      '404':
+        $ref: ../openapi.yaml#/components/responses/NotFound
+      '410':
+        $ref: ../openapi.yaml#/components/responses/Gone
+      '412':
+        $ref: ../openapi.yaml#/components/responses/PreconditionFailed
+      '422':
+        $ref: ../openapi.yaml#/components/responses/ValidationFailed
+      '428':
+        $ref: ../openapi.yaml#/components/responses/VersionRequired
+  delete:
+    tags: [finance]
+    operationId: deleteExpenseCategory
+    summary: 软删除；仍被账目引用时返回 409 CATEGORY_IN_USE
+    parameters:
+      - $ref: ../openapi.yaml#/components/parameters/IdempotencyKey
+      - $ref: ../openapi.yaml#/components/parameters/IfMatch
+    responses:
+      '200':
+        description: 已删除
+        content:
+          application/json:
+            schema:
+              $ref: ../openapi.yaml#/components/schemas/WriteResponse
+      '401':
+        $ref: ../openapi.yaml#/components/responses/Unauthorized
+      '404':
+        $ref: ../openapi.yaml#/components/responses/NotFound
+      '409':
+        $ref: ../openapi.yaml#/components/responses/Conflict
+      '410':
+        $ref: ../openapi.yaml#/components/responses/Gone
+      '412':
+        $ref: ../openapi.yaml#/components/responses/PreconditionFailed
+      '428':
+        $ref: ../openapi.yaml#/components/responses/VersionRequired

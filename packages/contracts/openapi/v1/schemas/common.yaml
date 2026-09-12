@@ -1,0 +1,103 @@
+Money:
+  type: string
+  description: |
+    非科学计数法的十进制字符串，无符号、无分组符，小数位不超过币种 minor_units；
+    服务端按币种规范化（"128.5" 与 "128.50" 相同），超精度被拒绝。存储上限 NUMERIC(18,4)，最多 14 位整数。
+  pattern: '^[0-9]{1,14}(\.[0-9]{1,4})?$'
+  example: '128.50'
+
+CurrencyCode:
+  type: string
+  description: 支持清单内的 ISO 4217 三字母大写代码；清单见 Metadata.currencies
+  pattern: '^[A-Z]{3}$'
+  example: CNY
+
+FieldError:
+  type: object
+  required:
+    - field
+    - code
+    - message
+  properties:
+    field:
+      type: string
+      description: 出错字段的 JSON 路径，例如 amount 或 items[2].name
+    code:
+      type: string
+      description: 稳定的校验错误代码
+    message:
+      type: string
+      description: 面向用户的说明，可直接展示
+
+VersionConflict:
+  type: object
+  description: 412 VERSION_CONFLICT 时附带的冲突上下文
+  required:
+    - entity_type
+    - entity_id
+    - expected_version
+    - current_version
+  properties:
+    entity_type:
+      type: string
+    entity_id:
+      type: string
+      format: uuid
+    expected_version:
+      type: string
+      description: 客户端提交的基线版本，正整数十进制字符串
+      pattern: '^[1-9][0-9]*$'
+    current_version:
+      type: string
+      description: 服务端当前版本，正整数十进制字符串
+      pattern: '^[1-9][0-9]*$'
+    conflicting_fields:
+      type: array
+      nullable: true
+      description: 本次提交中与基线之后变更相交的字段；因日志过期无法判断时为 null
+      items:
+        type: string
+    current:
+      type: object
+      nullable: true
+      description: 经权限与白名单校验的完整当前资源；删除冲突时为 null
+      additionalProperties: true
+
+Problem:
+  type: object
+  description: 统一错误响应，媒体类型 application/problem+json；代码清单见接口设计 1.4
+  required:
+    - type
+    - title
+    - status
+    - code
+    - request_id
+  properties:
+    type:
+      type: string
+      description: 问题类型 URI；P0 固定为 about:blank
+      example: about:blank
+    title:
+      type: string
+      description: 简短的人可读标题
+    status:
+      type: integer
+      format: int32
+      description: 与响应相同的 HTTP 状态码
+    code:
+      type: string
+      description: 稳定的错误代码，例如 VERSION_CONFLICT
+      pattern: '^[A-Z][A-Z0-9_]*$'
+    detail:
+      type: string
+      description: 面向用户的说明，可直接展示
+    request_id:
+      type: string
+      description: 与响应头 X-Request-ID 相同
+    errors:
+      type: array
+      description: 422 VALIDATION_FAILED 时的字段级错误
+      items:
+        $ref: '#/FieldError'
+    conflict:
+      $ref: '#/VersionConflict'

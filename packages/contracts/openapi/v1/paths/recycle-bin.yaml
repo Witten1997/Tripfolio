@@ -1,0 +1,134 @@
+collection:
+  get:
+    tags: [travel]
+    operationId: listTrashedTrips
+    summary: 回收站旅行；按删除时间倒序，返回恢复截止时间与永久清理状态
+    parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 50
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+    responses:
+      '200':
+        description: 一页回收站旅行
+        content:
+          application/json:
+            schema:
+              $ref: ../openapi.yaml#/components/schemas/TrashedTripPage
+      '400':
+        $ref: ../openapi.yaml#/components/responses/BadRequest
+      '401':
+        $ref: ../openapi.yaml#/components/responses/Unauthorized
+      '422':
+        $ref: ../openapi.yaml#/components/responses/ValidationFailed
+
+item:
+  parameters:
+    - name: trip_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  get:
+    tags: [travel]
+    operationId: getTrashedTrip
+    summary: 本人回收站中的旅行，提供最新版本；不在回收站的旅行返回 404
+    responses:
+      '200':
+        description: 回收站旅行，带 ETag
+        headers:
+          ETag:
+            schema:
+              type: string
+        content:
+          application/json:
+            schema:
+              $ref: ../openapi.yaml#/components/schemas/TrashedTripResponse
+      '401':
+        $ref: ../openapi.yaml#/components/responses/Unauthorized
+      '404':
+        $ref: ../openapi.yaml#/components/responses/NotFound
+
+restore:
+  parameters:
+    - name: trip_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  post:
+    tags: [travel]
+    operationId: restoreTrip
+    summary: 恢复整趟旅行；须在 purge_after_at 前且未请求永久清理，否则 409 RESTORE_UNAVAILABLE
+    parameters:
+      - $ref: ../openapi.yaml#/components/parameters/IdempotencyKey
+      - $ref: ../openapi.yaml#/components/parameters/IfMatch
+    responses:
+      '200':
+        description: 已恢复；变更日志中的 trip 事件带 requires_snapshot
+        content:
+          application/json:
+            schema:
+              $ref: ../openapi.yaml#/components/schemas/WriteResponse
+      '401':
+        $ref: ../openapi.yaml#/components/responses/Unauthorized
+      '404':
+        $ref: ../openapi.yaml#/components/responses/NotFound
+      '409':
+        $ref: ../openapi.yaml#/components/responses/Conflict
+      '412':
+        $ref: ../openapi.yaml#/components/responses/PreconditionFailed
+      '428':
+        $ref: ../openapi.yaml#/components/responses/VersionRequired
+
+purge:
+  parameters:
+    - name: trip_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  post:
+    tags: [travel]
+    operationId: purgeTrip
+    summary: 请求永久清理；需要近期密码复验与明确确认，affected 中返回清理任务
+    parameters:
+      - $ref: ../openapi.yaml#/components/parameters/IdempotencyKey
+      - $ref: ../openapi.yaml#/components/parameters/IfMatch
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: ../openapi.yaml#/components/schemas/PurgeTripRequest
+    responses:
+      '202':
+        description: 已受理；affected 含 type=deletion_job 的任务引用，version 为 null
+        content:
+          application/json:
+            schema:
+              $ref: ../openapi.yaml#/components/schemas/WriteResponse
+      '401':
+        $ref: ../openapi.yaml#/components/responses/Unauthorized
+      '403':
+        $ref: ../openapi.yaml#/components/responses/Forbidden
+      '404':
+        $ref: ../openapi.yaml#/components/responses/NotFound
+      '412':
+        $ref: ../openapi.yaml#/components/responses/PreconditionFailed
+      '422':
+        $ref: ../openapi.yaml#/components/responses/ValidationFailed
+      '428':
+        $ref: ../openapi.yaml#/components/responses/VersionRequired

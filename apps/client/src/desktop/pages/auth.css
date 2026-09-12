@@ -1,0 +1,39 @@
+.auth-page {
+  display: flex;
+  justify-content: center;
+  padding-top: 8vh;
+}
+
+.auth-card {
+  width: 400px;
+}
+
+.auth-alert {
+  margin-bottom: 16px;
+}
+
+.auth-submit {
+  width: 100%;
+  margin-top: 8px;
+}
+
+.auth-links {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 16px;
+  font-size: 14px;
+}
+
+.auth-links a {
+  color: var(--el-color-primary);
+  text-decoration: none;
+}
+
+.auth-code-row {
+  display: flex;
+  gap: 8px;
+}
+
+.auth-code-row .el-input {
+  flex: 1;
+}

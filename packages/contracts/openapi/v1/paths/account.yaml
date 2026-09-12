@@ -1,0 +1,98 @@
+account:
+  get:
+    tags: [account]
+    operationId: getAccount
+    summary: 本人资料
+    responses:
+      '200':
+        description: 资料，带 ETag
+        headers:
+          ETag:
+            schema:
+              type: string
+        content:
+          application/json:
+            schema:
+              $ref: ../openapi.yaml#/components/schemas/AccountResponse
+      '401':
+        $ref: ../openapi.yaml#/components/responses/Unauthorized
+  patch:
+    tags: [account]
+    operationId: updateAccount
+    summary: 修改昵称、头像或默认时区
+    parameters:
+      - $ref: ../openapi.yaml#/components/parameters/IdempotencyKey
+      - $ref: ../openapi.yaml#/components/parameters/IfMatch
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: ../openapi.yaml#/components/schemas/AccountPatch
+    responses:
+      '200':
+        description: 已更新
+        content:
+          application/json:
+            schema:
+              $ref: ../openapi.yaml#/components/schemas/WriteResponse
+      '401':
+        $ref: ../openapi.yaml#/components/responses/Unauthorized
+      '412':
+        $ref: ../openapi.yaml#/components/responses/PreconditionFailed
+      '422':
+        $ref: ../openapi.yaml#/components/responses/ValidationFailed
+      '428':
+        $ref: ../openapi.yaml#/components/responses/VersionRequired
+
+password:
+  post:
+    tags: [account]
+    operationId: changePassword
+    summary: 登录态修改密码；撤销其他会话，保留当前会话
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: ../openapi.yaml#/components/schemas/ChangePasswordRequest
+    responses:
+      '204':
+        description: 已修改
+      '401':
+        $ref: ../openapi.yaml#/components/responses/Unauthorized
+      '422':
+        $ref: ../openapi.yaml#/components/responses/ValidationFailed
+
+sessions:
+  get:
+    tags: [account]
+    operationId: listSessions
+    summary: 本人有效会话
+    responses:
+      '200':
+        description: 会话列表
+        content:
+          application/json:
+            schema:
+              $ref: ../openapi.yaml#/components/schemas/SessionListResponse
+      '401':
+        $ref: ../openapi.yaml#/components/responses/Unauthorized
+
+session:
+  delete:
+    tags: [account]
+    operationId: revokeSession
+    summary: 撤销本人指定会话；重复撤销仍成功
+    parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    responses:
+      '204':
+        description: 已撤销
+      '401':
+        $ref: ../openapi.yaml#/components/responses/Unauthorized

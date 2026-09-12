@@ -1,0 +1,55 @@
+# 本地与生产的统一入口。开发环境监听 :80；生产改为站点域名并由 Caddy 自动签发证书。
+{
+	auto_https off
+}
+
+:80 {
+	encode zstd gzip
+
+	# 业务接口与探针反向代理到 Go API
+	@api path /api/* /health/*
+	handle @api {
+		reverse_proxy api:8080
+	}
+
+	# 高德 JS API 安全密钥代理：三段路径与高德官方 Nginx 示例一致，在服务端追加 jscode，
+	# 密钥不进入前端代码。AMAP_JSCODE 由环境变量提供。
+	@amapStyles path /_AMapService/v4/map/styles*
+	handle @amapStyles {
+		uri strip_prefix /_AMapService
+		uri query +jscode {env.AMAP_JSCODE}
+		reverse_proxy https://webapi.amap.com {
+			header_up Host webapi.amap.com
+		}
+	}
+	@amapVector path /_AMapService/v3/vectormap*
+	handle @amapVector {
+		uri strip_prefix /_AMapService
+		uri query +jscode {env.AMAP_JSCODE}
+		reverse_proxy https://fmap01.amap.com {
+			header_up Host fmap01.amap.com
+		}
+	}
+	@amapRest path /_AMapService/*
+	handle @amapRest {
+		uri strip_prefix /_AMapService
+		uri query +jscode {env.AMAP_JSCODE}
+		reverse_proxy https://restapi.amap.com {
+			header_up Host restapi.amap.com
+		}
+	}
+
+	# Capacitor 应用来源需要显式 CORS（API 自身的 CORS 由 Go 处理）
+	@capacitorOrigin header Origin https://localhost
+	header @capacitorOrigin {
+		Access-Control-Allow-Origin "https://localhost"
+		Vary Origin
+	}
+
+	# 单页应用：静态资源与前端路由回退
+	handle {
+		root * /srv/www
+		try_files {path} /index.html
+		file_server
+	}
+}

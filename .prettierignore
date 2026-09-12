@@ -1,0 +1,10 @@
+node_modules
+dist
+coverage
+apps/client/android
+apps/server
+packages/contracts/dist
+packages/contracts/generated
+apps/client/src/shared/api/schema.d.ts
+pnpm-lock.yaml
+docs

@@ -1,0 +1,67 @@
+version: "2"
+sql:
+  - engine: "postgresql"
+    # 表结构直接读取 Goose 迁移；sqlc 识别 +goose Up/Down 标记并只应用 Up 部分
+    schema: "db/migrations"
+    # sqlc 不递归子目录：每新增一个业务目录就在这里追加一行
+    queries:
+      - "db/queries/account"
+      - "db/queries/sync"
+      - "db/queries/finance"
+      - "db/queries/travel"
+    gen:
+      go:
+        package: "dbgen"
+        out: "internal/adapters/postgres/dbgen"
+        sql_package: "pgx/v5"
+        emit_interface: true
+        emit_empty_slices: true
+        emit_pointers_for_null_types: true
+        emit_json_tags: false
+        overrides:
+          - db_type: "uuid"
+            go_type:
+              import: "github.com/google/uuid"
+              type: "UUID"
+          - db_type: "uuid"
+            nullable: true
+            go_type:
+              import: "github.com/google/uuid"
+              type: "NullUUID"
+          - db_type: "timestamptz"
+            go_type:
+              import: "time"
+              type: "Time"
+          - db_type: "timestamptz"
+            nullable: true
+            go_type:
+              import: "time"
+              type: "Time"
+              pointer: true
+          - db_type: "pg_catalog.timestamp"
+            go_type:
+              import: "time"
+              type: "Time"
+          - db_type: "pg_catalog.timestamp"
+            nullable: true
+            go_type:
+              import: "time"
+              type: "Time"
+              pointer: true
+          - db_type: "date"
+            go_type:
+              import: "time"
+              type: "Time"
+          - db_type: "date"
+            nullable: true
+            go_type:
+              import: "time"
+              type: "Time"
+              pointer: true
+          - db_type: "pg_catalog.numeric"
+            go_type: "string"
+          - db_type: "pg_catalog.numeric"
+            nullable: true
+            go_type:
+              type: "string"
+              pointer: true

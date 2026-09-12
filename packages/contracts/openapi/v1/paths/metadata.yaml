@@ -1,0 +1,18 @@
+get:
+  tags:
+    - metadata
+  operationId: getMetadata
+  summary: 公开固定枚举、币种精度、上传上限与协议版本
+  description: |
+    不需要身份。客户端不能自行添加服务端未支持的枚举值；币种小数位用于金额规范化与校验。
+    返回值随程序版本变化，不随用户数据变化，可缓存到下次启动。
+  security: []
+  responses:
+    '200':
+      description: 当前服务端的元数据
+      content:
+        application/json:
+          schema:
+            $ref: ../openapi.yaml#/components/schemas/MetadataResponse
+    '500':
+      $ref: ../openapi.yaml#/components/responses/InternalError

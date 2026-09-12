@@ -1,0 +1,79 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contracts-and-client:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: 契约 lint、打包与 TS 类型
+        run: pnpm --filter @tripfolio/contracts build
+      - name: 生成物必须与源文件一致
+        run: git diff --exit-code -- packages/contracts/dist packages/contracts/generated
+      - run: pnpm --filter @tripfolio/client typecheck
+      - run: pnpm --filter @tripfolio/client test
+      - run: pnpm --filter @tripfolio/client build
+      - run: pnpm format:check
+
+  server:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/server
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: tripfolio
+          POSTGRES_PASSWORD: tripfolio
+          POSTGRES_DB: tripfolio_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U tripfolio -d tripfolio_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      TRIPFOLIO_TEST_DATABASE_URL: postgres://tripfolio:tripfolio@localhost:5432/tripfolio_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: apps/server/go.mod
+          cache-dependency-path: apps/server/go.sum
+      - name: 契约打包（oapi-codegen 的输入）
+        run: pnpm install --frozen-lockfile && pnpm --filter @tripfolio/contracts build
+        working-directory: .
+      - name: 安装 sqlc
+        run: |
+          curl -fsSL -o /tmp/sqlc.tar.gz https://downloads.sqlc.dev/sqlc_1.31.1_linux_amd64.tar.gz
+          mkdir -p "$GITHUB_WORKSPACE/.tools" && tar -xzf /tmp/sqlc.tar.gz -C "$GITHUB_WORKSPACE/.tools"
+      - name: 生成代码并比对
+        run: |
+          go generate ./internal/transport/httpapi/
+          bash scripts/sqlc.sh generate
+          git diff --exit-code -- internal/transport/httpapi/generated internal/adapters/postgres/dbgen
+      - run: go vet ./...
+      - run: go test ./... -race -count=1
+      - name: 编译三个入口
+        run: go build ./cmd/...

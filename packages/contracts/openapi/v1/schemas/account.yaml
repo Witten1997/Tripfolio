@@ -1,0 +1,259 @@
+ClientInfo:
+  type: object
+  required:
+    - kind
+    - device_id
+  properties:
+    kind:
+      type: string
+      enum: [web, android, harmony]
+    device_id:
+      type: string
+      format: uuid
+      description: 客户端安装标识，不作为授权凭据
+    device_name:
+      type: string
+      maxLength: 120
+
+EmailChallengeRequest:
+  type: object
+  required:
+    - purpose
+    - email
+  properties:
+    purpose:
+      type: string
+      enum: [register, reset_password]
+    email:
+      type: string
+      maxLength: 254
+
+EmailChallengeResult:
+  type: object
+  required:
+    - challenge_id
+    - expires_in_seconds
+    - retry_after_seconds
+  properties:
+    challenge_id:
+      type: string
+      format: uuid
+    expires_in_seconds:
+      type: integer
+    retry_after_seconds:
+      type: integer
+
+EmailChallengeResponse:
+  type: object
+  required: [data]
+  properties:
+    data:
+      $ref: '#/EmailChallengeResult'
+
+RegisterRequest:
+  type: object
+  required: [challenge_id, email, code, password, nickname, client]
+  properties:
+    challenge_id:
+      type: string
+      format: uuid
+    email:
+      type: string
+      maxLength: 254
+    code:
+      type: string
+      pattern: '^[0-9]{6}$'
+    password:
+      type: string
+      minLength: 10
+      maxLength: 128
+    nickname:
+      type: string
+      minLength: 1
+      maxLength: 64
+    client:
+      $ref: '#/ClientInfo'
+
+LoginRequest:
+  type: object
+  required: [email, password, client]
+  properties:
+    email:
+      type: string
+      maxLength: 254
+    password:
+      type: string
+      maxLength: 128
+    client:
+      $ref: '#/ClientInfo'
+
+RefreshRequest:
+  type: object
+  description: 网页端使用 Cookie，正文可为空对象；原生端提供 refresh_token
+  properties:
+    refresh_token:
+      type: string
+      maxLength: 200
+
+ResetPasswordRequest:
+  type: object
+  required: [challenge_id, email, code, new_password]
+  properties:
+    challenge_id:
+      type: string
+      format: uuid
+    email:
+      type: string
+      maxLength: 254
+    code:
+      type: string
+      pattern: '^[0-9]{6}$'
+    new_password:
+      type: string
+      minLength: 10
+      maxLength: 128
+
+ReauthenticateRequest:
+  type: object
+  required: [password]
+  properties:
+    password:
+      type: string
+      maxLength: 128
+
+ChangePasswordRequest:
+  type: object
+  required: [current_password, new_password]
+  properties:
+    current_password:
+      type: string
+      maxLength: 128
+    new_password:
+      type: string
+      minLength: 10
+      maxLength: 128
+
+Account:
+  type: object
+  x-go-type: account.AccountResource
+  x-go-type-import:
+    path: tripfolio/server/internal/modules/account
+  required:
+    [
+      id,
+      email,
+      nickname,
+      avatar_asset_id,
+      default_timezone,
+      status,
+      version,
+      created_at,
+      updated_at,
+    ]
+  properties:
+    id:
+      type: string
+      format: uuid
+    email:
+      type: string
+    nickname:
+      type: string
+    avatar_asset_id:
+      type: string
+      format: uuid
+      nullable: true
+    default_timezone:
+      type: string
+    status:
+      type: string
+      enum: [active, deleting]
+    version:
+      $ref: ./write.yaml#/Version
+    created_at:
+      $ref: ./write.yaml#/Instant
+    updated_at:
+      $ref: ./write.yaml#/Instant
+
+AccountResponse:
+  type: object
+  required: [data]
+  properties:
+    data:
+      $ref: '#/Account'
+
+AuthResult:
+  type: object
+  required: [access_token, token_type, expires_in_seconds, account]
+  properties:
+    access_token:
+      type: string
+    token_type:
+      type: string
+      enum: [Bearer]
+    expires_in_seconds:
+      type: integer
+    refresh_token:
+      type: string
+      description: 仅原生端返回；网页端通过 HttpOnly Cookie 设置
+    csrf_token:
+      type: string
+      description: 仅网页端返回，同时以非 HttpOnly Cookie 设置
+    account:
+      $ref: '#/Account'
+
+AuthResponse:
+  type: object
+  required: [data]
+  properties:
+    data:
+      $ref: '#/AuthResult'
+
+AccountPatch:
+  type: object
+  description: 缺省字段保持原值；avatar_asset_id 显式 null 表示清空
+  properties:
+    nickname:
+      type: string
+      minLength: 1
+      maxLength: 64
+    avatar_asset_id:
+      type: string
+      format: uuid
+      nullable: true
+    default_timezone:
+      type: string
+      maxLength: 64
+
+Session:
+  type: object
+  x-go-type: account.SessionResource
+  x-go-type-import:
+    path: tripfolio/server/internal/modules/account
+  required: [id, client_kind, device_name, created_at, last_seen_at, expires_at, is_current]
+  properties:
+    id:
+      type: string
+      format: uuid
+    client_kind:
+      type: string
+      enum: [web, android, harmony]
+    device_name:
+      type: string
+      nullable: true
+    created_at:
+      $ref: ./write.yaml#/Instant
+    last_seen_at:
+      $ref: ./write.yaml#/Instant
+    expires_at:
+      $ref: ./write.yaml#/Instant
+    is_current:
+      type: boolean
+
+SessionListResponse:
+  type: object
+  required: [data]
+  properties:
+    data:
+      type: array
+      items:
+        $ref: '#/Session'

@@ -1,0 +1,13 @@
+package: generated
+# 从 packages/contracts/dist/openapi.v1.yaml 生成 chi 路由注册、strict 服务端接口与模型。
+# 输出路径相对于运行 go generate 的包目录（internal/transport/httpapi）。
+output: generated/api.gen.go
+generate:
+  chi-server: true
+  strict-server: true
+  models: true
+  embedded-spec: false
+output-options:
+  # nullable: true 的字段生成 nullable.Nullable[T]，区分“缺省”与“显式 null”（接口设计 1.2 的 PATCH 语义）
+  nullable-type: true
+  skip-prune: false

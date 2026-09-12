@@ -1,0 +1,83 @@
+ExpenseCategory:
+  type: object
+  x-go-type: finance.CategoryResource
+  x-go-type-import:
+    path: tripfolio/server/internal/modules/finance
+  required: [id, name, icon, sort_order, is_preset, version, created_at, updated_at, deleted_at]
+  properties:
+    id:
+      type: string
+      format: uuid
+    name:
+      type: string
+      minLength: 1
+      maxLength: 40
+    icon:
+      type: string
+      nullable: true
+      description: Metadata.expense_category_icons 中的键
+    sort_order:
+      type: integer
+      minimum: 0
+    is_preset:
+      type: boolean
+    version:
+      $ref: ./write.yaml#/Version
+    created_at:
+      $ref: ./write.yaml#/Instant
+    updated_at:
+      $ref: ./write.yaml#/Instant
+    deleted_at:
+      type: string
+      format: date-time
+      nullable: true
+
+ExpenseCategoryResponse:
+  type: object
+  required: [data]
+  properties:
+    data:
+      $ref: '#/ExpenseCategory'
+
+ExpenseCategoryListResponse:
+  type: object
+  required: [data]
+  properties:
+    data:
+      type: array
+      items:
+        $ref: '#/ExpenseCategory'
+
+ExpenseCategoryCreate:
+  type: object
+  required: [id, name]
+  properties:
+    id:
+      type: string
+      format: uuid
+    name:
+      type: string
+      minLength: 1
+      maxLength: 40
+    icon:
+      type: string
+      nullable: true
+    sort_order:
+      type: integer
+      minimum: 0
+      description: 缺省时追加到末尾
+
+ExpenseCategoryPatch:
+  type: object
+  description: 缺省字段保持原值；icon 显式 null 表示清空
+  properties:
+    name:
+      type: string
+      minLength: 1
+      maxLength: 40
+    icon:
+      type: string
+      nullable: true
+    sort_order:
+      type: integer
+      minimum: 0

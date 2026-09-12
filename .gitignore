@@ -1,0 +1,82 @@
+# JavaScript / TypeScript 依赖、构建产物与缓存
+node_modules/
+.pnpm-store/
+dist/
+build/
+coverage/
+.vite/
+.cache/
+*.tsbuildinfo
+
+# OpenAPI 单文件契约需要入库，供代码生成与 CI 一致性检查使用
+!/packages/contracts/dist/
+/packages/contracts/dist/*
+!/packages/contracts/dist/openapi.v1.yaml
+
+# 本地环境变量与密钥；仅放行模板和已确认无密钥的前端开发默认值
+.env
+.env.*
+!.env.example
+!.env.*.example
+!/apps/client/.env.development
+*.local
+*.key
+*.pem
+*.p12
+*.pfx
+*.keystore
+*.jks
+
+# 运行日志、测试报告与本地数据库（SQL 迁移和测试样例源码仍需提交）
+*.log
+*.log.*
+test-results/
+playwright-report/
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite-journal
+*.sqlite-shm
+*.sqlite-wal
+*.sqlite3
+*.sqlite3-journal
+*.sqlite3-shm
+*.sqlite3-wal
+
+# Go 编译与测试产物（sqlc、oapi-codegen 生成的 Go 源码需要入库）
+apps/server/bin/
+apps/server/*.exe
+apps/server/*.test
+apps/server/*.prof
+apps/server/coverage.out
+
+# 本地工具二进制（sqlc 等，见 README）
+.tools/
+
+# Capacitor / Android 生成物
+apps/client/android/.gradle/
+apps/client/android/build/
+apps/client/android/app/build/
+apps/client/android/app/src/main/assets/public/
+apps/client/android/app/src/main/assets/capacitor.config.json
+apps/client/android/app/src/main/assets/capacitor.plugins.json
+apps/client/android/local.properties
+apps/client/android/key.properties
+apps/client/android/.idea/
+apps/client/android/captures/
+
+# 编辑器、助手本机配置与系统临时文件
+.idea/
+*.iml
+.vscode/*
+!.vscode/extensions.json
+.claude/settings.local.json
+CLAUDE.local.md
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.swp
+*.swo
+*~

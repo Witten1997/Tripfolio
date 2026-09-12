@@ -1,0 +1,145 @@
+email-challenges:
+  post:
+    tags: [auth]
+    operationId: requestEmailChallenge
+    summary: 申请注册或找回密码的邮箱验证码
+    description: 统一响应，不暴露账号是否存在；每邮箱 60 秒一次、每小时 5 次，并按 IP 限流
+    security: []
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: ../openapi.yaml#/components/schemas/EmailChallengeRequest
+    responses:
+      '202':
+        description: 已受理（验证码通过邮件投递）
+        content:
+          application/json:
+            schema:
+              $ref: ../openapi.yaml#/components/schemas/EmailChallengeResponse
+      '422':
+        $ref: ../openapi.yaml#/components/responses/ValidationFailed
+      '429':
+        $ref: ../openapi.yaml#/components/responses/RateLimited
+
+register:
+  post:
+    tags: [auth]
+    operationId: registerAccount
+    summary: 验证邮箱后创建账号并登录
+    security: []
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: ../openapi.yaml#/components/schemas/RegisterRequest
+    responses:
+      '201':
+        description: 账号已创建并开启会话
+        content:
+          application/json:
+            schema:
+              $ref: ../openapi.yaml#/components/schemas/AuthResponse
+      '409':
+        $ref: ../openapi.yaml#/components/responses/Conflict
+      '422':
+        $ref: ../openapi.yaml#/components/responses/ValidationFailed
+
+login:
+  post:
+    tags: [auth]
+    operationId: login
+    summary: 邮箱密码登录
+    security: []
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: ../openapi.yaml#/components/schemas/LoginRequest
+    responses:
+      '200':
+        description: 登录成功
+        content:
+          application/json:
+            schema:
+              $ref: ../openapi.yaml#/components/schemas/AuthResponse
+      '401':
+        $ref: ../openapi.yaml#/components/responses/Unauthorized
+      '403':
+        $ref: ../openapi.yaml#/components/responses/Forbidden
+      '429':
+        $ref: ../openapi.yaml#/components/responses/RateLimited
+
+refresh:
+  post:
+    tags: [auth]
+    operationId: refreshSession
+    summary: 轮换刷新令牌并签发新的访问令牌
+    description: 网页端凭 Cookie 与 X-CSRF-Token；原生端在正文提供 refresh_token。60 秒宽限期内用前次令牌重试视为响应丢失
+    security: []
+    requestBody:
+      required: false
+      content:
+        application/json:
+          schema:
+            $ref: ../openapi.yaml#/components/schemas/RefreshRequest
+    responses:
+      '200':
+        description: 新令牌对
+        content:
+          application/json:
+            schema:
+              $ref: ../openapi.yaml#/components/schemas/AuthResponse
+      '401':
+        $ref: ../openapi.yaml#/components/responses/Unauthorized
+      '403':
+        $ref: ../openapi.yaml#/components/responses/Forbidden
+
+logout:
+  post:
+    tags: [auth]
+    operationId: logout
+    summary: 撤销当前会话并清除浏览器刷新 Cookie
+    responses:
+      '204':
+        description: 已退出
+      '401':
+        $ref: ../openapi.yaml#/components/responses/Unauthorized
+
+password-reset:
+  post:
+    tags: [auth]
+    operationId: resetPassword
+    summary: 验证码验证后重置密码并撤销全部会话
+    security: []
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: ../openapi.yaml#/components/schemas/ResetPasswordRequest
+    responses:
+      '204':
+        description: 已重置（账号不存在时同样返回）
+      '422':
+        $ref: ../openapi.yaml#/components/responses/ValidationFailed
+
+reauthenticate:
+  post:
+    tags: [auth]
+    operationId: reauthenticate
+    summary: 验证当前密码，本会话近期认证有效 5 分钟
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: ../openapi.yaml#/components/schemas/ReauthenticateRequest
+    responses:
+      '204':
+        description: 已验证
+      '401':
+        $ref: ../openapi.yaml#/components/responses/Unauthorized

@@ -1,0 +1,264 @@
+openapi: 3.0.3
+info:
+  title: Tripfolio API
+  version: 0.3.0
+  description: |
+    Tripfolio P0 业务接口契约。人可读设计见 `docs/api/2026-09-11-P0接口设计.md`；
+    本文件及 `paths/`、`schemas/` 下的拆分文件是生成 Go 服务端接口（oapi-codegen）与
+    TypeScript 客户端类型（openapi-typescript）的唯一来源。修改契约先改这里，再运行
+    `pnpm --filter @tripfolio/contracts build` 与后端的 `go generate ./internal/transport/httpapi/`。
+
+    约定摘要（详见接口设计 1.1–1.4）：
+    - 业务路径统一前缀 `/api/v1`；探针 `/health/live`、`/health/ready` 不在本契约内。
+    - 每个响应都带 `X-Request-ID` 头；客户端传入合法值（1–128 位字母、数字、`.`、`_`、`-`）时原样返回。
+    - 单资源响应为 `{ "data": resource }`，写响应为 `{ "data": WriteResult }`，分页列表为 `Page<T>`。
+    - 写请求带 `Idempotency-Key`（UUID）；修改与删除带 `If-Match: "<version>"`。
+    - 错误使用 `application/problem+json`，字段见 `Problem`；错误代码清单以接口设计 1.4 为准。
+    - 金额为十进制字符串，按币种小数位规范化；日期为 `YYYY-MM-DD`；当地日期时间不带时区。
+    - 部分模型带 `x-go-type`：Go 服务端直接使用业务类型，同一类型也是同步日志中的快照。
+  license:
+    name: Proprietary
+    url: https://example.invalid/tripfolio/license
+servers:
+  - url: /api/v1
+    description: 业务接口统一前缀（同源部署时使用相对路径）
+tags:
+  - name: metadata
+    description: 固定枚举、币种精度、上传上限与协议版本
+  - name: auth
+    description: 注册、登录、刷新、找回密码与密码复验
+  - name: account
+    description: 个人资料与会话
+  - name: finance
+    description: 账单分类、账目与统计
+  - name: travel
+    description: 旅行、回收站与旅行内容
+security:
+  - bearerAuth: []
+paths:
+  /metadata:
+    $ref: ./paths/metadata.yaml
+  /auth/email-challenges:
+    $ref: ./paths/auth.yaml#/email-challenges
+  /auth/register:
+    $ref: ./paths/auth.yaml#/register
+  /auth/login:
+    $ref: ./paths/auth.yaml#/login
+  /auth/refresh:
+    $ref: ./paths/auth.yaml#/refresh
+  /auth/logout:
+    $ref: ./paths/auth.yaml#/logout
+  /auth/password-reset:
+    $ref: ./paths/auth.yaml#/password-reset
+  /auth/reauthenticate:
+    $ref: ./paths/auth.yaml#/reauthenticate
+  /account:
+    $ref: ./paths/account.yaml#/account
+  /account/password:
+    $ref: ./paths/account.yaml#/password
+  /account/sessions:
+    $ref: ./paths/account.yaml#/sessions
+  /account/sessions/{session_id}:
+    $ref: ./paths/account.yaml#/session
+  /expense-categories:
+    $ref: ./paths/expense-categories.yaml#/collection
+  /expense-categories/{category_id}:
+    $ref: ./paths/expense-categories.yaml#/item
+  /trips:
+    $ref: ./paths/trips.yaml#/collection
+  /trips/{trip_id}:
+    $ref: ./paths/trips.yaml#/item
+  /trips/{trip_id}/archive:
+    $ref: ./paths/trips.yaml#/archive
+  /recycle-bin/trips:
+    $ref: ./paths/recycle-bin.yaml#/collection
+  /recycle-bin/trips/{trip_id}:
+    $ref: ./paths/recycle-bin.yaml#/item
+  /recycle-bin/trips/{trip_id}/restore:
+    $ref: ./paths/recycle-bin.yaml#/restore
+  /recycle-bin/trips/{trip_id}/purge:
+    $ref: ./paths/recycle-bin.yaml#/purge
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: 15 分钟有效的访问令牌；刷新与会话规则见接口设计 3.1
+  parameters:
+    IdempotencyKey:
+      $ref: ./schemas/write.yaml#/IdempotencyKey
+    IfMatch:
+      $ref: ./schemas/write.yaml#/IfMatch
+  schemas:
+    Problem:
+      $ref: ./schemas/common.yaml#/Problem
+    FieldError:
+      $ref: ./schemas/common.yaml#/FieldError
+    VersionConflict:
+      $ref: ./schemas/common.yaml#/VersionConflict
+    Money:
+      $ref: ./schemas/common.yaml#/Money
+    CurrencyCode:
+      $ref: ./schemas/common.yaml#/CurrencyCode
+    Version:
+      $ref: ./schemas/write.yaml#/Version
+    Instant:
+      $ref: ./schemas/write.yaml#/Instant
+    Date:
+      $ref: ./schemas/write.yaml#/Date
+    LocalDateTime:
+      $ref: ./schemas/write.yaml#/LocalDateTime
+    EntityRef:
+      $ref: ./schemas/write.yaml#/EntityRef
+    WriteResult:
+      $ref: ./schemas/write.yaml#/WriteResult
+    WriteResponse:
+      $ref: ./schemas/write.yaml#/WriteResponse
+    Metadata:
+      $ref: ./schemas/metadata.yaml#/Metadata
+    Currency:
+      $ref: ./schemas/metadata.yaml#/Currency
+    UploadLimits:
+      $ref: ./schemas/metadata.yaml#/UploadLimits
+    MapSettings:
+      $ref: ./schemas/metadata.yaml#/MapSettings
+    MetadataResponse:
+      $ref: ./schemas/metadata.yaml#/MetadataResponse
+    ClientInfo:
+      $ref: ./schemas/account.yaml#/ClientInfo
+    EmailChallengeRequest:
+      $ref: ./schemas/account.yaml#/EmailChallengeRequest
+    EmailChallengeResult:
+      $ref: ./schemas/account.yaml#/EmailChallengeResult
+    EmailChallengeResponse:
+      $ref: ./schemas/account.yaml#/EmailChallengeResponse
+    RegisterRequest:
+      $ref: ./schemas/account.yaml#/RegisterRequest
+    LoginRequest:
+      $ref: ./schemas/account.yaml#/LoginRequest
+    RefreshRequest:
+      $ref: ./schemas/account.yaml#/RefreshRequest
+    ResetPasswordRequest:
+      $ref: ./schemas/account.yaml#/ResetPasswordRequest
+    ReauthenticateRequest:
+      $ref: ./schemas/account.yaml#/ReauthenticateRequest
+    ChangePasswordRequest:
+      $ref: ./schemas/account.yaml#/ChangePasswordRequest
+    Account:
+      $ref: ./schemas/account.yaml#/Account
+    AccountResponse:
+      $ref: ./schemas/account.yaml#/AccountResponse
+    AuthResult:
+      $ref: ./schemas/account.yaml#/AuthResult
+    AuthResponse:
+      $ref: ./schemas/account.yaml#/AuthResponse
+    AccountPatch:
+      $ref: ./schemas/account.yaml#/AccountPatch
+    Session:
+      $ref: ./schemas/account.yaml#/Session
+    SessionListResponse:
+      $ref: ./schemas/account.yaml#/SessionListResponse
+    ExpenseCategory:
+      $ref: ./schemas/expense-category.yaml#/ExpenseCategory
+    ExpenseCategoryResponse:
+      $ref: ./schemas/expense-category.yaml#/ExpenseCategoryResponse
+    ExpenseCategoryListResponse:
+      $ref: ./schemas/expense-category.yaml#/ExpenseCategoryListResponse
+    ExpenseCategoryCreate:
+      $ref: ./schemas/expense-category.yaml#/ExpenseCategoryCreate
+    ExpenseCategoryPatch:
+      $ref: ./schemas/expense-category.yaml#/ExpenseCategoryPatch
+    Trip:
+      $ref: ./schemas/trip.yaml#/Trip
+    TripListItem:
+      $ref: ./schemas/trip.yaml#/TripListItem
+    TrashedTrip:
+      $ref: ./schemas/trip.yaml#/TrashedTrip
+    TripResponse:
+      $ref: ./schemas/trip.yaml#/TripResponse
+    TrashedTripResponse:
+      $ref: ./schemas/trip.yaml#/TrashedTripResponse
+    TripPage:
+      $ref: ./schemas/trip.yaml#/TripPage
+    TrashedTripPage:
+      $ref: ./schemas/trip.yaml#/TrashedTripPage
+    TripCreate:
+      $ref: ./schemas/trip.yaml#/TripCreate
+    TripPatch:
+      $ref: ./schemas/trip.yaml#/TripPatch
+    ArchiveRequest:
+      $ref: ./schemas/trip.yaml#/ArchiveRequest
+    PurgeTripRequest:
+      $ref: ./schemas/trip.yaml#/PurgeTripRequest
+  responses:
+    BadRequest:
+      description: 请求无法解析、含未知字段或游标无效（MALFORMED_REQUEST、INVALID_CURSOR）
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Unauthorized:
+      description: 缺少身份或会话失效（AUTH_REQUIRED、INVALID_CREDENTIALS、SESSION_EXPIRED）
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Forbidden:
+      description: 账号注销中、需要密码复验或跨站校验失败（ACCOUNT_DELETING、REAUTH_REQUIRED、CSRF_FAILED）
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    NotFound:
+      description: 资源不存在、非本人或路径错属（RESOURCE_NOT_FOUND）
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Conflict:
+      description: 409 类错误（IDEMPOTENCY_CONFLICT、ID_ALREADY_USED、ACCOUNT_ALREADY_EXISTS、CATEGORY_IN_USE 等）
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Gone:
+      description: 资源已删除或已清理（RESOURCE_GONE、TRIP_DELETED）
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    PreconditionFailed:
+      description: 412 VERSION_CONFLICT，conflict 中给出当前版本、相交字段与当前内容
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    VersionRequired:
+      description: 428 VERSION_REQUIRED，缺少 If-Match
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    ValidationFailed:
+      description: 422 VALIDATION_FAILED 或其他 422 代码，errors 给出字段明细
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    RateLimited:
+      description: 429 RATE_LIMITED，带 Retry-After
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    InternalError:
+      description: 服务端错误（INTERNAL_ERROR）或依赖不可用（DEPENDENCY_UNAVAILABLE）
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'

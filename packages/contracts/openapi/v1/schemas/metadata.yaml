@@ -1,0 +1,135 @@
+Currency:
+  type: object
+  required:
+    - code
+    - minor_units
+  properties:
+    code:
+      $ref: ./common.yaml#/CurrencyCode
+    minor_units:
+      type: integer
+      format: int32
+      minimum: 0
+      maximum: 4
+      description: 小数位数；JPY/KRW/VND 为 0，KWD/BHD 为 3，其余为 2
+
+UploadLimits:
+  type: object
+  required:
+    - image_max_bytes
+    - pdf_max_bytes
+    - image_media_types
+    - pdf_media_types
+  properties:
+    image_max_bytes:
+      type: integer
+      format: int64
+      description: 单张图片上限，初始 20 MiB
+    pdf_max_bytes:
+      type: integer
+      format: int64
+      description: 单个 PDF 上限，初始 50 MiB
+    image_media_types:
+      type: array
+      items:
+        type: string
+      description: 允许上传的图片 MIME，其他格式由客户端转换后上传
+    pdf_media_types:
+      type: array
+      items:
+        type: string
+
+MapSettings:
+  type: object
+  required:
+    - provider
+    - coordinate_system
+  properties:
+    provider:
+      type: string
+      enum:
+        - amap
+      description: 地图与定位供应商
+    coordinate_system:
+      type: string
+      enum:
+        - GCJ-02
+      description: 所有坐标字段使用的坐标系
+
+Metadata:
+  type: object
+  required:
+    - protocol_version
+    - default_currency_code
+    - currencies
+    - ledger_kinds
+    - expense_category_icons
+    - packing_categories
+    - packing_statuses
+    - packing_library_version
+    - itinerary_kinds
+    - itinerary_statuses
+    - reservation_kinds
+    - upload_limits
+    - map
+  properties:
+    protocol_version:
+      type: integer
+      format: int32
+      description: 同步协议版本，P0 为 1
+    default_currency_code:
+      $ref: ./common.yaml#/CurrencyCode
+    currencies:
+      type: array
+      items:
+        $ref: '#/Currency'
+    ledger_kinds:
+      type: array
+      items:
+        type: string
+      description: 账目类型：expense、refund
+    expense_category_icons:
+      type: array
+      items:
+        type: string
+      description: 账单分类可选的图标键集合
+    packing_categories:
+      type: array
+      items:
+        type: string
+      description: 行李物品分类：documents、electronics、clothing、daily、food、medicine、other
+    packing_statuses:
+      type: array
+      items:
+        type: string
+      description: 行李物品状态：pending、ready、packed
+    packing_library_version:
+      type: string
+      description: 内置物品库版本
+    itinerary_kinds:
+      type: array
+      items:
+        type: string
+      description: 行程项目类型：attraction、transport、lodging、dining、other
+    itinerary_statuses:
+      type: array
+      items:
+        type: string
+      description: 行程项目状态：pending、completed、skipped
+    reservation_kinds:
+      type: array
+      items:
+        type: string
+      description: 预订类型：transport、lodging、attraction、other
+    upload_limits:
+      $ref: '#/UploadLimits'
+    map:
+      $ref: '#/MapSettings'
+
+MetadataResponse:
+  type: object
+  required:
+    - data
+  properties:
+    data:
+      $ref: '#/Metadata'

@@ -1,0 +1,77 @@
+name: tripfolio
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    container_name: tripfolio-postgres
+    environment:
+      POSTGRES_USER: tripfolio
+      POSTGRES_PASSWORD: tripfolio
+      POSTGRES_DB: tripfolio
+      # 中文排序与全文检索先不依赖 locale，保持 C 排序以获得稳定索引行为
+      POSTGRES_INITDB_ARGS: '--locale=C --encoding=UTF8'
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres-data:/var/lib/postgresql
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U tripfolio -d tripfolio']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    command:
+      - postgres
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+      - -c
+      - log_min_duration_statement=500ms
+
+  api:
+    profiles: ['app']
+    build:
+      context: ../apps/server
+      dockerfile: Dockerfile
+    image: tripfolio/server:local
+    command: ['/app/api']
+    environment:
+      TRIPFOLIO_ENV: dev
+      TRIPFOLIO_HTTP_ADDR: ':8080'
+      TRIPFOLIO_DATABASE_URL: postgres://tripfolio:tripfolio@postgres:5432/tripfolio?sslmode=disable
+      TRIPFOLIO_CORS_ORIGINS: http://localhost:5173,https://localhost
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - '8080:8080'
+
+  worker:
+    profiles: ['app']
+    image: tripfolio/server:local
+    command: ['/app/worker']
+    environment:
+      TRIPFOLIO_ENV: dev
+      TRIPFOLIO_DATABASE_URL: postgres://tripfolio:tripfolio@postgres:5432/tripfolio?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  caddy:
+    profiles: ['edge']
+    image: caddy:2-alpine
+    ports:
+      - '80:80'
+    environment:
+      AMAP_JSCODE: ${AMAP_JSCODE:-}
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ../apps/client/dist:/srv/www:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - api
+
+volumes:
+  postgres-data:
+  caddy-data:
+  caddy-config:

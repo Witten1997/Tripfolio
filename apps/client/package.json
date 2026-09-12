@@ -1,0 +1,45 @@
+{
+  "name": "@tripfolio/client",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Tripfolio 前端：一个 Vue 3 工程同时产出网页（桌面壳 + 移动壳）与 Capacitor 安卓应用",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc --build --force && vite build",
+    "preview": "vite preview",
+    "typecheck": "vue-tsc --build --force",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "cap:sync": "cap sync android",
+    "cap:open": "cap open android"
+  },
+  "dependencies": {
+    "@aparajita/capacitor-secure-storage": "8.0.0",
+    "@capacitor-community/sqlite": "8.1.1",
+    "@capacitor/app": "8.1.1",
+    "@capacitor/core": "8.5.2",
+    "@capacitor/network": "8.0.1",
+    "@vue/devtools-api": "^8.1.5",
+    "element-plus": "2.14.5",
+    "openapi-fetch": "0.17.0",
+    "pinia": "4.0.3",
+    "vant": "4.10.2",
+    "vue": "3.5.42",
+    "vue-router": "5.3.1"
+  },
+  "devDependencies": {
+    "@capacitor/android": "8.5.2",
+    "@capacitor/cli": "8.5.2",
+    "@tripfolio/contracts": "workspace:*",
+    "@types/node": "^24.0.0",
+    "@vitejs/plugin-vue": "6.0.8",
+    "@vue/test-utils": "2.5.0",
+    "@vue/tsconfig": "0.9.1",
+    "jsdom": "30.0.1",
+    "typescript": "5.9.3",
+    "vite": "8.3.0",
+    "vitest": "5.0.0",
+    "vue-tsc": "3.3.11"
+  }
+}

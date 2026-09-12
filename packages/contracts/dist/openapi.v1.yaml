@@ -1,0 +1,1819 @@
+openapi: 3.0.3
+info:
+  title: Tripfolio API
+  version: 0.3.0
+  description: |
+    Tripfolio P0 业务接口契约。人可读设计见 `docs/api/2026-09-11-P0接口设计.md`；
+    本文件及 `paths/`、`schemas/` 下的拆分文件是生成 Go 服务端接口（oapi-codegen）与
+    TypeScript 客户端类型（openapi-typescript）的唯一来源。修改契约先改这里，再运行
+    `pnpm --filter @tripfolio/contracts build` 与后端的 `go generate ./internal/transport/httpapi/`。
+
+    约定摘要（详见接口设计 1.1–1.4）：
+    - 业务路径统一前缀 `/api/v1`；探针 `/health/live`、`/health/ready` 不在本契约内。
+    - 每个响应都带 `X-Request-ID` 头；客户端传入合法值（1–128 位字母、数字、`.`、`_`、`-`）时原样返回。
+    - 单资源响应为 `{ "data": resource }`，写响应为 `{ "data": WriteResult }`，分页列表为 `Page<T>`。
+    - 写请求带 `Idempotency-Key`（UUID）；修改与删除带 `If-Match: "<version>"`。
+    - 错误使用 `application/problem+json`，字段见 `Problem`；错误代码清单以接口设计 1.4 为准。
+    - 金额为十进制字符串，按币种小数位规范化；日期为 `YYYY-MM-DD`；当地日期时间不带时区。
+    - 部分模型带 `x-go-type`：Go 服务端直接使用业务类型，同一类型也是同步日志中的快照。
+  license:
+    name: Proprietary
+    url: https://example.invalid/tripfolio/license
+servers:
+  - url: /api/v1
+    description: 业务接口统一前缀（同源部署时使用相对路径）
+security:
+  - bearerAuth: []
+tags:
+  - name: metadata
+    description: 固定枚举、币种精度、上传上限与协议版本
+  - name: auth
+    description: 注册、登录、刷新、找回密码与密码复验
+  - name: account
+    description: 个人资料与会话
+  - name: finance
+    description: 账单分类、账目与统计
+  - name: travel
+    description: 旅行、回收站与旅行内容
+paths:
+  /metadata:
+    get:
+      tags:
+        - metadata
+      operationId: getMetadata
+      summary: 公开固定枚举、币种精度、上传上限与协议版本
+      description: |
+        不需要身份。客户端不能自行添加服务端未支持的枚举值；币种小数位用于金额规范化与校验。
+        返回值随程序版本变化，不随用户数据变化，可缓存到下次启动。
+      security: []
+      responses:
+        '200':
+          description: 当前服务端的元数据
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MetadataResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /auth/email-challenges:
+    post:
+      tags:
+        - auth
+      operationId: requestEmailChallenge
+      summary: 申请注册或找回密码的邮箱验证码
+      description: 统一响应，不暴露账号是否存在；每邮箱 60 秒一次、每小时 5 次，并按 IP 限流
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmailChallengeRequest'
+      responses:
+        '202':
+          description: 已受理（验证码通过邮件投递）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmailChallengeResponse'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /auth/register:
+    post:
+      tags:
+        - auth
+      operationId: registerAccount
+      summary: 验证邮箱后创建账号并登录
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: 账号已创建并开启会话
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /auth/login:
+    post:
+      tags:
+        - auth
+      operationId: login
+      summary: 邮箱密码登录
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: 登录成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /auth/refresh:
+    post:
+      tags:
+        - auth
+      operationId: refreshSession
+      summary: 轮换刷新令牌并签发新的访问令牌
+      description: 网页端凭 Cookie 与 X-CSRF-Token；原生端在正文提供 refresh_token。60 秒宽限期内用前次令牌重试视为响应丢失
+      security: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+      responses:
+        '200':
+          description: 新令牌对
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /auth/logout:
+    post:
+      tags:
+        - auth
+      operationId: logout
+      summary: 撤销当前会话并清除浏览器刷新 Cookie
+      responses:
+        '204':
+          description: 已退出
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /auth/password-reset:
+    post:
+      tags:
+        - auth
+      operationId: resetPassword
+      summary: 验证码验证后重置密码并撤销全部会话
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResetPasswordRequest'
+      responses:
+        '204':
+          description: 已重置（账号不存在时同样返回）
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /auth/reauthenticate:
+    post:
+      tags:
+        - auth
+      operationId: reauthenticate
+      summary: 验证当前密码，本会话近期认证有效 5 分钟
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReauthenticateRequest'
+      responses:
+        '204':
+          description: 已验证
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /account:
+    get:
+      tags:
+        - account
+      operationId: getAccount
+      summary: 本人资料
+      responses:
+        '200':
+          description: 资料，带 ETag
+          headers:
+            ETag:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    patch:
+      tags:
+        - account
+      operationId: updateAccount
+      summary: 修改昵称、头像或默认时区
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AccountPatch'
+      responses:
+        '200':
+          description: 已更新
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WriteResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '412':
+          $ref: '#/components/responses/PreconditionFailed'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '428':
+          $ref: '#/components/responses/VersionRequired'
+  /account/password:
+    post:
+      tags:
+        - account
+      operationId: changePassword
+      summary: 登录态修改密码；撤销其他会话，保留当前会话
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangePasswordRequest'
+      responses:
+        '204':
+          description: 已修改
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /account/sessions:
+    get:
+      tags:
+        - account
+      operationId: listSessions
+      summary: 本人有效会话
+      responses:
+        '200':
+          description: 会话列表
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /account/sessions/{session_id}:
+    delete:
+      tags:
+        - account
+      operationId: revokeSession
+      summary: 撤销本人指定会话；重复撤销仍成功
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: 已撤销
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /expense-categories:
+    get:
+      tags:
+        - finance
+      operationId: listExpenseCategories
+      summary: 本账号全部有效账单分类
+      responses:
+        '200':
+          description: 按 sort_order、id 排序
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExpenseCategoryListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags:
+        - finance
+      operationId: createExpenseCategory
+      summary: 新建账单分类
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExpenseCategoryCreate'
+      responses:
+        '201':
+          description: 已创建
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WriteResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /expense-categories/{category_id}:
+    parameters:
+      - name: category_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags:
+        - finance
+      operationId: getExpenseCategory
+      summary: 单个账单分类
+      responses:
+        '200':
+          description: 分类，带 ETag
+          headers:
+            ETag:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExpenseCategoryResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '410':
+          $ref: '#/components/responses/Gone'
+    patch:
+      tags:
+        - finance
+      operationId: updateExpenseCategory
+      summary: 改名、改图标或排序
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExpenseCategoryPatch'
+      responses:
+        '200':
+          description: 已更新
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WriteResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '410':
+          $ref: '#/components/responses/Gone'
+        '412':
+          $ref: '#/components/responses/PreconditionFailed'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '428':
+          $ref: '#/components/responses/VersionRequired'
+    delete:
+      tags:
+        - finance
+      operationId: deleteExpenseCategory
+      summary: 软删除；仍被账目引用时返回 409 CATEGORY_IN_USE
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '200':
+          description: 已删除
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WriteResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '410':
+          $ref: '#/components/responses/Gone'
+        '412':
+          $ref: '#/components/responses/PreconditionFailed'
+        '428':
+          $ref: '#/components/responses/VersionRequired'
+  /trips:
+    get:
+      tags:
+        - travel
+      operationId: listTrips
+      summary: 有效旅行列表；按阶段、归档、名称或目的地筛选，键集分页
+      parameters:
+        - name: q
+          in: query
+          required: false
+          description: 匹配名称或目的地（不区分大小写的子串），最多 100 字符
+          schema:
+            type: string
+            maxLength: 100
+        - name: phase
+          in: query
+          required: false
+          description: 按旅行时区当天计算的阶段
+          schema:
+            type: string
+            enum:
+              - planned
+              - ongoing
+              - ended
+        - name: archived
+          in: query
+          required: false
+          description: 只看已归档、只看未归档或全部；默认 all
+          schema:
+            type: string
+            enum:
+              - 'true'
+              - 'false'
+              - all
+            default: all
+        - name: sort
+          in: query
+          required: false
+          description: 排序；两种排序都以 id 降序作次序
+          schema:
+            type: string
+            enum:
+              - start_date_desc
+              - updated_at_desc
+            default: start_date_desc
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+        - name: cursor
+          in: query
+          required: false
+          description: 上一页返回的 next_cursor；改变筛选或排序需重新开始
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 一页旅行
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TripPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+    post:
+      tags:
+        - travel
+      operationId: createTrip
+      summary: 新建旅行；币种默认 CNY，时区默认账号默认时区
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TripCreate'
+      responses:
+        '201':
+          description: 已创建；data 为旅行的当前资源
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WriteResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /trips/{trip_id}:
+    parameters:
+      - name: trip_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags:
+        - travel
+      operationId: getTrip
+      summary: 单个旅行的规范资源；回收站中的旅行返回 410 TRIP_DELETED
+      responses:
+        '200':
+          description: 旅行，带 ETag
+          headers:
+            ETag:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TripResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '410':
+          $ref: '#/components/responses/Gone'
+    patch:
+      tags:
+        - travel
+      operationId: updateTrip
+      summary: 局部更新；字段级合并，日期修改保留原行程，总预算在此修改
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TripPatch'
+      responses:
+        '200':
+          description: 已更新；warnings 可能含 MERGED_WITH_NEWER_VERSION、ITINERARY_OUTSIDE_TRIP_DATES、TIMEZONE_INTERPRETATION_CHANGED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WriteResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '410':
+          $ref: '#/components/responses/Gone'
+        '412':
+          $ref: '#/components/responses/PreconditionFailed'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '428':
+          $ref: '#/components/responses/VersionRequired'
+    delete:
+      tags:
+        - travel
+      operationId: trashTrip
+      summary: 整趟旅行进入回收站（30 天内可恢复）；要求版本相等
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '200':
+          description: 已进入回收站；data 为带 deleted_at 与 purge_after_at 的旅行
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WriteResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '410':
+          $ref: '#/components/responses/Gone'
+        '412':
+          $ref: '#/components/responses/PreconditionFailed'
+        '428':
+          $ref: '#/components/responses/VersionRequired'
+  /trips/{trip_id}/archive:
+    parameters:
+      - name: trip_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      tags:
+        - travel
+      operationId: setTripArchived
+      summary: 归档或取消归档；归档后仍允许修正；要求版本相等
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ArchiveRequest'
+      responses:
+        '200':
+          description: 已更新
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WriteResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '410':
+          $ref: '#/components/responses/Gone'
+        '412':
+          $ref: '#/components/responses/PreconditionFailed'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '428':
+          $ref: '#/components/responses/VersionRequired'
+  /recycle-bin/trips:
+    get:
+      tags:
+        - travel
+      operationId: listTrashedTrips
+      summary: 回收站旅行；按删除时间倒序，返回恢复截止时间与永久清理状态
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 一页回收站旅行
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrashedTripPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /recycle-bin/trips/{trip_id}:
+    parameters:
+      - name: trip_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags:
+        - travel
+      operationId: getTrashedTrip
+      summary: 本人回收站中的旅行，提供最新版本；不在回收站的旅行返回 404
+      responses:
+        '200':
+          description: 回收站旅行，带 ETag
+          headers:
+            ETag:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrashedTripResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /recycle-bin/trips/{trip_id}/restore:
+    parameters:
+      - name: trip_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      tags:
+        - travel
+      operationId: restoreTrip
+      summary: 恢复整趟旅行；须在 purge_after_at 前且未请求永久清理，否则 409 RESTORE_UNAVAILABLE
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '200':
+          description: 已恢复；变更日志中的 trip 事件带 requires_snapshot
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WriteResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '412':
+          $ref: '#/components/responses/PreconditionFailed'
+        '428':
+          $ref: '#/components/responses/VersionRequired'
+  /recycle-bin/trips/{trip_id}/purge:
+    parameters:
+      - name: trip_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      tags:
+        - travel
+      operationId: purgeTrip
+      summary: 请求永久清理；需要近期密码复验与明确确认，affected 中返回清理任务
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PurgeTripRequest'
+      responses:
+        '202':
+          description: 已受理；affected 含 type=deletion_job 的任务引用，version 为 null
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WriteResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '412':
+          $ref: '#/components/responses/PreconditionFailed'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '428':
+          $ref: '#/components/responses/VersionRequired'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: 15 分钟有效的访问令牌；刷新与会话规则见接口设计 3.1
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: 写请求的操作编号（UUID）；相同成功操作重试复用同一键
+      schema:
+        type: string
+        format: uuid
+    IfMatch:
+      name: If-Match
+      in: header
+      required: false
+      description: 客户端所基于的资源版本，形如 "7"（带引号）
+      schema:
+        type: string
+        pattern: ^"[1-9][0-9]*"$
+  schemas:
+    Problem:
+      type: object
+      description: 统一错误响应，媒体类型 application/problem+json；代码清单见接口设计 1.4
+      required:
+        - type
+        - title
+        - status
+        - code
+        - request_id
+      properties:
+        type:
+          type: string
+          description: 问题类型 URI；P0 固定为 about:blank
+          example: about:blank
+        title:
+          type: string
+          description: 简短的人可读标题
+        status:
+          type: integer
+          format: int32
+          description: 与响应相同的 HTTP 状态码
+        code:
+          type: string
+          description: 稳定的错误代码，例如 VERSION_CONFLICT
+          pattern: ^[A-Z][A-Z0-9_]*$
+        detail:
+          type: string
+          description: 面向用户的说明，可直接展示
+        request_id:
+          type: string
+          description: 与响应头 X-Request-ID 相同
+        errors:
+          type: array
+          description: 422 VALIDATION_FAILED 时的字段级错误
+          items:
+            $ref: '#/components/schemas/FieldError'
+        conflict:
+          $ref: '#/components/schemas/VersionConflict'
+    FieldError:
+      type: object
+      required:
+        - field
+        - code
+        - message
+      properties:
+        field:
+          type: string
+          description: 出错字段的 JSON 路径，例如 amount 或 items[2].name
+        code:
+          type: string
+          description: 稳定的校验错误代码
+        message:
+          type: string
+          description: 面向用户的说明，可直接展示
+    VersionConflict:
+      type: object
+      description: 412 VERSION_CONFLICT 时附带的冲突上下文
+      required:
+        - entity_type
+        - entity_id
+        - expected_version
+        - current_version
+      properties:
+        entity_type:
+          type: string
+        entity_id:
+          type: string
+          format: uuid
+        expected_version:
+          type: string
+          description: 客户端提交的基线版本，正整数十进制字符串
+          pattern: ^[1-9][0-9]*$
+        current_version:
+          type: string
+          description: 服务端当前版本，正整数十进制字符串
+          pattern: ^[1-9][0-9]*$
+        conflicting_fields:
+          type: array
+          nullable: true
+          description: 本次提交中与基线之后变更相交的字段；因日志过期无法判断时为 null
+          items:
+            type: string
+        current:
+          type: object
+          nullable: true
+          description: 经权限与白名单校验的完整当前资源；删除冲突时为 null
+          additionalProperties: true
+    Money:
+      type: string
+      description: |
+        非科学计数法的十进制字符串，无符号、无分组符，小数位不超过币种 minor_units；
+        服务端按币种规范化（"128.5" 与 "128.50" 相同），超精度被拒绝。存储上限 NUMERIC(18,4)，最多 14 位整数。
+      pattern: ^[0-9]{1,14}(\.[0-9]{1,4})?$
+      example: '128.50'
+    CurrencyCode:
+      type: string
+      description: 支持清单内的 ISO 4217 三字母大写代码；清单见 Metadata.currencies
+      pattern: ^[A-Z]{3}$
+      example: CNY
+    Version:
+      type: string
+      description: 资源版本，正整数十进制字符串
+      pattern: ^[1-9][0-9]*$
+      example: '7'
+    Instant:
+      type: string
+      format: date-time
+      description: RFC 3339 UTC 时间点，例如 2026-09-11T08:30:00Z
+    Date:
+      type: string
+      description: YYYY-MM-DD，不带时区
+      pattern: ^\d{4}-\d{2}-\d{2}$
+      example: '2026-10-01'
+    LocalDateTime:
+      type: string
+      description: YYYY-MM-DDTHH:mm:ss，不带 Z 或偏移，按旅行 timezone 解释
+      pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$
+      example: '2026-10-02T14:30:00'
+    EntityRef:
+      type: object
+      required:
+        - type
+        - id
+        - version
+      properties:
+        type:
+          type: string
+        id:
+          type: string
+          format: uuid
+        version:
+          type: string
+          nullable: true
+          description: 资源版本；任务等没有版本时为 null
+          pattern: ^[1-9][0-9]*$
+    WriteResult:
+      type: object
+      description: 写操作的统一响应（接口设计 1.4）；data 为 primary 的当前规范资源
+      x-go-type: write.Result
+      x-go-type-import:
+        path: tripfolio/server/internal/foundation/write
+      required:
+        - operation_id
+        - primary
+        - affected
+        - commit_cursor
+        - warnings
+        - replayed
+        - data
+      properties:
+        operation_id:
+          type: string
+          format: uuid
+        primary:
+          type: object
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/EntityRef'
+        affected:
+          type: array
+          items:
+            $ref: '#/components/schemas/EntityRef'
+        commit_cursor:
+          type: string
+          nullable: true
+        warnings:
+          type: array
+          items:
+            type: string
+        replayed:
+          type: boolean
+        data:
+          type: object
+          nullable: true
+          additionalProperties: true
+          description: primary 资源的当前表示，结构随资源类型而定；目标已永久清理时为 null
+    WriteResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: '#/components/schemas/WriteResult'
+    Metadata:
+      type: object
+      required:
+        - protocol_version
+        - default_currency_code
+        - currencies
+        - ledger_kinds
+        - expense_category_icons
+        - packing_categories
+        - packing_statuses
+        - packing_library_version
+        - itinerary_kinds
+        - itinerary_statuses
+        - reservation_kinds
+        - upload_limits
+        - map
+      properties:
+        protocol_version:
+          type: integer
+          format: int32
+          description: 同步协议版本，P0 为 1
+        default_currency_code:
+          $ref: '#/components/schemas/CurrencyCode'
+        currencies:
+          type: array
+          items:
+            $ref: '#/components/schemas/Currency'
+        ledger_kinds:
+          type: array
+          items:
+            type: string
+          description: 账目类型：expense、refund
+        expense_category_icons:
+          type: array
+          items:
+            type: string
+          description: 账单分类可选的图标键集合
+        packing_categories:
+          type: array
+          items:
+            type: string
+          description: 行李物品分类：documents、electronics、clothing、daily、food、medicine、other
+        packing_statuses:
+          type: array
+          items:
+            type: string
+          description: 行李物品状态：pending、ready、packed
+        packing_library_version:
+          type: string
+          description: 内置物品库版本
+        itinerary_kinds:
+          type: array
+          items:
+            type: string
+          description: 行程项目类型：attraction、transport、lodging、dining、other
+        itinerary_statuses:
+          type: array
+          items:
+            type: string
+          description: 行程项目状态：pending、completed、skipped
+        reservation_kinds:
+          type: array
+          items:
+            type: string
+          description: 预订类型：transport、lodging、attraction、other
+        upload_limits:
+          $ref: '#/components/schemas/UploadLimits'
+        map:
+          $ref: '#/components/schemas/MapSettings'
+    Currency:
+      type: object
+      required:
+        - code
+        - minor_units
+      properties:
+        code:
+          $ref: '#/components/schemas/CurrencyCode'
+        minor_units:
+          type: integer
+          format: int32
+          minimum: 0
+          maximum: 4
+          description: 小数位数；JPY/KRW/VND 为 0，KWD/BHD 为 3，其余为 2
+    UploadLimits:
+      type: object
+      required:
+        - image_max_bytes
+        - pdf_max_bytes
+        - image_media_types
+        - pdf_media_types
+      properties:
+        image_max_bytes:
+          type: integer
+          format: int64
+          description: 单张图片上限，初始 20 MiB
+        pdf_max_bytes:
+          type: integer
+          format: int64
+          description: 单个 PDF 上限，初始 50 MiB
+        image_media_types:
+          type: array
+          items:
+            type: string
+          description: 允许上传的图片 MIME，其他格式由客户端转换后上传
+        pdf_media_types:
+          type: array
+          items:
+            type: string
+    MapSettings:
+      type: object
+      required:
+        - provider
+        - coordinate_system
+      properties:
+        provider:
+          type: string
+          enum:
+            - amap
+          description: 地图与定位供应商
+        coordinate_system:
+          type: string
+          enum:
+            - GCJ-02
+          description: 所有坐标字段使用的坐标系
+    MetadataResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: '#/components/schemas/Metadata'
+    ClientInfo:
+      type: object
+      required:
+        - kind
+        - device_id
+      properties:
+        kind:
+          type: string
+          enum:
+            - web
+            - android
+            - harmony
+        device_id:
+          type: string
+          format: uuid
+          description: 客户端安装标识，不作为授权凭据
+        device_name:
+          type: string
+          maxLength: 120
+    EmailChallengeRequest:
+      type: object
+      required:
+        - purpose
+        - email
+      properties:
+        purpose:
+          type: string
+          enum:
+            - register
+            - reset_password
+        email:
+          type: string
+          maxLength: 254
+    EmailChallengeResult:
+      type: object
+      required:
+        - challenge_id
+        - expires_in_seconds
+        - retry_after_seconds
+      properties:
+        challenge_id:
+          type: string
+          format: uuid
+        expires_in_seconds:
+          type: integer
+        retry_after_seconds:
+          type: integer
+    EmailChallengeResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: '#/components/schemas/EmailChallengeResult'
+    RegisterRequest:
+      type: object
+      required:
+        - challenge_id
+        - email
+        - code
+        - password
+        - nickname
+        - client
+      properties:
+        challenge_id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          maxLength: 254
+        code:
+          type: string
+          pattern: ^[0-9]{6}$
+        password:
+          type: string
+          minLength: 10
+          maxLength: 128
+        nickname:
+          type: string
+          minLength: 1
+          maxLength: 64
+        client:
+          $ref: '#/components/schemas/ClientInfo'
+    LoginRequest:
+      type: object
+      required:
+        - email
+        - password
+        - client
+      properties:
+        email:
+          type: string
+          maxLength: 254
+        password:
+          type: string
+          maxLength: 128
+        client:
+          $ref: '#/components/schemas/ClientInfo'
+    RefreshRequest:
+      type: object
+      description: 网页端使用 Cookie，正文可为空对象；原生端提供 refresh_token
+      properties:
+        refresh_token:
+          type: string
+          maxLength: 200
+    ResetPasswordRequest:
+      type: object
+      required:
+        - challenge_id
+        - email
+        - code
+        - new_password
+      properties:
+        challenge_id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          maxLength: 254
+        code:
+          type: string
+          pattern: ^[0-9]{6}$
+        new_password:
+          type: string
+          minLength: 10
+          maxLength: 128
+    ReauthenticateRequest:
+      type: object
+      required:
+        - password
+      properties:
+        password:
+          type: string
+          maxLength: 128
+    ChangePasswordRequest:
+      type: object
+      required:
+        - current_password
+        - new_password
+      properties:
+        current_password:
+          type: string
+          maxLength: 128
+        new_password:
+          type: string
+          minLength: 10
+          maxLength: 128
+    Account:
+      type: object
+      x-go-type: account.AccountResource
+      x-go-type-import:
+        path: tripfolio/server/internal/modules/account
+      required:
+        - id
+        - email
+        - nickname
+        - avatar_asset_id
+        - default_timezone
+        - status
+        - version
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+        nickname:
+          type: string
+        avatar_asset_id:
+          type: string
+          format: uuid
+          nullable: true
+        default_timezone:
+          type: string
+        status:
+          type: string
+          enum:
+            - active
+            - deleting
+        version:
+          $ref: '#/components/schemas/Version'
+        created_at:
+          $ref: '#/components/schemas/Instant'
+        updated_at:
+          $ref: '#/components/schemas/Instant'
+    AccountResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: '#/components/schemas/Account'
+    AuthResult:
+      type: object
+      required:
+        - access_token
+        - token_type
+        - expires_in_seconds
+        - account
+      properties:
+        access_token:
+          type: string
+        token_type:
+          type: string
+          enum:
+            - Bearer
+        expires_in_seconds:
+          type: integer
+        refresh_token:
+          type: string
+          description: 仅原生端返回；网页端通过 HttpOnly Cookie 设置
+        csrf_token:
+          type: string
+          description: 仅网页端返回，同时以非 HttpOnly Cookie 设置
+        account:
+          $ref: '#/components/schemas/Account'
+    AuthResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: '#/components/schemas/AuthResult'
+    AccountPatch:
+      type: object
+      description: 缺省字段保持原值；avatar_asset_id 显式 null 表示清空
+      properties:
+        nickname:
+          type: string
+          minLength: 1
+          maxLength: 64
+        avatar_asset_id:
+          type: string
+          format: uuid
+          nullable: true
+        default_timezone:
+          type: string
+          maxLength: 64
+    Session:
+      type: object
+      x-go-type: account.SessionResource
+      x-go-type-import:
+        path: tripfolio/server/internal/modules/account
+      required:
+        - id
+        - client_kind
+        - device_name
+        - created_at
+        - last_seen_at
+        - expires_at
+        - is_current
+      properties:
+        id:
+          type: string
+          format: uuid
+        client_kind:
+          type: string
+          enum:
+            - web
+            - android
+            - harmony
+        device_name:
+          type: string
+          nullable: true
+        created_at:
+          $ref: '#/components/schemas/Instant'
+        last_seen_at:
+          $ref: '#/components/schemas/Instant'
+        expires_at:
+          $ref: '#/components/schemas/Instant'
+        is_current:
+          type: boolean
+    SessionListResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Session'
+    ExpenseCategory:
+      type: object
+      x-go-type: finance.CategoryResource
+      x-go-type-import:
+        path: tripfolio/server/internal/modules/finance
+      required:
+        - id
+        - name
+        - icon
+        - sort_order
+        - is_preset
+        - version
+        - created_at
+        - updated_at
+        - deleted_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          minLength: 1
+          maxLength: 40
+        icon:
+          type: string
+          nullable: true
+          description: Metadata.expense_category_icons 中的键
+        sort_order:
+          type: integer
+          minimum: 0
+        is_preset:
+          type: boolean
+        version:
+          $ref: '#/components/schemas/Version'
+        created_at:
+          $ref: '#/components/schemas/Instant'
+        updated_at:
+          $ref: '#/components/schemas/Instant'
+        deleted_at:
+          type: string
+          format: date-time
+          nullable: true
+    ExpenseCategoryResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: '#/components/schemas/ExpenseCategory'
+    ExpenseCategoryListResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExpenseCategory'
+    ExpenseCategoryCreate:
+      type: object
+      required:
+        - id
+        - name
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          minLength: 1
+          maxLength: 40
+        icon:
+          type: string
+          nullable: true
+        sort_order:
+          type: integer
+          minimum: 0
+          description: 缺省时追加到末尾
+    ExpenseCategoryPatch:
+      type: object
+      description: 缺省字段保持原值；icon 显式 null 表示清空
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 40
+        icon:
+          type: string
+          nullable: true
+        sort_order:
+          type: integer
+          minimum: 0
+    Trip:
+      type: object
+      description: 旅行的规范资源（接口设计 3.2）；同一结构也是同步日志与快照中的表示
+      x-go-type: trip.Resource
+      x-go-type-import:
+        path: tripfolio/server/internal/modules/travel/trip
+      required:
+        - id
+        - name
+        - start_date
+        - end_date
+        - destination
+        - notes
+        - timezone
+        - currency_code
+        - budget_amount
+        - version
+        - created_at
+        - updated_at
+        - archived_at
+        - currency_locked_at
+        - deleted_at
+        - purge_after_at
+        - purge_requested_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        start_date:
+          $ref: '#/components/schemas/Date'
+        end_date:
+          $ref: '#/components/schemas/Date'
+        destination:
+          type: string
+          maxLength: 300
+        notes:
+          type: string
+          maxLength: 10000
+        timezone:
+          type: string
+          maxLength: 64
+          description: 本次旅行的唯一 IANA 时区，例如 Asia/Tokyo
+        currency_code:
+          $ref: '#/components/schemas/CurrencyCode'
+        budget_amount:
+          type: string
+          nullable: true
+          description: 总预算；null 表示未设置，"0.00" 表示零预算；格式同 Money
+          pattern: ^[0-9]{1,14}(\.[0-9]{1,4})?$
+        version:
+          $ref: '#/components/schemas/Version'
+        created_at:
+          $ref: '#/components/schemas/Instant'
+        updated_at:
+          $ref: '#/components/schemas/Instant'
+        archived_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: 归档时间；归档与旅行阶段独立
+        currency_locked_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: 存在有效账目时非空，此时币种不可改
+        deleted_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: 进入回收站的时间
+        purge_after_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: 回收站自动清理截止时间，在此之前可恢复
+        purge_requested_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: 已请求永久清理的时间，非空后不能再恢复
+    TripListItem:
+      description: 列表项：Trip 加按旅行时区当天计算的阶段；列表不提供单资源 ETag
+      x-go-type: trip.ListItem
+      x-go-type-import:
+        path: tripfolio/server/internal/modules/travel/trip
+      allOf:
+        - $ref: '#/components/schemas/Trip'
+        - type: object
+          required:
+            - phase
+          properties:
+            phase:
+              type: string
+              enum:
+                - planned
+                - ongoing
+                - ended
+              description: planned 待出发 / ongoing 旅行中 / ended 已结束
+    TrashedTrip:
+      description: 回收站中的旅行；按 purge_after_at 展示剩余保留时间，能否恢复以服务端判定为准
+      x-go-type: trip.Resource
+      x-go-type-import:
+        path: tripfolio/server/internal/modules/travel/trip
+      allOf:
+        - $ref: '#/components/schemas/Trip'
+    TripResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: '#/components/schemas/Trip'
+    TrashedTripResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: '#/components/schemas/TrashedTrip'
+    TripPage:
+      type: object
+      description: Page<TripListItem>；键集分页，游标绑定账号、筛选与排序
+      required:
+        - items
+        - next_cursor
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TripListItem'
+        next_cursor:
+          type: string
+          nullable: true
+          description: 下一页游标；没有更多时为 null
+    TrashedTripPage:
+      type: object
+      description: Page<TrashedTrip>，按删除时间倒序
+      required:
+        - items
+        - next_cursor
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TrashedTrip'
+        next_cursor:
+          type: string
+          nullable: true
+    TripCreate:
+      type: object
+      description: 创建旅行；currency_code 默认 CNY，timezone 默认账号 default_timezone
+      required:
+        - id
+        - name
+        - start_date
+        - end_date
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        start_date:
+          $ref: '#/components/schemas/Date'
+        end_date:
+          $ref: '#/components/schemas/Date'
+        destination:
+          type: string
+          maxLength: 300
+        notes:
+          type: string
+          maxLength: 10000
+        timezone:
+          type: string
+          maxLength: 64
+        currency_code:
+          $ref: '#/components/schemas/CurrencyCode'
+        budget_amount:
+          type: string
+          nullable: true
+          pattern: ^[0-9]{1,14}(\.[0-9]{1,4})?$
+          description: 总预算，按币种小数位规范化；缺省或 null 表示未设置
+    TripPatch:
+      type: object
+      description: |
+        局部更新：缺省字段保持原值；budget_amount 显式 null 表示清空。
+        修改日期保留已有行程；修改 timezone 只改变当地时间的解释；
+        修改 currency_code 需要旅行没有有效账目（否则 409 CURRENCY_LOCKED），
+        且总预算与行程预计费用都为空（否则 409 CURRENCY_AMOUNTS_EXIST）。
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        start_date:
+          $ref: '#/components/schemas/Date'
+        end_date:
+          $ref: '#/components/schemas/Date'
+        destination:
+          type: string
+          maxLength: 300
+        notes:
+          type: string
+          maxLength: 10000
+        timezone:
+          type: string
+          maxLength: 64
+        currency_code:
+          $ref: '#/components/schemas/CurrencyCode'
+        budget_amount:
+          type: string
+          nullable: true
+          pattern: ^[0-9]{1,14}(\.[0-9]{1,4})?$
+    ArchiveRequest:
+      type: object
+      required:
+        - archived
+      properties:
+        archived:
+          type: boolean
+          description: true 归档，false 取消归档；已处于目标状态时原样成功
+    PurgeTripRequest:
+      type: object
+      description: 永久清理回收站中的旅行；需要 If-Match、幂等键与本会话 5 分钟内的密码复验
+      required:
+        - confirm
+      properties:
+        confirm:
+          type: boolean
+          description: 必须为 true，表示用户已确认不可恢复
+  responses:
+    BadRequest:
+      description: 请求无法解析、含未知字段或游标无效（MALFORMED_REQUEST、INVALID_CURSOR）
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Unauthorized:
+      description: 缺少身份或会话失效（AUTH_REQUIRED、INVALID_CREDENTIALS、SESSION_EXPIRED）
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Forbidden:
+      description: 账号注销中、需要密码复验或跨站校验失败（ACCOUNT_DELETING、REAUTH_REQUIRED、CSRF_FAILED）
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    NotFound:
+      description: 资源不存在、非本人或路径错属（RESOURCE_NOT_FOUND）
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Conflict:
+      description: 409 类错误（IDEMPOTENCY_CONFLICT、ID_ALREADY_USED、ACCOUNT_ALREADY_EXISTS、CATEGORY_IN_USE 等）
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Gone:
+      description: 资源已删除或已清理（RESOURCE_GONE、TRIP_DELETED）
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    PreconditionFailed:
+      description: 412 VERSION_CONFLICT，conflict 中给出当前版本、相交字段与当前内容
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    VersionRequired:
+      description: 428 VERSION_REQUIRED，缺少 If-Match
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    ValidationFailed:
+      description: 422 VALIDATION_FAILED 或其他 422 代码，errors 给出字段明细
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    RateLimited:
+      description: 429 RATE_LIMITED，带 Retry-After
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    InternalError:
+      description: 服务端错误（INTERNAL_ERROR）或依赖不可用（DEPENDENCY_UNAVAILABLE）
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'

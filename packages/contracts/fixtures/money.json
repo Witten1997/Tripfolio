@@ -1,0 +1,53 @@
+{
+  "$comment": "金额规范化跨语言样例。Go 侧 foundation/money 与前端 shared/money 都用本文件驱动测试。canonical 为期望输出；error 为期望的错误代码。",
+  "cases": [
+    { "id": "cny-two-decimals", "input": "128.50", "minor_units": 2, "canonical": "128.50" },
+    { "id": "cny-one-decimal-padded", "input": "128.5", "minor_units": 2, "canonical": "128.50" },
+    { "id": "cny-integer-padded", "input": "128", "minor_units": 2, "canonical": "128.00" },
+    { "id": "cny-zero", "input": "0", "minor_units": 2, "canonical": "0.00" },
+    { "id": "cny-leading-zeros-stripped", "input": "007.5", "minor_units": 2, "canonical": "7.50" },
+    { "id": "cny-zero-point-zero", "input": "0.0", "minor_units": 2, "canonical": "0.00" },
+    { "id": "jpy-integer", "input": "1200", "minor_units": 0, "canonical": "1200" },
+    { "id": "jpy-leading-zeros", "input": "0012", "minor_units": 0, "canonical": "12" },
+    { "id": "kwd-three-decimals", "input": "3.5", "minor_units": 3, "canonical": "3.500" },
+    {
+      "id": "max-integer-digits",
+      "input": "99999999999999.99",
+      "minor_units": 2,
+      "canonical": "99999999999999.99"
+    },
+    { "id": "cny-scale-exceeded", "input": "1.234", "minor_units": 2, "error": "SCALE_EXCEEDED" },
+    {
+      "id": "cny-trailing-zero-beyond-scale",
+      "input": "128.500",
+      "minor_units": 2,
+      "error": "SCALE_EXCEEDED"
+    },
+    {
+      "id": "jpy-decimal-rejected",
+      "input": "1200.0",
+      "minor_units": 0,
+      "error": "SCALE_EXCEEDED"
+    },
+    { "id": "negative-rejected", "input": "-1", "minor_units": 2, "error": "NEGATIVE" },
+    { "id": "plus-sign-rejected", "input": "+1", "minor_units": 2, "error": "INVALID_FORMAT" },
+    { "id": "scientific-rejected", "input": "1e3", "minor_units": 2, "error": "INVALID_FORMAT" },
+    { "id": "leading-dot-rejected", "input": ".5", "minor_units": 2, "error": "INVALID_FORMAT" },
+    { "id": "trailing-dot-rejected", "input": "5.", "minor_units": 2, "error": "INVALID_FORMAT" },
+    { "id": "grouping-rejected", "input": "1,000", "minor_units": 2, "error": "INVALID_FORMAT" },
+    { "id": "whitespace-rejected", "input": " 1", "minor_units": 2, "error": "INVALID_FORMAT" },
+    { "id": "empty-rejected", "input": "", "minor_units": 2, "error": "INVALID_FORMAT" },
+    {
+      "id": "fullwidth-digits-rejected",
+      "input": "１２",
+      "minor_units": 2,
+      "error": "INVALID_FORMAT"
+    },
+    {
+      "id": "too-many-integer-digits",
+      "input": "100000000000000",
+      "minor_units": 2,
+      "error": "TOO_LARGE"
+    }
+  ]
+}

@@ -1,0 +1,31 @@
+{
+  "name": "@tripfolio/contracts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Tripfolio API 契约：OpenAPI 源文件、打包结果、TypeScript 类型与跨语言测试样例",
+  "exports": {
+    "./openapi/v1": {
+      "types": "./generated/openapi.v1.d.ts"
+    },
+    "./fixtures/money.json": "./fixtures/money.json"
+  },
+  "files": [
+    "openapi",
+    "dist",
+    "generated",
+    "fixtures"
+  ],
+  "scripts": {
+    "lint": "redocly lint openapi/v1/openapi.yaml",
+    "bundle": "redocly bundle openapi/v1/openapi.yaml -o dist/openapi.v1.yaml",
+    "gen:ts": "openapi-typescript dist/openapi.v1.yaml -o generated/openapi.v1.d.ts --export-type --alphabetize",
+    "build": "pnpm lint && pnpm bundle && pnpm gen:ts",
+    "check": "pnpm build && git diff --exit-code -- dist generated"
+  },
+  "devDependencies": {
+    "@redocly/cli": "2.52.1",
+    "openapi-typescript": "7.13.0",
+    "typescript": "5.9.3"
+  }
+}

@@ -1,0 +1,12 @@
+# Redocly 配置：lint 使用 recommended 规则集，关闭两条与本项目约定冲突的规则。
+extends:
+  - recommended
+rules:
+  # schemas 目录是共享模型库，允许暂未被路径引用的模型存在（例如 Money、VersionConflict）
+  no-unused-components: off
+  # 无需身份的只读接口（如 /metadata）没有 4xx 响应
+  operation-4xx-response: off
+  # 错误响应统一在 components.responses 定义，此处不强制每个操作重复声明
+  operation-operationId-unique: error
+  operation-summary: error
+  no-ambiguous-paths: error

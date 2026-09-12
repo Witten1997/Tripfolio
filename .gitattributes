@@ -1,0 +1,9 @@
+# 统一 LF；Windows 检出不做换行转换
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.jar binary
+*.keystore binary
+*.jks binary
+gradlew text eol=lf
+*.bat text eol=crlf
