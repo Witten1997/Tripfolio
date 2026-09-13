@@ -311,15 +311,15 @@ defineExpose({ open: editor.open })
   width: 100%;
 }
 .editor-hint {
-  color: var(--el-text-color-secondary);
+  color: var(--tf-text-3);
   font-size: 12px;
   line-height: 1.6;
   margin: 0 0 14px;
 }
 .conflict-panel {
-  background: var(--el-color-warning-light-9);
-  border: 1px solid var(--el-color-warning-light-5);
-  border-radius: 8px;
+  background: var(--tf-warning-soft);
+  border: 1px solid var(--tf-warning);
+  border-radius: var(--tf-radius-control);
   padding: 16px;
 }
 .conflict-panel h3 {
@@ -340,7 +340,7 @@ defineExpose({ open: editor.open })
 .conflict-table td {
   text-align: left;
   vertical-align: top;
-  border-bottom: 1px solid var(--el-border-color);
+  border-bottom: 1px solid var(--tf-line);
   padding: 8px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;

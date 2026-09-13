@@ -6,7 +6,7 @@
 
 ```text
 apps/
-  client/     Vue 3 前端：桌面壳、移动壳、Capacitor android/
+  client/     Vue 3 前端：桌面壳、移动壳、Capacitor android/；主题体系（--tf-* 令牌、src/themes/）见 docs/architecture/2026-09-13-前端主题体系设计.md
   server/     Go API、worker、migrate
 packages/
   contracts/  OpenAPI 契约、生成的 TS 类型、跨语言测试样例
@@ -31,7 +31,7 @@ pnpm install
 pnpm --filter @tripfolio/contracts build            # 契约 lint、打包与 TS 类型
 
 docker compose -f infra/compose.yaml up -d postgres
-export TRIPFOLIO_DATABASE_URL=postgres://tripfolio:tripfolio@localhost:5432/tripfolio?sslmode=disable
+cp apps/server/.env.example apps/server/.env         # 开发配置，启动时自动读取；也可直接 export 同名变量
 (cd apps/server && go run ./cmd/migrate up && go run ./cmd/api)   # http://localhost:8080/api/v1/metadata
 
 pnpm --filter @tripfolio/client dev                 # http://localhost:5173

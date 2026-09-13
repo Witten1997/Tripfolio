@@ -74,6 +74,11 @@ apps/client/android/captures/
 !.vscode/extensions.json
 .claude/settings.local.json
 CLAUDE.local.md
+
+# 本机 skill 安装产物（.claude/skills 是指向 .agents 的绝对路径符号链接，换机器即失效）
+.agents/
+.claude/skills/
+skills-lock.json
 .DS_Store
 Thumbs.db
 Desktop.ini

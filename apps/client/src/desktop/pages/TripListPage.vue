@@ -251,7 +251,12 @@ onMounted(() => {
           ><span>{{ group.trips.length }} 趟</span>
         </h2>
         <div class="trip-grid">
-          <ElCard v-for="trip in group.trips" :key="trip.id" shadow="hover" class="trip-card">
+          <ElCard
+            v-for="trip in group.trips"
+            :key="trip.id"
+            shadow="hover"
+            class="trip-card tf-card"
+          >
             <div class="trip-card-title">
               <h3>{{ trip.name }}</h3>
               <ElTag v-if="trip.archived_at" type="info" size="small">已归档</ElTag>
@@ -321,11 +326,11 @@ onMounted(() => {
 .page-heading h1 {
   margin: 0;
   font-size: 28px;
-  color: var(--el-text-color-primary);
+  color: var(--tf-text-1);
 }
 .page-heading p {
   margin: 8px 0 0;
-  color: var(--el-text-color-secondary);
+  color: var(--tf-text-3);
 }
 .heading-actions {
   display: flex;
@@ -346,7 +351,7 @@ onMounted(() => {
 .trip-filters label {
   display: block;
   font-size: 12px;
-  color: var(--el-text-color-regular);
+  color: var(--tf-text-2);
   margin-bottom: 8px;
 }
 .search-input {
@@ -359,12 +364,12 @@ onMounted(() => {
   gap: 16px;
   align-items: center;
   font-size: 12px;
-  color: var(--el-text-color-secondary);
+  color: var(--tf-text-3);
 }
 .list-skeleton {
   padding: 24px;
-  background: var(--el-bg-color);
-  border-radius: 8px;
+  background: var(--tf-surface);
+  border-radius: var(--tf-radius-control);
 }
 .retry-button {
   margin-top: 16px;
@@ -378,12 +383,21 @@ onMounted(() => {
 .trip-group h2 > span:last-child {
   font-size: 13px;
   font-weight: normal;
-  color: var(--el-text-color-secondary);
+  color: var(--tf-text-3);
 }
 .trip-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
   gap: 16px;
+}
+.trip-card {
+  transition:
+    transform var(--tf-duration) var(--tf-ease),
+    box-shadow var(--tf-duration) var(--tf-ease);
+}
+.trip-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--tf-shadow-2);
 }
 .trip-card :deep(.el-card__body) {
   display: flex;
@@ -405,7 +419,7 @@ onMounted(() => {
 }
 .trip-destination {
   margin: 8px 0 16px;
-  color: var(--el-text-color-regular);
+  color: var(--tf-text-2);
   overflow-wrap: anywhere;
 }
 .trip-dates {
@@ -415,11 +429,11 @@ onMounted(() => {
 .trip-timezone {
   margin: 0 0 14px;
   font-size: 12px;
-  color: var(--el-text-color-secondary);
+  color: var(--tf-text-3);
 }
 .trip-notes {
   margin: 0 0 16px;
-  color: var(--el-text-color-secondary);
+  color: var(--tf-text-3);
   font-size: 13px;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -431,13 +445,13 @@ onMounted(() => {
   display: flex;
   gap: 16px;
   justify-content: space-between;
-  border-top: 1px solid var(--el-border-color-lighter);
+  border-top: 1px solid var(--tf-line-soft);
   padding-top: 14px;
   margin-top: auto;
   font-size: 13px;
 }
 .trip-budget > span {
-  color: var(--el-text-color-secondary);
+  color: var(--tf-text-3);
 }
 .trip-actions {
   display: flex;
@@ -453,7 +467,7 @@ onMounted(() => {
   flex-direction: column;
   align-items: center;
   gap: 12px;
-  color: var(--el-text-color-secondary);
+  color: var(--tf-text-3);
   font-size: 12px;
   padding: 8px;
 }

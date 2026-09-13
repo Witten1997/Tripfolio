@@ -12,6 +12,7 @@ export default mergeConfig(
       include: ['src/**/*.spec.ts'],
       exclude: [...configDefaults.exclude, 'android/**'],
       root: fileURLToPath(new URL('./', import.meta.url)),
+      css: true,
     },
   }),
 )

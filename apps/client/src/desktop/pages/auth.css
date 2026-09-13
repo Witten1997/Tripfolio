@@ -25,7 +25,7 @@
 }
 
 .auth-links a {
-  color: var(--el-color-primary);
+  color: var(--tf-accent);
   text-decoration: none;
 }
 

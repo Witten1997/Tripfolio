@@ -7,6 +7,13 @@ import type { SqlConnectionOpener } from './localdb/executor'
 
 export type PlatformKind = 'web' | 'android' | 'harmony'
 
+/** 非敏感的本地偏好（主题等）。网页用 localStorage，安卓用 Preferences 插件。 */
+export interface KeyValueStore {
+  get(key: string): Promise<string | null>
+  set(key: string, value: string): Promise<void>
+  remove(key: string): Promise<void>
+}
+
 /** 凭证等敏感值的持久存储。安卓由 Keystore 加密；网页不持久化凭证（刷新令牌在 HttpOnly Cookie）。 */
 export interface SecureStorage {
   get(key: string): Promise<string | null>
@@ -26,6 +33,7 @@ export interface Platform {
   isNative: boolean
   secureStorage: SecureStorage
   network: NetworkStatus
+  preferences: KeyValueStore
   /** 本地数据库；网页在 P0 为 null（在线使用）。 */
   localDatabase: SqlConnectionOpener | null
 }

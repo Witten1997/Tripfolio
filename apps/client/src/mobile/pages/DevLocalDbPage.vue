@@ -64,7 +64,7 @@ onMounted(async () => {
           运行自检
         </VanButton>
       </VanCell>
-      <VanNoticeBar v-if="fatal" color="#d03050" background="#fdecef" :text="fatal" />
+      <VanNoticeBar v-if="fatal" :text="fatal" />
       <template v-if="report">
         <VanCell
           title="结果"

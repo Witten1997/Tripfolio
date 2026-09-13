@@ -1,0 +1,64 @@
+/* 跨主题不变的基础规则与钩子类。主题只给 --tf-* 赋值，页面只引用 --tf-*。 */
+:root {
+  --tf-font-body:
+    system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC',
+    sans-serif;
+  --tf-font-display: var(--tf-font-body);
+  font-family: var(--tf-font-body);
+}
+
+html,
+body,
+#app {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
+    env(safe-area-inset-left);
+  background: var(--tf-canvas);
+  color: var(--tf-text-1);
+  transition: background-color var(--tf-duration) var(--tf-ease);
+}
+
+/* 壳层固定背景：主题 decor.css 在其上叠加装饰。 */
+.tf-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+  background: var(--tf-backdrop);
+}
+
+/* 页面自建面板（非组件库卡片）。 */
+.tf-surface {
+  background: var(--tf-surface);
+  border: var(--tf-surface-border);
+  border-radius: var(--tf-radius-card);
+  box-shadow: var(--tf-shadow-1), var(--tf-surface-highlight);
+}
+
+/* 顶栏与导航栏。 */
+.tf-bar {
+  background: var(--tf-surface-raised);
+  border-bottom: 1px solid var(--tf-line-soft);
+}
+
+/* 切换主题的一帧内抑制所有过渡，避免颜色拖影。 */
+.tf-theme-switching,
+.tf-theme-switching *,
+.tf-theme-switching *::before,
+.tf-theme-switching *::after {
+  transition: none !important;
+  animation: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --tf-duration-fast: 0ms;
+    --tf-duration: 0ms;
+  }
+}

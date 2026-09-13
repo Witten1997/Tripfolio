@@ -2,9 +2,11 @@ import { Capacitor } from '@capacitor/core'
 
 import { capacitorLocalDatabase } from './capacitor/localDatabase'
 import { capacitorNetwork } from './capacitor/network'
+import { capacitorPreferences } from './capacitor/preferences'
 import { capacitorSecureStorage } from './capacitor/secureStorage'
 import type { Platform, PlatformKind } from './types'
 import { webNetwork } from './web/network'
+import { webPreferences } from './web/preferences'
 import { webSecureStorage } from './web/secureStorage'
 
 export type * from './types'
@@ -24,6 +26,7 @@ function createPlatform(): Platform {
     isNative,
     secureStorage: isNative ? capacitorSecureStorage : webSecureStorage,
     network: isNative ? capacitorNetwork : webNetwork,
+    preferences: isNative ? capacitorPreferences : webPreferences,
     // 网页在 P0 只在线使用；浏览器内 SQLite（wa-sqlite）留待网页离线需求确定后接入
     localDatabase: isNative ? capacitorLocalDatabase : null,
   }

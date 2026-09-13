@@ -285,7 +285,7 @@ defineExpose({ open: manager.open })
 <style scoped>
 .category-intro {
   margin: 0 0 20px;
-  color: var(--el-text-color-secondary);
+  color: var(--tf-text-3);
   line-height: 1.7;
 }
 .category-alert {
@@ -300,7 +300,7 @@ defineExpose({ open: manager.open })
 }
 .category-toolbar > span {
   font-size: 13px;
-  color: var(--el-text-color-secondary);
+  color: var(--tf-text-3);
 }
 .category-layout.has-editor {
   display: grid;
@@ -315,10 +315,10 @@ defineExpose({ open: manager.open })
   align-items: center;
   gap: 10px;
   padding: 14px 8px;
-  border-bottom: 1px solid var(--el-border-color-lighter);
+  border-bottom: 1px solid var(--tf-line-soft);
 }
 .category-row.selected {
-  background: var(--el-color-primary-light-9);
+  background: var(--tf-accent-soft);
 }
 .category-symbol {
   width: 28px;
@@ -338,16 +338,16 @@ defineExpose({ open: manager.open })
 }
 .category-copy > span {
   font-size: 12px;
-  color: var(--el-text-color-secondary);
+  color: var(--tf-text-3);
 }
 .category-actions {
   display: flex;
   flex-shrink: 0;
 }
 .category-editor {
-  background: var(--el-fill-color-extra-light);
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 8px;
+  background: var(--tf-surface-sunken);
+  border: var(--tf-surface-border);
+  border-radius: var(--tf-radius-control);
   padding: 16px;
   align-self: start;
 }
@@ -362,7 +362,7 @@ defineExpose({ open: manager.open })
 .category-hint {
   font-size: 12px;
   line-height: 1.7;
-  color: var(--el-text-color-secondary);
+  color: var(--tf-text-3);
 }
 .category-conflict {
   font-size: 12px;

@@ -1,0 +1,119 @@
+/* 把 --tf-* 映射到 Element Plus 变量，只写一次，主题文件不碰。
+   必须在 element-plus/dist/index.css 之后引入。淡色档向 canvas 混合、深色档向 text-1 混合，
+   亮暗主题都只需提供一个主色。 */
+:root {
+  --el-color-primary: var(--tf-accent);
+  --el-color-primary-light-3: color-mix(in oklab, var(--tf-accent) 70%, var(--tf-canvas));
+  --el-color-primary-light-5: color-mix(in oklab, var(--tf-accent) 50%, var(--tf-canvas));
+  --el-color-primary-light-7: color-mix(in oklab, var(--tf-accent) 30%, var(--tf-canvas));
+  --el-color-primary-light-8: color-mix(in oklab, var(--tf-accent) 20%, var(--tf-canvas));
+  --el-color-primary-light-9: color-mix(in oklab, var(--tf-accent) 10%, var(--tf-canvas));
+  --el-color-primary-dark-2: color-mix(in oklab, var(--tf-accent) 80%, var(--tf-text-1));
+
+  --el-color-success: var(--tf-success);
+  --el-color-success-light-3: color-mix(in oklab, var(--tf-success) 70%, var(--tf-canvas));
+  --el-color-success-light-5: color-mix(in oklab, var(--tf-success) 50%, var(--tf-canvas));
+  --el-color-success-light-7: color-mix(in oklab, var(--tf-success) 30%, var(--tf-canvas));
+  --el-color-success-light-8: color-mix(in oklab, var(--tf-success) 20%, var(--tf-canvas));
+  --el-color-success-light-9: color-mix(in oklab, var(--tf-success) 10%, var(--tf-canvas));
+  --el-color-success-dark-2: color-mix(in oklab, var(--tf-success) 80%, var(--tf-text-1));
+
+  --el-color-warning: var(--tf-warning);
+  --el-color-warning-light-3: color-mix(in oklab, var(--tf-warning) 70%, var(--tf-canvas));
+  --el-color-warning-light-5: color-mix(in oklab, var(--tf-warning) 50%, var(--tf-canvas));
+  --el-color-warning-light-7: color-mix(in oklab, var(--tf-warning) 30%, var(--tf-canvas));
+  --el-color-warning-light-8: color-mix(in oklab, var(--tf-warning) 20%, var(--tf-canvas));
+  --el-color-warning-light-9: color-mix(in oklab, var(--tf-warning) 10%, var(--tf-canvas));
+  --el-color-warning-dark-2: color-mix(in oklab, var(--tf-warning) 80%, var(--tf-text-1));
+
+  --el-color-danger: var(--tf-danger);
+  --el-color-danger-light-3: color-mix(in oklab, var(--tf-danger) 70%, var(--tf-canvas));
+  --el-color-danger-light-5: color-mix(in oklab, var(--tf-danger) 50%, var(--tf-canvas));
+  --el-color-danger-light-7: color-mix(in oklab, var(--tf-danger) 30%, var(--tf-canvas));
+  --el-color-danger-light-8: color-mix(in oklab, var(--tf-danger) 20%, var(--tf-canvas));
+  --el-color-danger-light-9: color-mix(in oklab, var(--tf-danger) 10%, var(--tf-canvas));
+  --el-color-danger-dark-2: color-mix(in oklab, var(--tf-danger) 80%, var(--tf-text-1));
+
+  --el-color-error: var(--tf-danger);
+  --el-color-error-light-3: var(--el-color-danger-light-3);
+  --el-color-error-light-5: var(--el-color-danger-light-5);
+  --el-color-error-light-7: var(--el-color-danger-light-7);
+  --el-color-error-light-8: var(--el-color-danger-light-8);
+  --el-color-error-light-9: var(--el-color-danger-light-9);
+  --el-color-error-dark-2: var(--el-color-danger-dark-2);
+
+  --el-color-info: var(--tf-info);
+  --el-color-info-light-3: color-mix(in oklab, var(--tf-info) 70%, var(--tf-canvas));
+  --el-color-info-light-5: color-mix(in oklab, var(--tf-info) 50%, var(--tf-canvas));
+  --el-color-info-light-7: color-mix(in oklab, var(--tf-info) 30%, var(--tf-canvas));
+  --el-color-info-light-8: color-mix(in oklab, var(--tf-info) 20%, var(--tf-canvas));
+  --el-color-info-light-9: color-mix(in oklab, var(--tf-info) 10%, var(--tf-canvas));
+  --el-color-info-dark-2: color-mix(in oklab, var(--tf-info) 80%, var(--tf-text-1));
+
+  --el-bg-color: var(--tf-surface-raised);
+  --el-bg-color-page: var(--tf-canvas);
+  --el-bg-color-overlay: var(--tf-surface-raised);
+  --el-text-color-primary: var(--tf-text-1);
+  --el-text-color-regular: var(--tf-text-2);
+  --el-text-color-secondary: var(--tf-text-3);
+  --el-text-color-placeholder: var(--tf-text-3);
+  --el-text-color-disabled: var(--tf-text-disabled);
+  --el-border-color: var(--tf-line);
+  --el-border-color-light: var(--tf-line-soft);
+  --el-border-color-lighter: var(--tf-line-soft);
+  --el-border-color-extra-light: var(--tf-line-soft);
+  --el-border-color-dark: var(--tf-line);
+  --el-border-color-darker: var(--tf-line);
+  --el-fill-color: var(--tf-surface-sunken);
+  --el-fill-color-light: var(--tf-surface-sunken);
+  --el-fill-color-lighter: var(--tf-surface-sunken);
+  --el-fill-color-extra-light: var(--tf-surface-sunken);
+  --el-fill-color-dark: var(--tf-line-soft);
+  --el-fill-color-darker: var(--tf-line);
+  --el-fill-color-blank: var(--tf-surface-sunken);
+  --el-mask-color: var(--tf-overlay);
+  --el-mask-color-extra-light: var(--tf-overlay);
+  --el-overlay-color: var(--tf-overlay);
+  --el-overlay-color-light: var(--tf-overlay);
+  --el-overlay-color-lighter: var(--tf-overlay);
+
+  --el-box-shadow: var(--tf-shadow-2);
+  --el-box-shadow-light: var(--tf-shadow-1);
+  --el-box-shadow-lighter: var(--tf-shadow-1);
+  --el-box-shadow-dark: var(--tf-shadow-3);
+  --el-border-radius-base: var(--tf-radius-control);
+  --el-border-radius-small: calc(var(--tf-radius-control) / 2);
+  --el-font-family: var(--tf-font-body);
+  --el-transition-duration: var(--tf-duration);
+  --el-transition-duration-fast: var(--tf-duration-fast);
+  --el-transition-function-ease-in-out-bezier: var(--tf-ease);
+  --el-transition-function-fast-bezier: var(--tf-ease);
+
+  --el-card-bg-color: var(--tf-surface);
+  --el-card-border-color: var(--tf-line-soft);
+  --el-card-border-radius: var(--tf-radius-card);
+  --el-dialog-bg-color: var(--tf-surface-raised);
+  --el-dialog-border-radius: var(--tf-radius-panel);
+  --el-dialog-box-shadow: var(--tf-shadow-3);
+  --el-messagebox-border-radius: var(--tf-radius-panel);
+  --el-drawer-bg-color: var(--tf-surface-raised);
+
+  /* 空状态插图的十档填充色：从表面色向文字色逐级混合，亮暗主题都协调 */
+  --el-empty-fill-color-0: var(--tf-surface-raised);
+  --el-empty-fill-color-1: color-mix(in oklab, var(--tf-text-1) 4%, var(--tf-surface-raised));
+  --el-empty-fill-color-2: color-mix(in oklab, var(--tf-text-1) 6%, var(--tf-surface-raised));
+  --el-empty-fill-color-3: color-mix(in oklab, var(--tf-text-1) 8%, var(--tf-surface-raised));
+  --el-empty-fill-color-4: color-mix(in oklab, var(--tf-text-1) 10%, var(--tf-surface-raised));
+  --el-empty-fill-color-5: color-mix(in oklab, var(--tf-text-1) 12%, var(--tf-surface-raised));
+  --el-empty-fill-color-6: color-mix(in oklab, var(--tf-text-1) 14%, var(--tf-surface-raised));
+  --el-empty-fill-color-7: color-mix(in oklab, var(--tf-text-1) 16%, var(--tf-surface-raised));
+  --el-empty-fill-color-8: color-mix(in oklab, var(--tf-text-1) 18%, var(--tf-surface-raised));
+  --el-empty-fill-color-9: color-mix(in oklab, var(--tf-text-1) 20%, var(--tf-surface-raised));
+}
+
+/* 主按钮文字随主题的“主色上的文字色”，避免浅主色配白字对比不足 */
+.el-button--primary {
+  --el-button-text-color: var(--tf-accent-contrast);
+  --el-button-hover-text-color: var(--tf-accent-contrast);
+  --el-button-active-text-color: var(--tf-accent-contrast);
+}

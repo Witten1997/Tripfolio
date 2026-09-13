@@ -1,0 +1,49 @@
+/* 有机自然装饰层：只作用于设计文档第 5 节的表面清单。
+   背景色团是主题本身的组成部分，因此这里允许字面颜色。 */
+[data-theme='organic'] .tf-backdrop::before,
+[data-theme='organic'] .tf-backdrop::after {
+  content: '';
+  position: absolute;
+  border-radius: var(--tf-radius-organic);
+  filter: blur(48px);
+  opacity: 0.6;
+}
+[data-theme='organic'] .tf-backdrop::before {
+  width: 42vw;
+  height: 42vw;
+  top: -14vw;
+  right: -10vw;
+  background: #dfe8d3;
+}
+[data-theme='organic'] .tf-backdrop::after {
+  width: 36vw;
+  height: 36vw;
+  bottom: -16vw;
+  left: -12vw;
+  background: #f1dcc9;
+}
+
+[data-theme='organic'] .el-card,
+[data-theme='organic'] .tf-card,
+[data-theme='organic'] .tf-surface,
+[data-theme='organic'] .van-cell-group--inset {
+  border-radius: var(--tf-radius-card);
+  box-shadow: var(--tf-shadow-1);
+}
+[data-theme='organic'] .el-card:nth-child(odd),
+[data-theme='organic'] .tf-card:nth-child(odd) {
+  border-top-left-radius: calc(var(--tf-radius-card) * 1.6);
+}
+[data-theme='organic'] .el-card:nth-child(even),
+[data-theme='organic'] .tf-card:nth-child(even) {
+  border-bottom-right-radius: calc(var(--tf-radius-card) * 1.6);
+}
+[data-theme='organic'] .el-dialog,
+[data-theme='organic'] .el-message-box,
+[data-theme='organic'] .van-popup {
+  border-radius: var(--tf-radius-panel);
+  box-shadow: var(--tf-shadow-3);
+}
+[data-theme='organic'] .el-button {
+  border-radius: 999px;
+}

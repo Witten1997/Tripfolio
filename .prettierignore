@@ -8,3 +8,6 @@ packages/contracts/generated
 apps/client/src/shared/api/schema.d.ts
 pnpm-lock.yaml
 docs
+.agents
+.claude
+skills-lock.json

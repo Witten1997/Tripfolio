@@ -18,12 +18,20 @@ import (
 )
 
 func main() {
+	fromDotEnv, err := config.LoadDotEnv(os.Getenv)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "migrate: 读取 .env 失败:", err)
+		os.Exit(2)
+	}
 	cfg, err := config.Load(os.Getenv)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "migrate: 配置错误:", err)
 		os.Exit(2)
 	}
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.LogLevel}))
+	if fromDotEnv {
+		logger.Info("已读取工作目录 .env 补充配置（进程环境变量优先）")
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

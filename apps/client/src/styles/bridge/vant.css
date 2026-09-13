@@ -1,0 +1,24 @@
+/* 把 --tf-* 映射到 Vant 变量，只写一次，主题文件不碰。
+   必须在 vant/lib/index.css 之后引入。同时覆盖 .van-theme-dark，保证暗色主题下仍以令牌为准。 */
+:root,
+.van-theme-dark {
+  --van-primary-color: var(--tf-accent);
+  --van-success-color: var(--tf-success);
+  --van-danger-color: var(--tf-danger);
+  --van-warning-color: var(--tf-warning);
+  --van-text-color: var(--tf-text-1);
+  --van-text-color-2: var(--tf-text-2);
+  --van-text-color-3: var(--tf-text-3);
+  --van-background: var(--tf-canvas);
+  --van-background-2: var(--tf-surface);
+  --van-background-3: var(--tf-surface-raised);
+  --van-border-color: var(--tf-line-soft);
+  --van-active-color: var(--tf-surface-sunken);
+  --van-radius-sm: calc(var(--tf-radius-control) / 2);
+  --van-radius-md: var(--tf-radius-control);
+  --van-radius-lg: var(--tf-radius-card);
+  --van-duration-base: var(--tf-duration);
+  --van-duration-fast: var(--tf-duration-fast);
+  --van-notice-bar-text-color: var(--tf-danger);
+  --van-notice-bar-background: var(--tf-danger-soft);
+}

@@ -328,7 +328,7 @@ onMounted(async () => {
 .account-hint {
   margin-left: 12px;
   font-size: 12px;
-  color: var(--el-text-color-secondary);
+  color: var(--tf-text-3);
 }
 
 .account-card-header {

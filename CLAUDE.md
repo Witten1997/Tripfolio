@@ -27,6 +27,7 @@ pnpm typecheck && pnpm test && pnpm build && pnpm format:check
 - 错误响应统一 problem+json，代码只在接口设计 1.4 登记；写接口带 Idempotency-Key 与 If-Match，可同步写走统一写事务（账号锁、收据、变更日志）。
 - 金额十进制字符串按币种小数位规范化；坐标 GCJ-02；时间列 timestamptz，当地时间 timestamp(0)。
 - 前端：桌面壳 Element Plus、移动壳 Vant，页面只依赖 `src/platform` 的接口访问平台能力；访问令牌只放内存。
+- 前端样式只引用 `--tf-*` 主题令牌，禁止字面颜色与 `--el-*`/`--van-*`（样式契约测试强制）；全站配色禁止蓝紫色；新增主题只加 `src/themes/<id>/` 与注册表条目，见 `docs/architecture/2026-09-13-前端主题体系设计.md`。
 
 ## Git 提交规范
 

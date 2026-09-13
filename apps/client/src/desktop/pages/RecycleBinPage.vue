@@ -259,7 +259,7 @@ function closePurge(done?: () => void) {
 }
 .recycle-heading p {
   margin: 8px 0 0;
-  color: var(--el-text-color-secondary);
+  color: var(--tf-text-3);
 }
 .recycle-trip {
   display: flex;
@@ -269,13 +269,13 @@ function closePurge(done?: () => void) {
   padding: 8px 0;
 }
 .recycle-trip strong {
-  color: var(--el-text-color-primary);
+  color: var(--tf-text-1);
   font-size: 15px;
   overflow-wrap: anywhere;
 }
 .recycle-trip span,
 .recycle-muted {
-  color: var(--el-text-color-secondary);
+  color: var(--tf-text-3);
   font-size: 12px;
   line-height: 1.8;
 }
@@ -294,7 +294,7 @@ function closePurge(done?: () => void) {
   flex-direction: column;
   align-items: center;
   gap: 12px;
-  color: var(--el-text-color-secondary);
+  color: var(--tf-text-3);
   font-size: 12px;
 }
 .purge-scope {
