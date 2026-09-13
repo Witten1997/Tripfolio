@@ -9,4 +9,19 @@ describe('buildRoutes', () => {
     expect(route?.meta?.public).toBe(true)
     expect(route?.meta?.guestOnly).toBeUndefined()
   })
+
+  it('旅行详情按页签提供子路由，默认进入行程', () => {
+    const detail = buildRoutes('desktop').find((r) => r.name === 'trip-detail')
+    expect(detail?.path).toBe('/trips/:tripId')
+    expect(detail?.meta?.public).toBeUndefined()
+    const names = detail?.children?.map((c) => c.name)
+    expect(names).toEqual([
+      'trip-itinerary',
+      'trip-ledger',
+      'trip-packing',
+      'trip-album',
+      'trip-todos',
+    ])
+    expect(detail?.redirect).toEqual({ name: 'trip-itinerary' })
+  })
 })

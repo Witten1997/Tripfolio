@@ -1,0 +1,222 @@
+collection:
+  parameters:
+    - name: trip_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  get:
+    tags: [travel]
+    operationId: listItineraryItems
+    summary: 旅行的行程项目列表；按日期区间与状态筛选，键集分页
+    parameters:
+      - name: date_from
+        in: query
+        required: false
+        description: 归属日期下界（闭区间）
+        schema:
+          $ref: ../openapi.yaml#/components/schemas/Date
+      - name: date_to
+        in: query
+        required: false
+        description: 归属日期上界（闭区间），不得早于 date_from
+        schema:
+          $ref: ../openapi.yaml#/components/schemas/Date
+      - name: status
+        in: query
+        required: false
+        schema:
+          $ref: ../openapi.yaml#/components/schemas/ItineraryStatus
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 50
+      - name: cursor
+        in: query
+        required: false
+        description: 上一页返回的 next_cursor；改变筛选需重新开始
+        schema:
+          type: string
+    responses:
+      '200':
+        description: 一页行程项目，按 scheduled_on、sort_order、id 升序
+        content:
+          application/json:
+            schema:
+              $ref: ../openapi.yaml#/components/schemas/ItineraryPage
+      '400':
+        $ref: ../openapi.yaml#/components/responses/BadRequest
+      '401':
+        $ref: ../openapi.yaml#/components/responses/Unauthorized
+      '404':
+        $ref: ../openapi.yaml#/components/responses/NotFound
+      '410':
+        $ref: ../openapi.yaml#/components/responses/Gone
+      '422':
+        $ref: ../openapi.yaml#/components/responses/ValidationFailed
+  post:
+    tags: [travel]
+    operationId: createItineraryItem
+    summary: 新建行程项目；默认追加到当天末尾
+    parameters:
+      - $ref: ../openapi.yaml#/components/parameters/IdempotencyKey
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: ../openapi.yaml#/components/schemas/ItineraryCreate
+    responses:
+      '201':
+        description: 已创建；warnings 可能含 ITINERARY_OUTSIDE_TRIP_DATES
+        content:
+          application/json:
+            schema:
+              $ref: ../openapi.yaml#/components/schemas/WriteResponse
+      '401':
+        $ref: ../openapi.yaml#/components/responses/Unauthorized
+      '404':
+        $ref: ../openapi.yaml#/components/responses/NotFound
+      '409':
+        $ref: ../openapi.yaml#/components/responses/Conflict
+      '410':
+        $ref: ../openapi.yaml#/components/responses/Gone
+      '422':
+        $ref: ../openapi.yaml#/components/responses/ValidationFailed
+
+item:
+  parameters:
+    - name: trip_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    - name: item_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  get:
+    tags: [travel]
+    operationId: getItineraryItem
+    summary: 单个行程项目的规范资源
+    responses:
+      '200':
+        description: 行程项目，带 ETag
+        headers:
+          ETag:
+            schema:
+              type: string
+        content:
+          application/json:
+            schema:
+              $ref: ../openapi.yaml#/components/schemas/ItineraryItemResponse
+      '401':
+        $ref: ../openapi.yaml#/components/responses/Unauthorized
+      '404':
+        $ref: ../openapi.yaml#/components/responses/NotFound
+      '410':
+        $ref: ../openapi.yaml#/components/responses/Gone
+  patch:
+    tags: [travel]
+    operationId: updateItineraryItem
+    summary: 局部更新内容与状态；跨日移动与排序走重排接口
+    parameters:
+      - $ref: ../openapi.yaml#/components/parameters/IdempotencyKey
+      - $ref: ../openapi.yaml#/components/parameters/IfMatch
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: ../openapi.yaml#/components/schemas/ItineraryPatch
+    responses:
+      '200':
+        description: 已更新；warnings 可能含 MERGED_WITH_NEWER_VERSION
+        content:
+          application/json:
+            schema:
+              $ref: ../openapi.yaml#/components/schemas/WriteResponse
+      '401':
+        $ref: ../openapi.yaml#/components/responses/Unauthorized
+      '404':
+        $ref: ../openapi.yaml#/components/responses/NotFound
+      '410':
+        $ref: ../openapi.yaml#/components/responses/Gone
+      '412':
+        $ref: ../openapi.yaml#/components/responses/PreconditionFailed
+      '422':
+        $ref: ../openapi.yaml#/components/responses/ValidationFailed
+      '428':
+        $ref: ../openapi.yaml#/components/responses/VersionRequired
+  delete:
+    tags: [travel]
+    operationId: deleteItineraryItem
+    summary: 软删除本项目，不影响其他记录；要求版本相等
+    parameters:
+      - $ref: ../openapi.yaml#/components/parameters/IdempotencyKey
+      - $ref: ../openapi.yaml#/components/parameters/IfMatch
+    responses:
+      '200':
+        description: 已删除；data 为带 deleted_at 的项目
+        content:
+          application/json:
+            schema:
+              $ref: ../openapi.yaml#/components/schemas/WriteResponse
+      '401':
+        $ref: ../openapi.yaml#/components/responses/Unauthorized
+      '404':
+        $ref: ../openapi.yaml#/components/responses/NotFound
+      '410':
+        $ref: ../openapi.yaml#/components/responses/Gone
+      '412':
+        $ref: ../openapi.yaml#/components/responses/PreconditionFailed
+      '428':
+        $ref: ../openapi.yaml#/components/responses/VersionRequired
+
+reorder:
+  parameters:
+    - name: trip_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  post:
+    tags: [travel]
+    operationId: reorderItineraryItems
+    summary: 重排受影响日期的行程；支持跨日移动，整体在一个事务中完成
+    parameters:
+      - $ref: ../openapi.yaml#/components/parameters/IdempotencyKey
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: ../openapi.yaml#/components/schemas/ItineraryReorder
+    responses:
+      '200':
+        description: 已重排；primary 与 data 为 null，affected 为实际变化的项目
+        content:
+          application/json:
+            schema:
+              $ref: ../openapi.yaml#/components/schemas/WriteResponse
+      '401':
+        $ref: ../openapi.yaml#/components/responses/Unauthorized
+      '404':
+        $ref: ../openapi.yaml#/components/responses/NotFound
+      '409':
+        $ref: ../openapi.yaml#/components/responses/Conflict
+      '410':
+        $ref: ../openapi.yaml#/components/responses/Gone
+      '412':
+        $ref: ../openapi.yaml#/components/responses/PreconditionFailed
+      '422':
+        $ref: ../openapi.yaml#/components/responses/ValidationFailed

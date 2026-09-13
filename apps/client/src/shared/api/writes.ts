@@ -75,6 +75,12 @@ export function actionError(cause: unknown, fallback = '网络连接失败，请
       return '旅行已超过恢复截止时间，或已请求永久清理，无法恢复。'
     case 'TRIP_DELETED':
       return '这趟旅行已进入回收站，请到回收站查看。'
+    case 'RESOURCE_GONE':
+      return '这条记录已被删除。'
+    case 'ORDER_CHANGED':
+      return '这些日期的行程已经变化，请刷新后重新排序。'
+    case 'CURRENCY_MISMATCH':
+      return '预计费用的币种必须与旅行币种一致。'
     default:
       return cause.message
   }

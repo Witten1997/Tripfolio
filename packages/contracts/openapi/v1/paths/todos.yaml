@@ -1,0 +1,170 @@
+collection:
+  parameters:
+    - name: trip_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  get:
+    tags: [travel]
+    operationId: listTodos
+    summary: 旅行的待办列表；全部、未完成、已完成或逾期，键集分页
+    parameters:
+      - name: state
+        in: query
+        required: false
+        description: 逾期按旅行时区的今天判定；默认 all
+        schema:
+          $ref: ../openapi.yaml#/components/schemas/TodoState
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 50
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+    responses:
+      '200':
+        description: 一页待办，按 due_on 升序（空日期最后）、再按 id 升序
+        content:
+          application/json:
+            schema:
+              $ref: ../openapi.yaml#/components/schemas/TodoPage
+      '400':
+        $ref: ../openapi.yaml#/components/responses/BadRequest
+      '401':
+        $ref: ../openapi.yaml#/components/responses/Unauthorized
+      '404':
+        $ref: ../openapi.yaml#/components/responses/NotFound
+      '410':
+        $ref: ../openapi.yaml#/components/responses/Gone
+      '422':
+        $ref: ../openapi.yaml#/components/responses/ValidationFailed
+  post:
+    tags: [travel]
+    operationId: createTodo
+    summary: 创建待办
+    parameters:
+      - $ref: ../openapi.yaml#/components/parameters/IdempotencyKey
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: ../openapi.yaml#/components/schemas/TodoCreate
+    responses:
+      '201':
+        description: 已创建
+        content:
+          application/json:
+            schema:
+              $ref: ../openapi.yaml#/components/schemas/WriteResponse
+      '401':
+        $ref: ../openapi.yaml#/components/responses/Unauthorized
+      '404':
+        $ref: ../openapi.yaml#/components/responses/NotFound
+      '409':
+        $ref: ../openapi.yaml#/components/responses/Conflict
+      '410':
+        $ref: ../openapi.yaml#/components/responses/Gone
+      '422':
+        $ref: ../openapi.yaml#/components/responses/ValidationFailed
+
+item:
+  parameters:
+    - name: trip_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    - name: todo_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  get:
+    tags: [travel]
+    operationId: getTodo
+    summary: 单个待办的规范资源；逾期标识由列表上下文计算
+    responses:
+      '200':
+        description: 待办，带 ETag
+        headers:
+          ETag:
+            schema:
+              type: string
+        content:
+          application/json:
+            schema:
+              $ref: ../openapi.yaml#/components/schemas/TodoResponse
+      '401':
+        $ref: ../openapi.yaml#/components/responses/Unauthorized
+      '404':
+        $ref: ../openapi.yaml#/components/responses/NotFound
+      '410':
+        $ref: ../openapi.yaml#/components/responses/Gone
+  patch:
+    tags: [travel]
+    operationId: updateTodo
+    summary: 局部更新；completed 可设为 true 或 false，completed_at 由服务端维护
+    parameters:
+      - $ref: ../openapi.yaml#/components/parameters/IdempotencyKey
+      - $ref: ../openapi.yaml#/components/parameters/IfMatch
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: ../openapi.yaml#/components/schemas/TodoPatch
+    responses:
+      '200':
+        description: 已更新；warnings 可能含 MERGED_WITH_NEWER_VERSION
+        content:
+          application/json:
+            schema:
+              $ref: ../openapi.yaml#/components/schemas/WriteResponse
+      '401':
+        $ref: ../openapi.yaml#/components/responses/Unauthorized
+      '404':
+        $ref: ../openapi.yaml#/components/responses/NotFound
+      '410':
+        $ref: ../openapi.yaml#/components/responses/Gone
+      '412':
+        $ref: ../openapi.yaml#/components/responses/PreconditionFailed
+      '422':
+        $ref: ../openapi.yaml#/components/responses/ValidationFailed
+      '428':
+        $ref: ../openapi.yaml#/components/responses/VersionRequired
+  delete:
+    tags: [travel]
+    operationId: deleteTodo
+    summary: 软删除待办；要求版本相等
+    parameters:
+      - $ref: ../openapi.yaml#/components/parameters/IdempotencyKey
+      - $ref: ../openapi.yaml#/components/parameters/IfMatch
+    responses:
+      '200':
+        description: 已删除；data 为带 deleted_at 的待办
+        content:
+          application/json:
+            schema:
+              $ref: ../openapi.yaml#/components/schemas/WriteResponse
+      '401':
+        $ref: ../openapi.yaml#/components/responses/Unauthorized
+      '404':
+        $ref: ../openapi.yaml#/components/responses/NotFound
+      '410':
+        $ref: ../openapi.yaml#/components/responses/Gone
+      '412':
+        $ref: ../openapi.yaml#/components/responses/PreconditionFailed
+      '428':
+        $ref: ../openapi.yaml#/components/responses/VersionRequired

@@ -258,6 +258,23 @@ export type paths = {
         patch?: never;
         trace?: never;
     };
+    "/packing-library": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 内置物品库的版本、分类与物品；随程序发布，不落库 */
+        get: operations["listPackingLibrary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/recycle-bin/trips": {
         parameters: {
             query?: never;
@@ -388,6 +405,170 @@ export type paths = {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/trips/{trip_id}/itinerary-items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        /** 旅行的行程项目列表；按日期区间与状态筛选，键集分页 */
+        get: operations["listItineraryItems"];
+        put?: never;
+        /** 新建行程项目；默认追加到当天末尾 */
+        post: operations["createItineraryItem"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/trips/{trip_id}/itinerary-items/{item_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: string;
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        /** 单个行程项目的规范资源 */
+        get: operations["getItineraryItem"];
+        put?: never;
+        post?: never;
+        /** 软删除本项目，不影响其他记录；要求版本相等 */
+        delete: operations["deleteItineraryItem"];
+        options?: never;
+        head?: never;
+        /** 局部更新内容与状态；跨日移动与排序走重排接口 */
+        patch: operations["updateItineraryItem"];
+        trace?: never;
+    };
+    "/trips/{trip_id}/itinerary-items/reorder": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 重排受影响日期的行程；支持跨日移动，整体在一个事务中完成 */
+        post: operations["reorderItineraryItems"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/trips/{trip_id}/packing-items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        /** 旅行的行李清单；按分类与状态筛选，键集分页 */
+        get: operations["listPackingItems"];
+        put?: never;
+        /** 创建独立物品；同分类同名冲突返回 422 */
+        post: operations["createPackingItem"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/trips/{trip_id}/packing-items/{item_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: string;
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        /** 单件物品的规范资源 */
+        get: operations["getPackingItem"];
+        put?: never;
+        post?: never;
+        /** 软删除物品；要求版本相等 */
+        delete: operations["deletePackingItem"];
+        options?: never;
+        head?: never;
+        /** 局部更新；内容编辑与状态变化使用同一业务规则 */
+        patch: operations["updatePackingItem"];
+        trace?: never;
+    };
+    "/trips/{trip_id}/packing-items/batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 一个事务批量创建最多 100 件物品；同分类同名与请求内重复项跳过 */
+        post: operations["createPackingItems"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/trips/{trip_id}/todos": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        /** 旅行的待办列表；全部、未完成、已完成或逾期，键集分页 */
+        get: operations["listTodos"];
+        put?: never;
+        /** 创建待办 */
+        post: operations["createTodo"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/trips/{trip_id}/todos/{todo_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                todo_id: string;
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        /** 单个待办的规范资源；逾期标识由列表上下文计算 */
+        get: operations["getTodo"];
+        put?: never;
+        post?: never;
+        /** 软删除待办；要求版本相等 */
+        delete: operations["deleteTodo"];
+        options?: never;
+        head?: never;
+        /** 局部更新；completed 可设为 true 或 false，completed_at 由服务端维护 */
+        patch: operations["updateTodo"];
         trace?: never;
     };
 };
@@ -537,6 +718,151 @@ export type components = {
          */
         Instant: string;
         /**
+         * @description 新建行程项目；默认追加到 scheduled_on 当天末尾。
+         *     提供 estimated_amount 时须同时提供 currency_code 且等于旅行币种；
+         *     planned_end_local 与 planned_duration_minutes 不能同时提供。
+         */
+        ItineraryCreate: {
+            actual_end_local?: string | null;
+            actual_notes?: string;
+            actual_start_local?: string | null;
+            address?: string;
+            currency_code?: components["schemas"]["CurrencyCode"];
+            estimated_amount?: string | null;
+            /** Format: uuid */
+            id: string;
+            kind: components["schemas"]["ItineraryKind"];
+            /** Format: double */
+            latitude?: number | null;
+            /** Format: double */
+            longitude?: number | null;
+            notes?: string;
+            place_name?: string;
+            /** Format: int32 */
+            planned_duration_minutes?: number | null;
+            planned_end_local?: string | null;
+            planned_start_local?: string | null;
+            scheduled_on: components["schemas"]["Date"];
+            status?: components["schemas"]["ItineraryStatus"];
+            title: string;
+        };
+        /**
+         * @description 每日行程项目的规范资源（接口设计 3.3）；同一结构也是同步日志与快照中的表示。
+         *     currency_code 由旅行派生、只读，与 estimated_amount 成对出现，金额为空时为 null。
+         */
+        ItineraryItem: {
+            actual_end_local: string | null;
+            actual_notes: string;
+            actual_start_local: string | null;
+            address: string;
+            created_at: components["schemas"]["Instant"];
+            /** @description 由旅行派生的币种，只读；estimated_amount 为空时为 null */
+            currency_code: string | null;
+            /** Format: date-time */
+            deleted_at: string | null;
+            /** @description 预计费用，格式同 Money；不进入实际开支统计 */
+            estimated_amount: string | null;
+            /** Format: uuid */
+            id: string;
+            kind: components["schemas"]["ItineraryKind"];
+            /**
+             * Format: double
+             * @description GCJ-02 纬度，最多 6 位小数；与 longitude 同时为空或同时非空
+             */
+            latitude: number | null;
+            /**
+             * Format: double
+             * @description GCJ-02 经度，最多 6 位小数；与 latitude 同时为空或同时非空
+             */
+            longitude: number | null;
+            notes: string;
+            place_name: string;
+            /**
+             * Format: int32
+             * @description 计划时长；与 planned_end_local 互斥
+             */
+            planned_duration_minutes: number | null;
+            /** @description 计划结束的当地日期时间，允许跨日；与 planned_duration_minutes 互斥 */
+            planned_end_local: string | null;
+            /** @description 计划开始的当地日期时间，按旅行 timezone 解释 */
+            planned_start_local: string | null;
+            scheduled_on: components["schemas"]["Date"];
+            /**
+             * Format: int32
+             * @description 同日顺序，id 作稳定次序；由服务端维护，创建时追加到当天末尾
+             */
+            sort_order: number;
+            status: components["schemas"]["ItineraryStatus"];
+            title: string;
+            /** Format: uuid */
+            trip_id: string;
+            updated_at: components["schemas"]["Instant"];
+            version: components["schemas"]["Version"];
+        };
+        ItineraryItemResponse: {
+            data: components["schemas"]["ItineraryItem"];
+        };
+        /**
+         * @description 项目类型；取值清单见 Metadata.itinerary_kinds
+         * @enum {string}
+         */
+        ItineraryKind: "attraction" | "transport" | "lodging" | "dining" | "other";
+        /** @description Page<ItineraryItem>；按 scheduled_on、sort_order、id 升序，游标绑定账号、旅行与筛选 */
+        ItineraryPage: {
+            items: components["schemas"]["ItineraryItem"][];
+            next_cursor: string | null;
+        };
+        /**
+         * @description 局部更新：缺省字段保持原值，可空字段显式 null 表示清空。
+         *     id、scheduled_on、sort_order 不可在此修改，跨日移动与排序走重排接口；
+         *     estimated_amount 改为非空值时须同时携带 currency_code。
+         */
+        ItineraryPatch: {
+            actual_end_local?: string | null;
+            actual_notes?: string;
+            actual_start_local?: string | null;
+            address?: string;
+            currency_code?: components["schemas"]["CurrencyCode"];
+            estimated_amount?: string | null;
+            kind?: components["schemas"]["ItineraryKind"];
+            /** Format: double */
+            latitude?: number | null;
+            /** Format: double */
+            longitude?: number | null;
+            notes?: string;
+            place_name?: string;
+            /** Format: int32 */
+            planned_duration_minutes?: number | null;
+            planned_end_local?: string | null;
+            planned_start_local?: string | null;
+            status?: components["schemas"]["ItineraryStatus"];
+            title?: string;
+        };
+        /**
+         * @description 重排：提交受影响日期的完整 ID 与基线版本列表，支持把 ID 从某日移入另一日。
+         *     所有 ID 只能出现一次，且必须覆盖这些日期当前的全部有效项目；
+         *     集合不一致返回 409 ORDER_CHANGED，个别版本不符返回 412 VERSION_CONFLICT。
+         */
+        ItineraryReorder: {
+            days: components["schemas"]["ItineraryReorderDay"][];
+        };
+        /** @description 一天的完整行程集合，数组顺序即新的 sort_order */
+        ItineraryReorderDay: {
+            date: components["schemas"]["Date"];
+            items: components["schemas"]["ItineraryReorderEntry"][];
+        };
+        /** @description 重排中的一个项目及其基线版本 */
+        ItineraryReorderEntry: {
+            base_version: components["schemas"]["Version"];
+            /** Format: uuid */
+            id: string;
+        };
+        /**
+         * @description 项目状态；取值清单见 Metadata.itinerary_statuses
+         * @enum {string}
+         */
+        ItineraryStatus: "pending" | "completed" | "skipped";
+        /**
          * @description YYYY-MM-DDTHH:mm:ss，不带 Z 或偏移，按旅行 timezone 解释
          * @example 2026-10-02T14:30:00
          */
@@ -594,6 +920,119 @@ export type components = {
          * @example 128.50
          */
         Money: string;
+        /** @description 一个事务批量创建 1–100 件物品；与既有有效物品或请求内重复的同分类同名项被跳过 */
+        PackingBatchCreate: {
+            items: components["schemas"]["PackingBatchItem"][];
+        };
+        /** @description 批量创建中的一件物品；状态固定为 pending */
+        PackingBatchItem: {
+            category: components["schemas"]["PackingCategory"];
+            /** Format: uuid */
+            id: string;
+            name: string;
+            notes?: string;
+            /**
+             * Format: int32
+             * @default 1
+             */
+            quantity: number;
+        };
+        PackingBatchResponse: {
+            data: components["schemas"]["PackingBatchResult"];
+        };
+        /** @description WriteResult（primary 与 data 为 null，affected 为已创建物品）加批量结果明细 */
+        PackingBatchResult: components["schemas"]["WriteResult"] & {
+            created_ids: string[];
+            skipped: components["schemas"]["PackingSkipped"][];
+        };
+        /**
+         * @description 物资分类；取值清单见 Metadata.packing_categories
+         * @enum {string}
+         */
+        PackingCategory: "documents" | "electronics" | "clothing" | "daily" | "food" | "medicine" | "other";
+        /** @description 创建独立物品；同一旅行内同分类同名（去首尾空格、大小写不敏感）的有效物品唯一 */
+        PackingCreate: {
+            category: components["schemas"]["PackingCategory"];
+            /** Format: uuid */
+            id: string;
+            name: string;
+            notes?: string;
+            /**
+             * Format: int32
+             * @default 1
+             */
+            quantity: number;
+            status?: components["schemas"]["PackingStatus"];
+        };
+        /** @description 行李清单物品的规范资源（接口设计 3.4）；同一结构也是同步日志与快照中的表示 */
+        PackingItem: {
+            category: components["schemas"]["PackingCategory"];
+            created_at: components["schemas"]["Instant"];
+            /** Format: date-time */
+            deleted_at: string | null;
+            /** Format: uuid */
+            id: string;
+            name: string;
+            notes: string;
+            /** Format: int32 */
+            quantity: number;
+            status: components["schemas"]["PackingStatus"];
+            /** Format: uuid */
+            trip_id: string;
+            updated_at: components["schemas"]["Instant"];
+            version: components["schemas"]["Version"];
+        };
+        PackingItemResponse: {
+            data: components["schemas"]["PackingItem"];
+        };
+        /** @description 随程序发布的版本化内置物品库；不落库，version 变化时客户端可刷新缓存 */
+        PackingLibrary: {
+            categories: components["schemas"]["PackingLibraryCategory"][];
+            /** @description 物品库版本，与 Metadata.packing_library_version 一致 */
+            version: string;
+        };
+        PackingLibraryCategory: {
+            category: components["schemas"]["PackingCategory"];
+            items: components["schemas"]["PackingLibraryItem"][];
+            /** @description 分类的中文名称，供直接展示 */
+            name: string;
+        };
+        PackingLibraryItem: {
+            name: string;
+            /** Format: int32 */
+            quantity: number;
+        };
+        PackingLibraryResponse: {
+            data: components["schemas"]["PackingLibrary"];
+        };
+        /** @description Page<PackingItem>；按 category、created_at、id 升序 */
+        PackingPage: {
+            items: components["schemas"]["PackingItem"][];
+            next_cursor: string | null;
+        };
+        /** @description 局部更新：缺省字段保持原值；改名同样受同分类同名唯一约束 */
+        PackingPatch: {
+            category?: components["schemas"]["PackingCategory"];
+            name?: string;
+            notes?: string;
+            /** Format: int32 */
+            quantity?: number;
+            status?: components["schemas"]["PackingStatus"];
+        };
+        /** @description 被跳过的物品；reason=duplicate 表示同分类同名已存在或请求内重复 */
+        PackingSkipped: {
+            category: components["schemas"]["PackingCategory"];
+            /** Format: uuid */
+            id: string;
+            name: string;
+            /** @enum {string} */
+            reason: "duplicate";
+        };
+        /**
+         * @description 物品状态；取值清单见 Metadata.packing_statuses
+         * @enum {string}
+         */
+        PackingStatus: "pending" | "ready" | "packed";
         /** @description 统一错误响应，媒体类型 application/problem+json；代码清单见接口设计 1.4 */
         Problem: {
             /** @description 稳定的错误代码，例如 VERSION_CONFLICT */
@@ -660,6 +1099,63 @@ export type components = {
         SessionListResponse: {
             data: components["schemas"]["Session"][];
         };
+        /** @description 待办的规范资源（接口设计 3.4）；同一结构也是同步日志与快照中的表示 */
+        Todo: {
+            /** @description 是否已完成；与 completed_at 是否为空一致 */
+            completed: boolean;
+            /**
+             * Format: date-time
+             * @description 完成时刻，由服务端生成；客户端只能写 completed
+             */
+            completed_at: string | null;
+            created_at: components["schemas"]["Instant"];
+            /** Format: date-time */
+            deleted_at: string | null;
+            /** @description 截止日期；null 表示不限期 */
+            due_on: string | null;
+            /** Format: uuid */
+            id: string;
+            notes: string;
+            title: string;
+            /** Format: uuid */
+            trip_id: string;
+            updated_at: components["schemas"]["Instant"];
+            version: components["schemas"]["Version"];
+        };
+        /** @description 创建待办；completed=true 时服务端同时写入 completed_at */
+        TodoCreate: {
+            /** @default false */
+            completed: boolean;
+            due_on?: string | null;
+            /** Format: uuid */
+            id: string;
+            notes?: string;
+            title: string;
+        };
+        /** @description 列表项：Todo 加按旅行时区当天计算的逾期标识；逾期不落列 */
+        TodoListItem: components["schemas"]["Todo"] & {
+            is_overdue: boolean;
+        };
+        /** @description Page<TodoListItem>；按 due_on 升序（空日期最后）、再按 id 升序 */
+        TodoPage: {
+            items: components["schemas"]["TodoListItem"][];
+            next_cursor: string | null;
+        };
+        /** @description 局部更新：缺省字段保持原值；due_on 显式 null 表示清空；completed 可设为 true 或 false */
+        TodoPatch: {
+            completed?: boolean;
+            due_on?: string | null;
+            notes?: string;
+            title?: string;
+        };
+        TodoResponse: {
+            data: components["schemas"]["Todo"];
+        };
+        /**
+         * @description 列表筛选状态；overdue = 未完成且 due_on 早于旅行时区的今天
+         * @enum {string}
+         */
+        TodoState: "all" | "pending" | "completed" | "overdue";
         /** @description 回收站中的旅行；按 purge_after_at 展示剩余保留时间，能否恢复以服务端判定为准 */
         TrashedTrip: components["schemas"]["Trip"];
         /** @description Page<TrashedTrip>，按删除时间倒序 */
@@ -1387,6 +1883,27 @@ export interface operations {
             500: components["responses"]["InternalError"];
         };
     };
+    listPackingLibrary: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 物品库 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PackingLibraryResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
     listTrashedTrips: {
         parameters: {
             query?: {
@@ -1689,6 +2206,571 @@ export interface operations {
         };
         responses: {
             /** @description 已更新 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WriteResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            410: components["responses"]["Gone"];
+            412: components["responses"]["PreconditionFailed"];
+            422: components["responses"]["ValidationFailed"];
+            428: components["responses"]["VersionRequired"];
+        };
+    };
+    listItineraryItems: {
+        parameters: {
+            query?: {
+                /** @description 上一页返回的 next_cursor；改变筛选需重新开始 */
+                cursor?: string;
+                /** @description 归属日期下界（闭区间） */
+                date_from?: components["schemas"]["Date"];
+                /** @description 归属日期上界（闭区间），不得早于 date_from */
+                date_to?: components["schemas"]["Date"];
+                limit?: number;
+                status?: components["schemas"]["ItineraryStatus"];
+            };
+            header?: never;
+            path: {
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 一页行程项目，按 scheduled_on、sort_order、id 升序 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ItineraryPage"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            410: components["responses"]["Gone"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    createItineraryItem: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 写请求的操作编号（UUID）；相同成功操作重试复用同一键 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ItineraryCreate"];
+            };
+        };
+        responses: {
+            /** @description 已创建；warnings 可能含 ITINERARY_OUTSIDE_TRIP_DATES */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WriteResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            410: components["responses"]["Gone"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    getItineraryItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: string;
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 行程项目，带 ETag */
+            200: {
+                headers: {
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ItineraryItemResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            410: components["responses"]["Gone"];
+        };
+    };
+    deleteItineraryItem: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 写请求的操作编号（UUID）；相同成功操作重试复用同一键 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /** @description 客户端所基于的资源版本，形如 "7"（带引号） */
+                "If-Match"?: components["parameters"]["IfMatch"];
+            };
+            path: {
+                item_id: string;
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已删除；data 为带 deleted_at 的项目 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WriteResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            410: components["responses"]["Gone"];
+            412: components["responses"]["PreconditionFailed"];
+            428: components["responses"]["VersionRequired"];
+        };
+    };
+    updateItineraryItem: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 写请求的操作编号（UUID）；相同成功操作重试复用同一键 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /** @description 客户端所基于的资源版本，形如 "7"（带引号） */
+                "If-Match"?: components["parameters"]["IfMatch"];
+            };
+            path: {
+                item_id: string;
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ItineraryPatch"];
+            };
+        };
+        responses: {
+            /** @description 已更新；warnings 可能含 MERGED_WITH_NEWER_VERSION */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WriteResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            410: components["responses"]["Gone"];
+            412: components["responses"]["PreconditionFailed"];
+            422: components["responses"]["ValidationFailed"];
+            428: components["responses"]["VersionRequired"];
+        };
+    };
+    reorderItineraryItems: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 写请求的操作编号（UUID）；相同成功操作重试复用同一键 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ItineraryReorder"];
+            };
+        };
+        responses: {
+            /** @description 已重排；primary 与 data 为 null，affected 为实际变化的项目 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WriteResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            410: components["responses"]["Gone"];
+            412: components["responses"]["PreconditionFailed"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    listPackingItems: {
+        parameters: {
+            query?: {
+                category?: components["schemas"]["PackingCategory"];
+                cursor?: string;
+                limit?: number;
+                status?: components["schemas"]["PackingStatus"];
+            };
+            header?: never;
+            path: {
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 一页物品，按 category、created_at、id 升序 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PackingPage"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            410: components["responses"]["Gone"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    createPackingItem: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 写请求的操作编号（UUID）；相同成功操作重试复用同一键 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PackingCreate"];
+            };
+        };
+        responses: {
+            /** @description 已创建 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WriteResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            410: components["responses"]["Gone"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    getPackingItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: string;
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 物品，带 ETag */
+            200: {
+                headers: {
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PackingItemResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            410: components["responses"]["Gone"];
+        };
+    };
+    deletePackingItem: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 写请求的操作编号（UUID）；相同成功操作重试复用同一键 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /** @description 客户端所基于的资源版本，形如 "7"（带引号） */
+                "If-Match"?: components["parameters"]["IfMatch"];
+            };
+            path: {
+                item_id: string;
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已删除；data 为带 deleted_at 的物品 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WriteResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            410: components["responses"]["Gone"];
+            412: components["responses"]["PreconditionFailed"];
+            428: components["responses"]["VersionRequired"];
+        };
+    };
+    updatePackingItem: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 写请求的操作编号（UUID）；相同成功操作重试复用同一键 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /** @description 客户端所基于的资源版本，形如 "7"（带引号） */
+                "If-Match"?: components["parameters"]["IfMatch"];
+            };
+            path: {
+                item_id: string;
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PackingPatch"];
+            };
+        };
+        responses: {
+            /** @description 已更新；warnings 可能含 MERGED_WITH_NEWER_VERSION */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WriteResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            410: components["responses"]["Gone"];
+            412: components["responses"]["PreconditionFailed"];
+            422: components["responses"]["ValidationFailed"];
+            428: components["responses"]["VersionRequired"];
+        };
+    };
+    createPackingItems: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 写请求的操作编号（UUID）；相同成功操作重试复用同一键 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PackingBatchCreate"];
+            };
+        };
+        responses: {
+            /** @description 已提交；全部跳过时 affected 与 created_ids 为空数组 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PackingBatchResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            410: components["responses"]["Gone"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    listTodos: {
+        parameters: {
+            query?: {
+                cursor?: string;
+                limit?: number;
+                /** @description 逾期按旅行时区的今天判定；默认 all */
+                state?: components["schemas"]["TodoState"];
+            };
+            header?: never;
+            path: {
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 一页待办，按 due_on 升序（空日期最后）、再按 id 升序 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TodoPage"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            410: components["responses"]["Gone"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    createTodo: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 写请求的操作编号（UUID）；相同成功操作重试复用同一键 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TodoCreate"];
+            };
+        };
+        responses: {
+            /** @description 已创建 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WriteResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            410: components["responses"]["Gone"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    getTodo: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                todo_id: string;
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 待办，带 ETag */
+            200: {
+                headers: {
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TodoResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            410: components["responses"]["Gone"];
+        };
+    };
+    deleteTodo: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 写请求的操作编号（UUID）；相同成功操作重试复用同一键 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /** @description 客户端所基于的资源版本，形如 "7"（带引号） */
+                "If-Match"?: components["parameters"]["IfMatch"];
+            };
+            path: {
+                todo_id: string;
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已删除；data 为带 deleted_at 的待办 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WriteResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            410: components["responses"]["Gone"];
+            412: components["responses"]["PreconditionFailed"];
+            428: components["responses"]["VersionRequired"];
+        };
+    };
+    updateTodo: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 写请求的操作编号（UUID）；相同成功操作重试复用同一键 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /** @description 客户端所基于的资源版本，形如 "7"（带引号） */
+                "If-Match"?: components["parameters"]["IfMatch"];
+            };
+            path: {
+                todo_id: string;
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TodoPatch"];
+            };
+        };
+        responses: {
+            /** @description 已更新；warnings 可能含 MERGED_WITH_NEWER_VERSION */
             200: {
                 headers: {
                     [name: string]: unknown;

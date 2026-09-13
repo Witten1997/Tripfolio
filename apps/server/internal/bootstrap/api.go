@@ -23,6 +23,9 @@ import (
 	"tripfolio/server/internal/modules/account"
 	"tripfolio/server/internal/modules/finance"
 	"tripfolio/server/internal/modules/metadata"
+	"tripfolio/server/internal/modules/travel/itinerary"
+	"tripfolio/server/internal/modules/travel/packing"
+	"tripfolio/server/internal/modules/travel/todo"
 	"tripfolio/server/internal/modules/travel/trip"
 	"tripfolio/server/internal/transport/httpapi"
 )
@@ -34,6 +37,9 @@ type Services struct {
 	Profile    *account.ProfileService
 	Categories *finance.CategoryService
 	Trips      *trip.Service
+	Itinerary  *itinerary.Service
+	Packing    *packing.Service
+	Todos      *todo.Service
 }
 
 // BuildServices 用连接池装配服务。mailer 为 nil 时按配置创建。
@@ -61,9 +67,16 @@ func BuildServices(pool *pgxpool.Pool, cfg config.Config, logger *slog.Logger, m
 	}
 	writer := pgcore.NewWriter(pool, insertOnly, clk, logger)
 	categories := finance.NewCategoryService(financepg.NewCategoryUnitOfWork(writer), financepg.NewCategoryReader(pool), clk)
-	trips := trip.NewService(travelpg.NewTripUnitOfWork(writer), travelpg.NewTripReader(pool), security.NewCursorCodec(keyring), clk, policy.ReauthWindow)
+	cursors := security.NewCursorCodec(keyring)
+	trips := trip.NewService(travelpg.NewTripUnitOfWork(writer), travelpg.NewTripReader(pool), cursors, clk, policy.ReauthWindow)
+	itineraries := itinerary.NewService(travelpg.NewItineraryUnitOfWork(writer), travelpg.NewItineraryReader(pool), cursors, clk)
+	packings := packing.NewService(travelpg.NewPackingUnitOfWork(writer), travelpg.NewPackingReader(pool), cursors, clk)
+	todos := todo.NewService(travelpg.NewTodoUnitOfWork(writer), travelpg.NewTodoReader(pool), cursors, clk)
 
-	return Services{Identity: identity, Sessions: sessions, Profile: profile, Categories: categories, Trips: trips}, nil
+	return Services{
+		Identity: identity, Sessions: sessions, Profile: profile, Categories: categories,
+		Trips: trips, Itinerary: itineraries, Packing: packings, Todos: todos,
+	}, nil
 }
 
 func loadKeyring(cfg config.Config, logger *slog.Logger) (*security.Keyring, error) {
@@ -115,7 +128,8 @@ func RunAPI(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	router := httpapi.NewRouter(httpapi.Deps{
 		Logger: logger, Metadata: metadata.Current(), Readiness: readiness, CORSOrigins: cfg.CORSOrigins,
 		Cookies:  httpapi.CookieSettings{Secure: cfg.CookieSecure},
-		Identity: services.Identity, Sessions: services.Sessions, Profile: services.Profile, Categories: services.Categories, Trips: services.Trips,
+		Identity: services.Identity, Sessions: services.Sessions, Profile: services.Profile, Categories: services.Categories,
+		Trips: services.Trips, Itinerary: services.Itinerary, Packing: services.Packing, Todos: services.Todos,
 	})
 	srv := httpapi.NewServer(cfg.HTTPAddr, router)
 	logger.Info("api 启动", "env", cfg.Env, "addr", cfg.HTTPAddr, "cors_origins", cfg.CORSOrigins, "cookie_secure", cfg.CookieSecure, "mail_driver", cfg.Mail.Driver)

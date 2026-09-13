@@ -78,6 +78,24 @@ paths:
     $ref: ./paths/recycle-bin.yaml#/restore
   /recycle-bin/trips/{trip_id}/purge:
     $ref: ./paths/recycle-bin.yaml#/purge
+  /trips/{trip_id}/itinerary-items:
+    $ref: ./paths/itinerary-items.yaml#/collection
+  /trips/{trip_id}/itinerary-items/reorder:
+    $ref: ./paths/itinerary-items.yaml#/reorder
+  /trips/{trip_id}/itinerary-items/{item_id}:
+    $ref: ./paths/itinerary-items.yaml#/item
+  /trips/{trip_id}/packing-items:
+    $ref: ./paths/packing-items.yaml#/collection
+  /trips/{trip_id}/packing-items/batch:
+    $ref: ./paths/packing-items.yaml#/batch
+  /trips/{trip_id}/packing-items/{item_id}:
+    $ref: ./paths/packing-items.yaml#/item
+  /packing-library:
+    $ref: ./paths/packing-items.yaml#/library
+  /trips/{trip_id}/todos:
+    $ref: ./paths/todos.yaml#/collection
+  /trips/{trip_id}/todos/{todo_id}:
+    $ref: ./paths/todos.yaml#/item
 components:
   securitySchemes:
     bearerAuth:
@@ -191,6 +209,72 @@ components:
       $ref: ./schemas/trip.yaml#/ArchiveRequest
     PurgeTripRequest:
       $ref: ./schemas/trip.yaml#/PurgeTripRequest
+    ItineraryKind:
+      $ref: ./schemas/itinerary.yaml#/ItineraryKind
+    ItineraryStatus:
+      $ref: ./schemas/itinerary.yaml#/ItineraryStatus
+    ItineraryItem:
+      $ref: ./schemas/itinerary.yaml#/ItineraryItem
+    ItineraryItemResponse:
+      $ref: ./schemas/itinerary.yaml#/ItineraryItemResponse
+    ItineraryPage:
+      $ref: ./schemas/itinerary.yaml#/ItineraryPage
+    ItineraryCreate:
+      $ref: ./schemas/itinerary.yaml#/ItineraryCreate
+    ItineraryPatch:
+      $ref: ./schemas/itinerary.yaml#/ItineraryPatch
+    ItineraryReorderEntry:
+      $ref: ./schemas/itinerary.yaml#/ItineraryReorderEntry
+    ItineraryReorderDay:
+      $ref: ./schemas/itinerary.yaml#/ItineraryReorderDay
+    ItineraryReorder:
+      $ref: ./schemas/itinerary.yaml#/ItineraryReorder
+    PackingCategory:
+      $ref: ./schemas/packing.yaml#/PackingCategory
+    PackingStatus:
+      $ref: ./schemas/packing.yaml#/PackingStatus
+    PackingItem:
+      $ref: ./schemas/packing.yaml#/PackingItem
+    PackingItemResponse:
+      $ref: ./schemas/packing.yaml#/PackingItemResponse
+    PackingPage:
+      $ref: ./schemas/packing.yaml#/PackingPage
+    PackingCreate:
+      $ref: ./schemas/packing.yaml#/PackingCreate
+    PackingPatch:
+      $ref: ./schemas/packing.yaml#/PackingPatch
+    PackingBatchItem:
+      $ref: ./schemas/packing.yaml#/PackingBatchItem
+    PackingBatchCreate:
+      $ref: ./schemas/packing.yaml#/PackingBatchCreate
+    PackingSkipped:
+      $ref: ./schemas/packing.yaml#/PackingSkipped
+    PackingBatchResult:
+      $ref: ./schemas/packing.yaml#/PackingBatchResult
+    PackingBatchResponse:
+      $ref: ./schemas/packing.yaml#/PackingBatchResponse
+    PackingLibraryItem:
+      $ref: ./schemas/packing.yaml#/PackingLibraryItem
+    PackingLibraryCategory:
+      $ref: ./schemas/packing.yaml#/PackingLibraryCategory
+    PackingLibrary:
+      $ref: ./schemas/packing.yaml#/PackingLibrary
+    PackingLibraryResponse:
+      $ref: ./schemas/packing.yaml#/PackingLibraryResponse
+    TodoState:
+      $ref: ./schemas/todo.yaml#/TodoState
+    Todo:
+      $ref: ./schemas/todo.yaml#/Todo
+    TodoListItem:
+      $ref: ./schemas/todo.yaml#/TodoListItem
+    TodoResponse:
+      $ref: ./schemas/todo.yaml#/TodoResponse
+    TodoPage:
+      $ref: ./schemas/todo.yaml#/TodoPage
+    TodoCreate:
+      $ref: ./schemas/todo.yaml#/TodoCreate
+    TodoPatch:
+      $ref: ./schemas/todo.yaml#/TodoPatch
   responses:
     BadRequest:
       description: 请求无法解析、含未知字段或游标无效（MALFORMED_REQUEST、INVALID_CURSOR）

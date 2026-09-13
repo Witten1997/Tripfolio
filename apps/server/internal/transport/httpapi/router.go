@@ -10,6 +10,9 @@ import (
 	"tripfolio/server/internal/modules/account"
 	"tripfolio/server/internal/modules/finance"
 	"tripfolio/server/internal/modules/metadata"
+	"tripfolio/server/internal/modules/travel/itinerary"
+	"tripfolio/server/internal/modules/travel/packing"
+	"tripfolio/server/internal/modules/travel/todo"
 	"tripfolio/server/internal/modules/travel/trip"
 	"tripfolio/server/internal/transport/httpapi/generated"
 	"tripfolio/server/internal/transport/httpapi/middleware"
@@ -27,6 +30,10 @@ type Deps struct {
 	Profile     *account.ProfileService
 	Categories  *finance.CategoryService
 	Trips       *trip.Service
+	// Itinerary、Packing、Todos 为 nil 时对应接口返回 503（切片 3.3 接入 PostgreSQL 后装配）。
+	Itinerary *itinerary.Service
+	Packing   *packing.Service
+	Todos     *todo.Service
 }
 
 // publicPaths 是不要求身份的业务路径（接口设计 1.1）。带令牌访问时仍会解析身份。
@@ -67,7 +74,8 @@ func NewRouter(d Deps) http.Handler {
 
 	handler := &Handler{
 		logger: d.Logger, metadata: d.Metadata, identity: d.Identity, sessions: d.Sessions, profile: d.Profile,
-		categories: d.Categories, trips: d.Trips, cookies: d.Cookies, corsOrigins: d.CORSOrigins,
+		categories: d.Categories, trips: d.Trips, itinerary: d.Itinerary, packing: d.Packing, todos: d.Todos,
+		cookies: d.Cookies, corsOrigins: d.CORSOrigins,
 	}
 	strict := generated.NewStrictHandlerWithOptions(handler, nil, generated.StrictHTTPServerOptions{
 		RequestErrorHandlerFunc:  requestError,

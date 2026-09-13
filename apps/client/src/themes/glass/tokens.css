@@ -1,0 +1,69 @@
+[data-theme='glass'] {
+  --tf-accent: #1f7a6d;
+  --tf-accent-contrast: #ffffff;
+  --tf-accent-soft: rgb(31 122 109 / 0.12);
+  --tf-success: #2e8b57;
+  --tf-success-soft: rgb(46 139 87 / 0.14);
+  --tf-warning: #b8782a;
+  --tf-warning-soft: rgb(184 120 42 / 0.16);
+  --tf-danger: #c4553d;
+  --tf-danger-soft: rgb(196 85 61 / 0.14);
+  --tf-info: #4f857a;
+  --tf-info-soft: rgb(79 133 122 / 0.14);
+
+  --tf-canvas: #e6ece6;
+  --tf-surface: rgb(255 255 255 / 0.4);
+  /* 现有小浮层没有模糊层，保留更实的阅读底；对话框由装饰层独立透色。 */
+  --tf-surface-raised: rgb(255 255 255 / 0.94);
+  --tf-surface-sunken: rgb(255 255 255 / 0.54);
+  --tf-text-1: #1c201e;
+  --tf-text-2: #39483f;
+  --tf-text-3: #435347;
+  --tf-text-disabled: #637267;
+  --tf-line: #718175;
+  --tf-line-soft: rgb(28 32 30 / 0.09);
+  --tf-overlay: rgb(20 36 28 / 0.16);
+
+  --tf-radius-control: 12px;
+  --tf-radius-card: 20px;
+  --tf-radius-panel: 24px;
+  --tf-radius-organic: 20px;
+  --tf-surface-blur: 10px;
+  --tf-surface-border: 1px solid rgb(255 255 255 / 0.44);
+  --tf-surface-highlight:
+    inset 0 1px 0 rgb(255 255 255 / 0.68), inset 1px 0 0 rgb(255 255 255 / 0.24),
+    inset 0 -1px 0 rgb(20 44 32 / 0.08);
+
+  --tf-shadow-1: 0 2px 4px rgb(20 44 32 / 0.06);
+  --tf-shadow-2: 0 3px 6px rgb(20 44 32 / 0.05), 0 16px 32px -14px rgb(20 44 32 / 0.18);
+  --tf-shadow-3:
+    0 2px 4px rgb(20 44 32 / 0.08), 0 16px 40px -12px rgb(20 44 32 / 0.2),
+    0 36px 80px -24px rgb(20 44 32 / 0.22);
+  --tf-backdrop: #e6ece6;
+
+  --tf-ease: cubic-bezier(0.2, 0, 0, 1);
+  --tf-duration-fast: 120ms;
+  --tf-duration: 220ms;
+
+  --tf-chart-1: #1f7a6d;
+  --tf-chart-2: #c4855a;
+  --tf-chart-3: #7a9a5f;
+  --tf-chart-4: #d1a83f;
+  --tf-chart-5: #c4553d;
+  --tf-chart-6: #6e7f78;
+}
+
+@media (prefers-reduced-transparency: reduce), (forced-colors: active) {
+  [data-theme='glass'] {
+    --tf-surface: #edf2ed;
+    --tf-surface-raised: #edf2ed;
+    --tf-surface-sunken: #edf2ed;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-theme='glass'] {
+    --tf-duration-fast: 0ms;
+    --tf-duration: 0ms;
+  }
+}

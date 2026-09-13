@@ -78,7 +78,8 @@ func newAPIFixture(t *testing.T) *apiFixture {
 	router := httpapi.NewRouter(httpapi.Deps{
 		Logger: logger, Metadata: metadata.Current(), Readiness: readinessFunc(func(context.Context) error { return nil }),
 		CORSOrigins: cfg.CORSOrigins, Cookies: httpapi.CookieSettings{Secure: false},
-		Identity: services.Identity, Sessions: services.Sessions, Profile: services.Profile, Categories: services.Categories, Trips: services.Trips,
+		Identity: services.Identity, Sessions: services.Sessions, Profile: services.Profile, Categories: services.Categories,
+		Trips: services.Trips, Itinerary: services.Itinerary, Packing: services.Packing, Todos: services.Todos,
 	})
 	srv := httptest.NewServer(router)
 	t.Cleanup(srv.Close)

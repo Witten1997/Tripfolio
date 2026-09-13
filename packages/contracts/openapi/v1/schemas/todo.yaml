@@ -1,0 +1,136 @@
+TodoState:
+  type: string
+  description: 列表筛选状态；overdue = 未完成且 due_on 早于旅行时区的今天
+  enum: [all, pending, completed, overdue]
+
+Todo:
+  type: object
+  description: 待办的规范资源（接口设计 3.4）；同一结构也是同步日志与快照中的表示
+  x-go-type: todo.Resource
+  x-go-type-import:
+    path: tripfolio/server/internal/modules/travel/todo
+  required:
+    [
+      id,
+      trip_id,
+      title,
+      due_on,
+      notes,
+      completed,
+      completed_at,
+      version,
+      created_at,
+      updated_at,
+      deleted_at,
+    ]
+  properties:
+    id:
+      type: string
+      format: uuid
+    trip_id:
+      type: string
+      format: uuid
+    title:
+      type: string
+      minLength: 1
+      maxLength: 200
+    due_on:
+      type: string
+      nullable: true
+      pattern: '^\d{4}-\d{2}-\d{2}$'
+      description: 截止日期；null 表示不限期
+    notes:
+      type: string
+      maxLength: 4000
+    completed:
+      type: boolean
+      description: 是否已完成；与 completed_at 是否为空一致
+    completed_at:
+      type: string
+      format: date-time
+      nullable: true
+      description: 完成时刻，由服务端生成；客户端只能写 completed
+    version:
+      $ref: ./write.yaml#/Version
+    created_at:
+      $ref: ./write.yaml#/Instant
+    updated_at:
+      $ref: ./write.yaml#/Instant
+    deleted_at:
+      type: string
+      format: date-time
+      nullable: true
+
+TodoListItem:
+  description: 列表项：Todo 加按旅行时区当天计算的逾期标识；逾期不落列
+  x-go-type: todo.ListItem
+  x-go-type-import:
+    path: tripfolio/server/internal/modules/travel/todo
+  allOf:
+    - $ref: '#/Todo'
+    - type: object
+      required: [is_overdue]
+      properties:
+        is_overdue:
+          type: boolean
+
+TodoResponse:
+  type: object
+  required: [data]
+  properties:
+    data:
+      $ref: '#/Todo'
+
+TodoPage:
+  type: object
+  description: Page<TodoListItem>；按 due_on 升序（空日期最后）、再按 id 升序
+  required: [items, next_cursor]
+  properties:
+    items:
+      type: array
+      items:
+        $ref: '#/TodoListItem'
+    next_cursor:
+      type: string
+      nullable: true
+
+TodoCreate:
+  type: object
+  description: 创建待办；completed=true 时服务端同时写入 completed_at
+  required: [id, title]
+  properties:
+    id:
+      type: string
+      format: uuid
+    title:
+      type: string
+      minLength: 1
+      maxLength: 200
+    due_on:
+      type: string
+      nullable: true
+      pattern: '^\d{4}-\d{2}-\d{2}$'
+    notes:
+      type: string
+      maxLength: 4000
+    completed:
+      type: boolean
+      default: false
+
+TodoPatch:
+  type: object
+  description: 局部更新：缺省字段保持原值；due_on 显式 null 表示清空；completed 可设为 true 或 false
+  properties:
+    title:
+      type: string
+      minLength: 1
+      maxLength: 200
+    due_on:
+      type: string
+      nullable: true
+      pattern: '^\d{4}-\d{2}-\d{2}$'
+    notes:
+      type: string
+      maxLength: 4000
+    completed:
+      type: boolean

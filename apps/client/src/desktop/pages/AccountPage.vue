@@ -3,15 +3,12 @@ import {
   ElAlert,
   ElButton,
   ElCard,
-  ElDescriptions,
-  ElDescriptionsItem,
   ElForm,
   ElFormItem,
   ElInput,
   ElMessage,
   ElPopconfirm,
-  ElTable,
-  ElTableColumn,
+  ElSkeleton,
   ElTag,
   type FormInstance,
 } from 'element-plus'
@@ -137,8 +134,7 @@ async function loadSessions() {
   }
 }
 
-async function revoke(row: unknown) {
-  const s = row as Session
+async function revoke(s: Session) {
   try {
     await revokeSession(s.id)
     ElMessage.success('已撤销')
@@ -180,12 +176,6 @@ onMounted(async () => {
     <template v-else-if="account">
       <ElCard>
         <template #header>账号</template>
-        <ElDescriptions :column="2" border>
-          <ElDescriptionsItem label="邮箱">{{ account.email }}</ElDescriptionsItem>
-          <ElDescriptionsItem label="注册时间">{{
-            formatTime(account.created_at)
-          }}</ElDescriptionsItem>
-        </ElDescriptions>
         <ElForm
           ref="profileRef"
           :model="profile"
@@ -194,6 +184,12 @@ onMounted(async () => {
           class="account-form"
           @submit.prevent="saveProfile"
         >
+          <ElFormItem label="邮箱">
+            <ElInput :model-value="account.email" readonly />
+          </ElFormItem>
+          <ElFormItem label="注册时间">
+            <ElInput :model-value="formatTime(account.created_at)" readonly />
+          </ElFormItem>
           <ElFormItem label="昵称" prop="nickname">
             <ElInput v-model="profile.nickname" maxlength="64" />
           </ElFormItem>
@@ -268,40 +264,65 @@ onMounted(async () => {
             <ElButton size="small" :loading="loadingSessions" @click="loadSessions">刷新</ElButton>
           </div>
         </template>
-        <ElTable :data="sessions" v-loading="loadingSessions" empty-text="暂无会话">
-          <ElTableColumn label="设备" min-width="220">
-            <template #default="{ row }">
-              {{ row.device_name || '未命名设备' }}
-              <ElTag v-if="row.is_current" size="small" type="success" class="account-tag"
-                >当前</ElTag
-              >
-            </template>
-          </ElTableColumn>
-          <ElTableColumn label="类型" width="90">
-            <template #default="{ row }">{{
-              clientKindLabel[row.client_kind as Session['client_kind']]
-            }}</template>
-          </ElTableColumn>
-          <ElTableColumn label="最近活动" width="180">
-            <template #default="{ row }">{{ formatTime(row.last_seen_at) }}</template>
-          </ElTableColumn>
-          <ElTableColumn label="登录时间" width="180">
-            <template #default="{ row }">{{ formatTime(row.created_at) }}</template>
-          </ElTableColumn>
-          <ElTableColumn width="100">
-            <template #default="{ row }">
+        <div :aria-busy="loadingSessions">
+          <ElSkeleton v-if="loadingSessions && !sessions.length" :rows="3" animated />
+          <ul v-else-if="sessions.length" class="session-list" aria-label="登录设备">
+            <li v-for="device in sessions" :key="device.id" class="session-item">
+              <span class="session-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                  <template v-if="device.client_kind === 'web'">
+                    <rect x="3" y="4" width="18" height="13" rx="2" />
+                    <path d="M8 21h8M12 17v4" />
+                  </template>
+                  <template v-else>
+                    <rect x="6" y="2" width="12" height="20" rx="3" />
+                    <path d="M10 18h4" />
+                  </template>
+                </svg>
+              </span>
+              <div class="session-details">
+                <div class="session-heading">
+                  <h3>{{ device.device_name || '未命名设备' }}</h3>
+                  <ElTag v-if="device.is_current" size="small" type="success">当前设备</ElTag>
+                  <span class="session-kind">{{ clientKindLabel[device.client_kind] }}</span>
+                </div>
+                <dl class="session-times">
+                  <div>
+                    <dt>最近活动</dt>
+                    <dd>
+                      <time :datetime="device.last_seen_at">{{
+                        formatTime(device.last_seen_at)
+                      }}</time>
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>登录时间</dt>
+                    <dd>
+                      <time :datetime="device.created_at">{{ formatTime(device.created_at) }}</time>
+                    </dd>
+                  </div>
+                </dl>
+              </div>
               <ElPopconfirm
-                v-if="!row.is_current"
+                v-if="!device.is_current"
                 title="撤销该设备的登录？"
-                @confirm="revoke(row)"
+                @confirm="revoke(device)"
               >
                 <template #reference>
-                  <ElButton size="small" type="danger" link>撤销</ElButton>
+                  <ElButton
+                    class="session-revoke"
+                    type="danger"
+                    plain
+                    :disabled="loadingSessions"
+                    :aria-label="`撤销 ${device.device_name || '未命名设备'} 的登录`"
+                    >撤销登录</ElButton
+                  >
                 </template>
               </ElPopconfirm>
-            </template>
-          </ElTableColumn>
-        </ElTable>
+            </li>
+          </ul>
+          <p v-else class="session-empty" role="status">暂无登录设备</p>
+        </div>
       </ElCard>
 
       <ElCard>
@@ -325,6 +346,10 @@ onMounted(async () => {
   margin-top: 16px;
 }
 
+.session-times time {
+  font-variant-numeric: tabular-nums;
+}
+
 .account-hint {
   margin-left: 12px;
   font-size: 12px;
@@ -337,7 +362,117 @@ onMounted(async () => {
   justify-content: space-between;
 }
 
-.account-tag {
-  margin-left: 8px;
+.session-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.session-item {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 12px 16px;
+  padding-block: 18px;
+}
+
+.session-item + .session-item {
+  border-block-start: 1px solid var(--tf-line-soft);
+}
+
+.session-item:first-child {
+  padding-block-start: 0;
+}
+
+.session-item:last-child {
+  padding-block-end: 0;
+}
+
+.session-icon {
+  display: grid;
+  place-items: center;
+  inline-size: 40px;
+  block-size: 40px;
+  border-radius: var(--tf-radius-control);
+  background: var(--tf-accent-soft);
+  color: var(--tf-accent);
+}
+
+.session-icon svg {
+  inline-size: 22px;
+  block-size: 22px;
+}
+
+.session-details {
+  min-width: 0;
+}
+
+.session-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+
+.session-heading h3 {
+  margin: 0;
+  min-width: 0;
+  color: var(--tf-text-1);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.session-kind,
+.session-times dt {
+  color: var(--tf-text-3);
+  font-size: 12px;
+}
+
+.session-times {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 24px;
+  margin: 8px 0 0;
+  line-height: 1.6;
+}
+
+.session-times > div {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+}
+
+.session-times dd {
+  margin: 0;
+  color: var(--tf-text-2);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.session-revoke {
+  align-self: center;
+}
+
+.session-empty {
+  margin: 0;
+  padding-block: 20px;
+  color: var(--tf-text-3);
+  font-size: 14px;
+  text-align: center;
+}
+
+@media (max-width: 600px) {
+  .session-item {
+    grid-template-columns: 40px minmax(0, 1fr);
+    column-gap: 12px;
+  }
+
+  .session-revoke {
+    grid-column: 2;
+    justify-self: start;
+  }
 }
 </style>

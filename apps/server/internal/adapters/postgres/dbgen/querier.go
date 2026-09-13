@@ -36,25 +36,46 @@ type Querier interface {
 	GetChallengeForUpdate(ctx context.Context, id uuid.UUID) (AuthChallenge, error)
 	GetExpenseCategory(ctx context.Context, arg GetExpenseCategoryParams) (ExpenseCategory, error)
 	GetExpenseCategoryForUpdate(ctx context.Context, arg GetExpenseCategoryForUpdateParams) (ExpenseCategory, error)
+	GetItineraryItem(ctx context.Context, arg GetItineraryItemParams) (ItineraryItem, error)
+	GetItineraryItemForUpdate(ctx context.Context, arg GetItineraryItemForUpdateParams) (ItineraryItem, error)
 	GetMutationReceipt(ctx context.Context, arg GetMutationReceiptParams) (MutationReceipt, error)
+	// 行李清单物品（数据库设计表 6）。同分类同名唯一由部分唯一索引兜底，应用层先用 PackingNameTaken 预检以返回 422。
+	GetPackingItem(ctx context.Context, arg GetPackingItemParams) (PackingItem, error)
+	GetPackingItemForUpdate(ctx context.Context, arg GetPackingItemForUpdateParams) (PackingItem, error)
 	GetSession(ctx context.Context, id uuid.UUID) (AccountSession, error)
 	GetSessionForUpdate(ctx context.Context, id uuid.UUID) (AccountSession, error)
+	// 待办（数据库设计表 7）。逾期不落列，按应用传入的旅行时区“今天”在 SQL 中筛选；空截止日期用哨兵排在最后，与索引表达式一致。
+	GetTodoItem(ctx context.Context, arg GetTodoItemParams) (TodoItem, error)
+	GetTodoItemForUpdate(ctx context.Context, arg GetTodoItemForUpdateParams) (TodoItem, error)
 	// 旅行与回收站。时间一律由应用时钟传入；阶段按旅行时区的“今天”在 SQL 中计算，使筛选与返回值一致。
 	GetTrip(ctx context.Context, arg GetTripParams) (Trip, error)
+	// 每日行程项目（数据库设计表 5）。时间由应用时钟传入；currency_code 不存列，由适配器按旅行币种派生。
+	GetTripContentInfo(ctx context.Context, arg GetTripContentInfoParams) (GetTripContentInfoRow, error)
 	GetTripForUpdate(ctx context.Context, arg GetTripForUpdateParams) (Trip, error)
 	IncrementChallengeAttempts(ctx context.Context, id uuid.UUID) error
 	// 账号级账单分类。
 	InsertExpenseCategory(ctx context.Context, arg InsertExpenseCategoryParams) (ExpenseCategory, error)
+	InsertItineraryItem(ctx context.Context, arg InsertItineraryItemParams) (ItineraryItem, error)
 	InsertMutationReceipt(ctx context.Context, arg InsertMutationReceiptParams) error
+	InsertPackingItem(ctx context.Context, arg InsertPackingItemParams) (PackingItem, error)
 	InsertSyncChange(ctx context.Context, arg InsertSyncChangeParams) error
+	InsertTodoItem(ctx context.Context, arg InsertTodoItemParams) (TodoItem, error)
 	InsertTrip(ctx context.Context, arg InsertTripParams) (Trip, error)
 	InsertTripDeletionJob(ctx context.Context, arg InsertTripDeletionJobParams) (DeletionJob, error)
 	// 邮箱验证码挑战。
 	InvalidateChallenges(ctx context.Context, arg InvalidateChallengesParams) error
+	ItineraryItemIDExists(ctx context.Context, arg ItineraryItemIDExistsParams) (*bool, error)
 	LatestChallengeCreatedAt(ctx context.Context, arg LatestChallengeCreatedAtParams) (time.Time, error)
 	ListActiveSessions(ctx context.Context, arg ListActiveSessionsParams) ([]AccountSession, error)
 	ListExpenseCategories(ctx context.Context, accountID uuid.UUID) ([]ExpenseCategory, error)
+	// 列表：接口设计 3.9 ItineraryFilters；游标用行比较走 (account_id, trip_id, scheduled_on, sort_order, id) 部分索引。
+	ListItineraryItems(ctx context.Context, arg ListItineraryItemsParams) ([]ItineraryItem, error)
+	ListItineraryItemsForDays(ctx context.Context, arg ListItineraryItemsForDaysParams) ([]ItineraryItem, error)
+	// 列表：接口设计 3.9 PackingFilters；游标走 (account_id, trip_id, category, created_at, id) 部分索引。
+	ListPackingItems(ctx context.Context, arg ListPackingItemsParams) ([]PackingItem, error)
 	ListSyncChanges(ctx context.Context, arg ListSyncChangesParams) ([]SyncChange, error)
+	// 列表：接口设计 3.9 TodoFilters；state 为 all/pending/completed/overdue，today 为旅行时区的今天。
+	ListTodoItems(ctx context.Context, arg ListTodoItemsParams) ([]TodoItem, error)
 	ListTrashedTrips(ctx context.Context, arg ListTrashedTripsParams) ([]Trip, error)
 	// 列表：接口设计 3.9 TripFilters。q 由应用转义 LIKE 通配符；游标用行比较走 (account_id, start_date DESC, id DESC) 索引。
 	ListTripsByStartDate(ctx context.Context, arg ListTripsByStartDateParams) ([]ListTripsByStartDateRow, error)
@@ -62,7 +83,11 @@ type Querier interface {
 	// 统一写事务：账号锁、变更日志、操作收据、字段级合并读取。
 	LockAccountForWrite(ctx context.Context, accountID uuid.UUID) (LockAccountForWriteRow, error)
 	MaxExpenseCategorySortOrder(ctx context.Context, accountID uuid.UUID) (int32, error)
+	MaxItinerarySortOrder(ctx context.Context, arg MaxItinerarySortOrderParams) (MaxItinerarySortOrderRow, error)
+	PackingItemIDExists(ctx context.Context, arg PackingItemIDExistsParams) (*bool, error)
+	PackingNameTaken(ctx context.Context, arg PackingNameTakenParams) (bool, error)
 	ReissueSessionWithinGrace(ctx context.Context, arg ReissueSessionWithinGraceParams) error
+	RepositionItineraryItem(ctx context.Context, arg RepositionItineraryItemParams) (ItineraryItem, error)
 	RequestTripPurge(ctx context.Context, arg RequestTripPurgeParams) (Trip, error)
 	RestoreTrip(ctx context.Context, arg RestoreTripParams) (Trip, error)
 	RevokeAccountSessions(ctx context.Context, arg RevokeAccountSessionsParams) error
@@ -74,6 +99,10 @@ type Querier interface {
 	SetSessionReauthenticated(ctx context.Context, arg SetSessionReauthenticatedParams) error
 	SetTripArchived(ctx context.Context, arg SetTripArchivedParams) (Trip, error)
 	SoftDeleteExpenseCategory(ctx context.Context, arg SoftDeleteExpenseCategoryParams) (ExpenseCategory, error)
+	SoftDeleteItineraryItem(ctx context.Context, arg SoftDeleteItineraryItemParams) (ItineraryItem, error)
+	SoftDeletePackingItem(ctx context.Context, arg SoftDeletePackingItemParams) (PackingItem, error)
+	SoftDeleteTodoItem(ctx context.Context, arg SoftDeleteTodoItemParams) (TodoItem, error)
+	TodoItemIDExists(ctx context.Context, arg TodoItemIDExistsParams) (*bool, error)
 	TouchSession(ctx context.Context, arg TouchSessionParams) error
 	TrashTrip(ctx context.Context, arg TrashTripParams) (Trip, error)
 	TripHasEstimatedAmounts(ctx context.Context, arg TripHasEstimatedAmountsParams) (bool, error)
@@ -83,6 +112,9 @@ type Querier interface {
 	UpdateAccountPassword(ctx context.Context, arg UpdateAccountPasswordParams) error
 	UpdateAccountProfile(ctx context.Context, arg UpdateAccountProfileParams) (Account, error)
 	UpdateExpenseCategory(ctx context.Context, arg UpdateExpenseCategoryParams) (ExpenseCategory, error)
+	UpdateItineraryItem(ctx context.Context, arg UpdateItineraryItemParams) (ItineraryItem, error)
+	UpdatePackingItem(ctx context.Context, arg UpdatePackingItemParams) (PackingItem, error)
+	UpdateTodoItem(ctx context.Context, arg UpdateTodoItemParams) (TodoItem, error)
 	UpdateTrip(ctx context.Context, arg UpdateTripParams) (Trip, error)
 }
 

@@ -11,6 +11,7 @@ import (
 
 	"tripfolio/server/internal/foundation/actor"
 	"tripfolio/server/internal/foundation/apperr"
+	"tripfolio/server/internal/foundation/types"
 	"tripfolio/server/internal/transport/httpapi/middleware"
 	"tripfolio/server/internal/transport/httpapi/problem"
 )
@@ -98,4 +99,13 @@ func parseUUID(field, raw string) (uuid.UUID, error) {
 		return uuid.Nil, apperr.Validation(apperr.Field(field, "INVALID", "必须是 UUID"))
 	}
 	return id, nil
+}
+
+// parseVersionField 解析正文中的版本字符串（如重排的 base_version），无效时返回 422。
+func parseVersionField(raw string) (int64, error) {
+	v, err := types.ParseVersion(raw)
+	if err != nil {
+		return 0, apperr.Validation(apperr.Field("base_version", "INVALID", "版本必须是不带前导零的正整数"))
+	}
+	return int64(v), nil
 }

@@ -1,0 +1,334 @@
+ItineraryKind:
+  type: string
+  description: 项目类型；取值清单见 Metadata.itinerary_kinds
+  enum: [attraction, transport, lodging, dining, other]
+
+ItineraryStatus:
+  type: string
+  description: 项目状态；取值清单见 Metadata.itinerary_statuses
+  enum: [pending, completed, skipped]
+
+ItineraryItem:
+  type: object
+  description: |
+    每日行程项目的规范资源（接口设计 3.3）；同一结构也是同步日志与快照中的表示。
+    currency_code 由旅行派生、只读，与 estimated_amount 成对出现，金额为空时为 null。
+  x-go-type: itinerary.Resource
+  x-go-type-import:
+    path: tripfolio/server/internal/modules/travel/itinerary
+  required:
+    [
+      id,
+      trip_id,
+      title,
+      kind,
+      scheduled_on,
+      sort_order,
+      planned_start_local,
+      planned_end_local,
+      planned_duration_minutes,
+      place_name,
+      address,
+      latitude,
+      longitude,
+      estimated_amount,
+      currency_code,
+      notes,
+      status,
+      actual_start_local,
+      actual_end_local,
+      actual_notes,
+      version,
+      created_at,
+      updated_at,
+      deleted_at,
+    ]
+  properties:
+    id:
+      type: string
+      format: uuid
+    trip_id:
+      type: string
+      format: uuid
+    title:
+      type: string
+      minLength: 1
+      maxLength: 200
+    kind:
+      $ref: '#/ItineraryKind'
+    scheduled_on:
+      $ref: ./write.yaml#/Date
+    sort_order:
+      type: integer
+      format: int32
+      minimum: 0
+      description: 同日顺序，id 作稳定次序；由服务端维护，创建时追加到当天末尾
+    planned_start_local:
+      type: string
+      nullable: true
+      pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$'
+      description: 计划开始的当地日期时间，按旅行 timezone 解释
+    planned_end_local:
+      type: string
+      nullable: true
+      pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$'
+      description: 计划结束的当地日期时间，允许跨日；与 planned_duration_minutes 互斥
+    planned_duration_minutes:
+      type: integer
+      format: int32
+      nullable: true
+      minimum: 1
+      description: 计划时长；与 planned_end_local 互斥
+    place_name:
+      type: string
+      maxLength: 200
+    address:
+      type: string
+      maxLength: 500
+    latitude:
+      type: number
+      format: double
+      nullable: true
+      minimum: -90
+      maximum: 90
+      description: GCJ-02 纬度，最多 6 位小数；与 longitude 同时为空或同时非空
+    longitude:
+      type: number
+      format: double
+      nullable: true
+      minimum: -180
+      maximum: 180
+      description: GCJ-02 经度，最多 6 位小数；与 latitude 同时为空或同时非空
+    estimated_amount:
+      type: string
+      nullable: true
+      pattern: '^[0-9]{1,14}(\.[0-9]{1,4})?$'
+      description: 预计费用，格式同 Money；不进入实际开支统计
+    currency_code:
+      type: string
+      nullable: true
+      pattern: '^[A-Z]{3}$'
+      description: 由旅行派生的币种，只读；estimated_amount 为空时为 null
+    notes:
+      type: string
+      maxLength: 10000
+    status:
+      $ref: '#/ItineraryStatus'
+    actual_start_local:
+      type: string
+      nullable: true
+      pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$'
+    actual_end_local:
+      type: string
+      nullable: true
+      pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$'
+    actual_notes:
+      type: string
+      maxLength: 10000
+    version:
+      $ref: ./write.yaml#/Version
+    created_at:
+      $ref: ./write.yaml#/Instant
+    updated_at:
+      $ref: ./write.yaml#/Instant
+    deleted_at:
+      type: string
+      format: date-time
+      nullable: true
+
+ItineraryItemResponse:
+  type: object
+  required: [data]
+  properties:
+    data:
+      $ref: '#/ItineraryItem'
+
+ItineraryPage:
+  type: object
+  description: Page<ItineraryItem>；按 scheduled_on、sort_order、id 升序，游标绑定账号、旅行与筛选
+  required: [items, next_cursor]
+  properties:
+    items:
+      type: array
+      items:
+        $ref: '#/ItineraryItem'
+    next_cursor:
+      type: string
+      nullable: true
+
+ItineraryCreate:
+  type: object
+  description: |
+    新建行程项目；默认追加到 scheduled_on 当天末尾。
+    提供 estimated_amount 时须同时提供 currency_code 且等于旅行币种；
+    planned_end_local 与 planned_duration_minutes 不能同时提供。
+  required: [id, title, kind, scheduled_on]
+  properties:
+    id:
+      type: string
+      format: uuid
+    title:
+      type: string
+      minLength: 1
+      maxLength: 200
+    kind:
+      $ref: '#/ItineraryKind'
+    scheduled_on:
+      $ref: ./write.yaml#/Date
+    planned_start_local:
+      type: string
+      nullable: true
+      pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$'
+    planned_end_local:
+      type: string
+      nullable: true
+      pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$'
+    planned_duration_minutes:
+      type: integer
+      format: int32
+      nullable: true
+      minimum: 1
+    place_name:
+      type: string
+      maxLength: 200
+    address:
+      type: string
+      maxLength: 500
+    latitude:
+      type: number
+      format: double
+      nullable: true
+      minimum: -90
+      maximum: 90
+    longitude:
+      type: number
+      format: double
+      nullable: true
+      minimum: -180
+      maximum: 180
+    estimated_amount:
+      type: string
+      nullable: true
+      pattern: '^[0-9]{1,14}(\.[0-9]{1,4})?$'
+    currency_code:
+      $ref: ./common.yaml#/CurrencyCode
+    notes:
+      type: string
+      maxLength: 10000
+    status:
+      $ref: '#/ItineraryStatus'
+    actual_start_local:
+      type: string
+      nullable: true
+      pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$'
+    actual_end_local:
+      type: string
+      nullable: true
+      pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$'
+    actual_notes:
+      type: string
+      maxLength: 10000
+
+ItineraryPatch:
+  type: object
+  description: |
+    局部更新：缺省字段保持原值，可空字段显式 null 表示清空。
+    id、scheduled_on、sort_order 不可在此修改，跨日移动与排序走重排接口；
+    estimated_amount 改为非空值时须同时携带 currency_code。
+  properties:
+    title:
+      type: string
+      minLength: 1
+      maxLength: 200
+    kind:
+      $ref: '#/ItineraryKind'
+    planned_start_local:
+      type: string
+      nullable: true
+      pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$'
+    planned_end_local:
+      type: string
+      nullable: true
+      pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$'
+    planned_duration_minutes:
+      type: integer
+      format: int32
+      nullable: true
+      minimum: 1
+    place_name:
+      type: string
+      maxLength: 200
+    address:
+      type: string
+      maxLength: 500
+    latitude:
+      type: number
+      format: double
+      nullable: true
+      minimum: -90
+      maximum: 90
+    longitude:
+      type: number
+      format: double
+      nullable: true
+      minimum: -180
+      maximum: 180
+    estimated_amount:
+      type: string
+      nullable: true
+      pattern: '^[0-9]{1,14}(\.[0-9]{1,4})?$'
+    currency_code:
+      $ref: ./common.yaml#/CurrencyCode
+    notes:
+      type: string
+      maxLength: 10000
+    status:
+      $ref: '#/ItineraryStatus'
+    actual_start_local:
+      type: string
+      nullable: true
+      pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$'
+    actual_end_local:
+      type: string
+      nullable: true
+      pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$'
+    actual_notes:
+      type: string
+      maxLength: 10000
+
+ItineraryReorderEntry:
+  type: object
+  description: 重排中的一个项目及其基线版本
+  required: [id, base_version]
+  properties:
+    id:
+      type: string
+      format: uuid
+    base_version:
+      $ref: ./write.yaml#/Version
+
+ItineraryReorderDay:
+  type: object
+  description: 一天的完整行程集合，数组顺序即新的 sort_order
+  required: [date, items]
+  properties:
+    date:
+      $ref: ./write.yaml#/Date
+    items:
+      type: array
+      items:
+        $ref: '#/ItineraryReorderEntry'
+
+ItineraryReorder:
+  type: object
+  description: |
+    重排：提交受影响日期的完整 ID 与基线版本列表，支持把 ID 从某日移入另一日。
+    所有 ID 只能出现一次，且必须覆盖这些日期当前的全部有效项目；
+    集合不一致返回 409 ORDER_CHANGED，个别版本不符返回 412 VERSION_CONFLICT。
+  required: [days]
+  properties:
+    days:
+      type: array
+      minItems: 1
+      items:
+        $ref: '#/ItineraryReorderDay'

@@ -258,7 +258,13 @@ onMounted(() => {
             class="trip-card tf-card"
           >
             <div class="trip-card-title">
-              <h3>{{ trip.name }}</h3>
+              <h3>
+                <RouterLink
+                  :to="{ name: 'trip-detail', params: { tripId: trip.id } }"
+                  class="trip-link"
+                  >{{ trip.name }}</RouterLink
+                >
+              </h3>
               <ElTag v-if="trip.archived_at" type="info" size="small">已归档</ElTag>
             </div>
             <p class="trip-destination">{{ trip.destination || '目的地待定' }}</p>
@@ -274,7 +280,11 @@ onMounted(() => {
               }}</strong>
             </div>
             <div class="trip-actions">
-              <ElButton size="small" :disabled="!!busy" @click="editor?.open(trip)">编辑</ElButton
+              <RouterLink :to="{ name: 'trip-detail', params: { tripId: trip.id } }"
+                ><ElButton size="small" type="primary" plain :disabled="!!busy"
+                  >查看详情</ElButton
+                ></RouterLink
+              ><ElButton size="small" :disabled="!!busy" @click="editor?.open(trip)">编辑</ElButton
               ><ElButton
                 size="small"
                 :disabled="!!busy && busy !== trip.id"
@@ -416,6 +426,13 @@ onMounted(() => {
   font-size: 18px;
   line-height: 1.5;
   overflow-wrap: anywhere;
+}
+.trip-link {
+  color: var(--tf-text-1);
+  text-decoration: none;
+}
+.trip-link:hover {
+  color: var(--tf-accent);
 }
 .trip-destination {
   margin: 8px 0 16px;

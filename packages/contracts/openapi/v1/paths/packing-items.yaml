@@ -1,0 +1,227 @@
+collection:
+  parameters:
+    - name: trip_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  get:
+    tags: [travel]
+    operationId: listPackingItems
+    summary: 旅行的行李清单；按分类与状态筛选，键集分页
+    parameters:
+      - name: category
+        in: query
+        required: false
+        schema:
+          $ref: ../openapi.yaml#/components/schemas/PackingCategory
+      - name: status
+        in: query
+        required: false
+        schema:
+          $ref: ../openapi.yaml#/components/schemas/PackingStatus
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 50
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+    responses:
+      '200':
+        description: 一页物品，按 category、created_at、id 升序
+        content:
+          application/json:
+            schema:
+              $ref: ../openapi.yaml#/components/schemas/PackingPage
+      '400':
+        $ref: ../openapi.yaml#/components/responses/BadRequest
+      '401':
+        $ref: ../openapi.yaml#/components/responses/Unauthorized
+      '404':
+        $ref: ../openapi.yaml#/components/responses/NotFound
+      '410':
+        $ref: ../openapi.yaml#/components/responses/Gone
+      '422':
+        $ref: ../openapi.yaml#/components/responses/ValidationFailed
+  post:
+    tags: [travel]
+    operationId: createPackingItem
+    summary: 创建独立物品；同分类同名冲突返回 422
+    parameters:
+      - $ref: ../openapi.yaml#/components/parameters/IdempotencyKey
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: ../openapi.yaml#/components/schemas/PackingCreate
+    responses:
+      '201':
+        description: 已创建
+        content:
+          application/json:
+            schema:
+              $ref: ../openapi.yaml#/components/schemas/WriteResponse
+      '401':
+        $ref: ../openapi.yaml#/components/responses/Unauthorized
+      '404':
+        $ref: ../openapi.yaml#/components/responses/NotFound
+      '409':
+        $ref: ../openapi.yaml#/components/responses/Conflict
+      '410':
+        $ref: ../openapi.yaml#/components/responses/Gone
+      '422':
+        $ref: ../openapi.yaml#/components/responses/ValidationFailed
+
+item:
+  parameters:
+    - name: trip_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    - name: item_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  get:
+    tags: [travel]
+    operationId: getPackingItem
+    summary: 单件物品的规范资源
+    responses:
+      '200':
+        description: 物品，带 ETag
+        headers:
+          ETag:
+            schema:
+              type: string
+        content:
+          application/json:
+            schema:
+              $ref: ../openapi.yaml#/components/schemas/PackingItemResponse
+      '401':
+        $ref: ../openapi.yaml#/components/responses/Unauthorized
+      '404':
+        $ref: ../openapi.yaml#/components/responses/NotFound
+      '410':
+        $ref: ../openapi.yaml#/components/responses/Gone
+  patch:
+    tags: [travel]
+    operationId: updatePackingItem
+    summary: 局部更新；内容编辑与状态变化使用同一业务规则
+    parameters:
+      - $ref: ../openapi.yaml#/components/parameters/IdempotencyKey
+      - $ref: ../openapi.yaml#/components/parameters/IfMatch
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: ../openapi.yaml#/components/schemas/PackingPatch
+    responses:
+      '200':
+        description: 已更新；warnings 可能含 MERGED_WITH_NEWER_VERSION
+        content:
+          application/json:
+            schema:
+              $ref: ../openapi.yaml#/components/schemas/WriteResponse
+      '401':
+        $ref: ../openapi.yaml#/components/responses/Unauthorized
+      '404':
+        $ref: ../openapi.yaml#/components/responses/NotFound
+      '410':
+        $ref: ../openapi.yaml#/components/responses/Gone
+      '412':
+        $ref: ../openapi.yaml#/components/responses/PreconditionFailed
+      '422':
+        $ref: ../openapi.yaml#/components/responses/ValidationFailed
+      '428':
+        $ref: ../openapi.yaml#/components/responses/VersionRequired
+  delete:
+    tags: [travel]
+    operationId: deletePackingItem
+    summary: 软删除物品；要求版本相等
+    parameters:
+      - $ref: ../openapi.yaml#/components/parameters/IdempotencyKey
+      - $ref: ../openapi.yaml#/components/parameters/IfMatch
+    responses:
+      '200':
+        description: 已删除；data 为带 deleted_at 的物品
+        content:
+          application/json:
+            schema:
+              $ref: ../openapi.yaml#/components/schemas/WriteResponse
+      '401':
+        $ref: ../openapi.yaml#/components/responses/Unauthorized
+      '404':
+        $ref: ../openapi.yaml#/components/responses/NotFound
+      '410':
+        $ref: ../openapi.yaml#/components/responses/Gone
+      '412':
+        $ref: ../openapi.yaml#/components/responses/PreconditionFailed
+      '428':
+        $ref: ../openapi.yaml#/components/responses/VersionRequired
+
+batch:
+  parameters:
+    - name: trip_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  post:
+    tags: [travel]
+    operationId: createPackingItems
+    summary: 一个事务批量创建最多 100 件物品；同分类同名与请求内重复项跳过
+    parameters:
+      - $ref: ../openapi.yaml#/components/parameters/IdempotencyKey
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: ../openapi.yaml#/components/schemas/PackingBatchCreate
+    responses:
+      '201':
+        description: 已提交；全部跳过时 affected 与 created_ids 为空数组
+        content:
+          application/json:
+            schema:
+              $ref: ../openapi.yaml#/components/schemas/PackingBatchResponse
+      '401':
+        $ref: ../openapi.yaml#/components/responses/Unauthorized
+      '404':
+        $ref: ../openapi.yaml#/components/responses/NotFound
+      '409':
+        $ref: ../openapi.yaml#/components/responses/Conflict
+      '410':
+        $ref: ../openapi.yaml#/components/responses/Gone
+      '422':
+        $ref: ../openapi.yaml#/components/responses/ValidationFailed
+
+library:
+  get:
+    tags: [travel]
+    operationId: listPackingLibrary
+    summary: 内置物品库的版本、分类与物品；随程序发布，不落库
+    responses:
+      '200':
+        description: 物品库
+        content:
+          application/json:
+            schema:
+              $ref: ../openapi.yaml#/components/schemas/PackingLibraryResponse
+      '401':
+        $ref: ../openapi.yaml#/components/responses/Unauthorized

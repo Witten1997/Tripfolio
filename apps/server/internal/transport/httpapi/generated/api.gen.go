@@ -16,6 +16,9 @@ import (
 	"tripfolio/server/internal/foundation/write"
 	"tripfolio/server/internal/modules/account"
 	"tripfolio/server/internal/modules/finance"
+	"tripfolio/server/internal/modules/travel/itinerary"
+	"tripfolio/server/internal/modules/travel/packing"
+	"tripfolio/server/internal/modules/travel/todo"
 	"tripfolio/server/internal/modules/travel/trip"
 
 	"github.com/go-chi/chi/v5"
@@ -78,6 +81,54 @@ func (e EmailChallengeRequestPurpose) Valid() bool {
 	}
 }
 
+// Defines values for ItineraryKind.
+const (
+	ItineraryKindAttraction ItineraryKind = "attraction"
+	ItineraryKindDining     ItineraryKind = "dining"
+	ItineraryKindLodging    ItineraryKind = "lodging"
+	ItineraryKindOther      ItineraryKind = "other"
+	ItineraryKindTransport  ItineraryKind = "transport"
+)
+
+// Valid indicates whether the value is a known member of the ItineraryKind enum.
+func (e ItineraryKind) Valid() bool {
+	switch e {
+	case ItineraryKindAttraction:
+		return true
+	case ItineraryKindDining:
+		return true
+	case ItineraryKindLodging:
+		return true
+	case ItineraryKindOther:
+		return true
+	case ItineraryKindTransport:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ItineraryStatus.
+const (
+	ItineraryStatusCompleted ItineraryStatus = "completed"
+	ItineraryStatusPending   ItineraryStatus = "pending"
+	ItineraryStatusSkipped   ItineraryStatus = "skipped"
+)
+
+// Valid indicates whether the value is a known member of the ItineraryStatus enum.
+func (e ItineraryStatus) Valid() bool {
+	switch e {
+	case ItineraryStatusCompleted:
+		return true
+	case ItineraryStatusPending:
+		return true
+	case ItineraryStatusSkipped:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for MapSettingsCoordinateSystem.
 const (
 	GCJ02 MapSettingsCoordinateSystem = "GCJ-02"
@@ -108,6 +159,99 @@ func (e MapSettingsProvider) Valid() bool {
 	}
 }
 
+// Defines values for PackingCategory.
+const (
+	PackingCategoryClothing    PackingCategory = "clothing"
+	PackingCategoryDaily       PackingCategory = "daily"
+	PackingCategoryDocuments   PackingCategory = "documents"
+	PackingCategoryElectronics PackingCategory = "electronics"
+	PackingCategoryFood        PackingCategory = "food"
+	PackingCategoryMedicine    PackingCategory = "medicine"
+	PackingCategoryOther       PackingCategory = "other"
+)
+
+// Valid indicates whether the value is a known member of the PackingCategory enum.
+func (e PackingCategory) Valid() bool {
+	switch e {
+	case PackingCategoryClothing:
+		return true
+	case PackingCategoryDaily:
+		return true
+	case PackingCategoryDocuments:
+		return true
+	case PackingCategoryElectronics:
+		return true
+	case PackingCategoryFood:
+		return true
+	case PackingCategoryMedicine:
+		return true
+	case PackingCategoryOther:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PackingSkippedReason.
+const (
+	Duplicate PackingSkippedReason = "duplicate"
+)
+
+// Valid indicates whether the value is a known member of the PackingSkippedReason enum.
+func (e PackingSkippedReason) Valid() bool {
+	switch e {
+	case Duplicate:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PackingStatus.
+const (
+	PackingStatusPacked  PackingStatus = "packed"
+	PackingStatusPending PackingStatus = "pending"
+	PackingStatusReady   PackingStatus = "ready"
+)
+
+// Valid indicates whether the value is a known member of the PackingStatus enum.
+func (e PackingStatus) Valid() bool {
+	switch e {
+	case PackingStatusPacked:
+		return true
+	case PackingStatusPending:
+		return true
+	case PackingStatusReady:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TodoState.
+const (
+	TodoStateAll       TodoState = "all"
+	TodoStateCompleted TodoState = "completed"
+	TodoStateOverdue   TodoState = "overdue"
+	TodoStatePending   TodoState = "pending"
+)
+
+// Valid indicates whether the value is a known member of the TodoState enum.
+func (e TodoState) Valid() bool {
+	switch e {
+	case TodoStateAll:
+		return true
+	case TodoStateCompleted:
+		return true
+	case TodoStateOverdue:
+		return true
+	case TodoStatePending:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ListTripsParamsPhase.
 const (
 	Ended   ListTripsParamsPhase = "ended"
@@ -131,19 +275,19 @@ func (e ListTripsParamsPhase) Valid() bool {
 
 // Defines values for ListTripsParamsArchived.
 const (
-	All   ListTripsParamsArchived = "all"
-	False ListTripsParamsArchived = "false"
-	True  ListTripsParamsArchived = "true"
+	ListTripsParamsArchivedAll   ListTripsParamsArchived = "all"
+	ListTripsParamsArchivedFalse ListTripsParamsArchived = "false"
+	ListTripsParamsArchivedTrue  ListTripsParamsArchived = "true"
 )
 
 // Valid indicates whether the value is a known member of the ListTripsParamsArchived enum.
 func (e ListTripsParamsArchived) Valid() bool {
 	switch e {
-	case All:
+	case ListTripsParamsArchivedAll:
 		return true
-	case False:
+	case ListTripsParamsArchivedFalse:
 		return true
-	case True:
+	case ListTripsParamsArchivedTrue:
 		return true
 	default:
 		return false
@@ -324,6 +468,120 @@ type FieldError struct {
 // Instant RFC 3339 UTC 时间点，例如 2026-09-11T08:30:00Z
 type Instant = time.Time
 
+// ItineraryCreate 新建行程项目；默认追加到 scheduled_on 当天末尾。
+// 提供 estimated_amount 时须同时提供 currency_code 且等于旅行币种；
+// planned_end_local 与 planned_duration_minutes 不能同时提供。
+type ItineraryCreate struct {
+	ActualEndLocal   nullable.Nullable[string] `json:"actual_end_local,omitempty"`
+	ActualNotes      *string                   `json:"actual_notes,omitempty"`
+	ActualStartLocal nullable.Nullable[string] `json:"actual_start_local,omitempty"`
+	Address          *string                   `json:"address,omitempty"`
+
+	// CurrencyCode 支持清单内的 ISO 4217 三字母大写代码；清单见 Metadata.currencies
+	//
+	// Example: CNY
+	CurrencyCode    *CurrencyCode             `json:"currency_code,omitempty"`
+	EstimatedAmount nullable.Nullable[string] `json:"estimated_amount,omitempty"`
+	Id              openapi_types.UUID        `json:"id"`
+
+	// Kind 项目类型；取值清单见 Metadata.itinerary_kinds
+	Kind                   ItineraryKind              `json:"kind"`
+	Latitude               nullable.Nullable[float64] `json:"latitude,omitempty"`
+	Longitude              nullable.Nullable[float64] `json:"longitude,omitempty"`
+	Notes                  *string                    `json:"notes,omitempty"`
+	PlaceName              *string                    `json:"place_name,omitempty"`
+	PlannedDurationMinutes nullable.Nullable[int32]   `json:"planned_duration_minutes,omitempty"`
+	PlannedEndLocal        nullable.Nullable[string]  `json:"planned_end_local,omitempty"`
+	PlannedStartLocal      nullable.Nullable[string]  `json:"planned_start_local,omitempty"`
+
+	// ScheduledOn YYYY-MM-DD，不带时区
+	//
+	// Example: 2026-10-01
+	ScheduledOn Date `json:"scheduled_on"`
+
+	// Status 项目状态；取值清单见 Metadata.itinerary_statuses
+	Status *ItineraryStatus `json:"status,omitempty"`
+	Title  string           `json:"title"`
+}
+
+// ItineraryItem 每日行程项目的规范资源（接口设计 3.3）；同一结构也是同步日志与快照中的表示。
+// currency_code 由旅行派生、只读，与 estimated_amount 成对出现，金额为空时为 null。
+type ItineraryItem = itinerary.Resource
+
+// ItineraryItemResponse defines model for ItineraryItemResponse.
+type ItineraryItemResponse struct {
+	// Data 每日行程项目的规范资源（接口设计 3.3）；同一结构也是同步日志与快照中的表示。
+	// currency_code 由旅行派生、只读，与 estimated_amount 成对出现，金额为空时为 null。
+	Data ItineraryItem `json:"data"`
+}
+
+// ItineraryKind 项目类型；取值清单见 Metadata.itinerary_kinds
+type ItineraryKind string
+
+// ItineraryPage Page<ItineraryItem>；按 scheduled_on、sort_order、id 升序，游标绑定账号、旅行与筛选
+type ItineraryPage struct {
+	Items      []ItineraryItem           `json:"items"`
+	NextCursor nullable.Nullable[string] `json:"next_cursor"`
+}
+
+// ItineraryPatch 局部更新：缺省字段保持原值，可空字段显式 null 表示清空。
+// id、scheduled_on、sort_order 不可在此修改，跨日移动与排序走重排接口；
+// estimated_amount 改为非空值时须同时携带 currency_code。
+type ItineraryPatch struct {
+	ActualEndLocal   nullable.Nullable[string] `json:"actual_end_local,omitempty"`
+	ActualNotes      *string                   `json:"actual_notes,omitempty"`
+	ActualStartLocal nullable.Nullable[string] `json:"actual_start_local,omitempty"`
+	Address          *string                   `json:"address,omitempty"`
+
+	// CurrencyCode 支持清单内的 ISO 4217 三字母大写代码；清单见 Metadata.currencies
+	//
+	// Example: CNY
+	CurrencyCode    *CurrencyCode             `json:"currency_code,omitempty"`
+	EstimatedAmount nullable.Nullable[string] `json:"estimated_amount,omitempty"`
+
+	// Kind 项目类型；取值清单见 Metadata.itinerary_kinds
+	Kind                   *ItineraryKind             `json:"kind,omitempty"`
+	Latitude               nullable.Nullable[float64] `json:"latitude,omitempty"`
+	Longitude              nullable.Nullable[float64] `json:"longitude,omitempty"`
+	Notes                  *string                    `json:"notes,omitempty"`
+	PlaceName              *string                    `json:"place_name,omitempty"`
+	PlannedDurationMinutes nullable.Nullable[int32]   `json:"planned_duration_minutes,omitempty"`
+	PlannedEndLocal        nullable.Nullable[string]  `json:"planned_end_local,omitempty"`
+	PlannedStartLocal      nullable.Nullable[string]  `json:"planned_start_local,omitempty"`
+
+	// Status 项目状态；取值清单见 Metadata.itinerary_statuses
+	Status *ItineraryStatus `json:"status,omitempty"`
+	Title  *string          `json:"title,omitempty"`
+}
+
+// ItineraryReorder 重排：提交受影响日期的完整 ID 与基线版本列表，支持把 ID 从某日移入另一日。
+// 所有 ID 只能出现一次，且必须覆盖这些日期当前的全部有效项目；
+// 集合不一致返回 409 ORDER_CHANGED，个别版本不符返回 412 VERSION_CONFLICT。
+type ItineraryReorder struct {
+	Days []ItineraryReorderDay `json:"days"`
+}
+
+// ItineraryReorderDay 一天的完整行程集合，数组顺序即新的 sort_order
+type ItineraryReorderDay struct {
+	// Date YYYY-MM-DD，不带时区
+	//
+	// Example: 2026-10-01
+	Date  Date                    `json:"date"`
+	Items []ItineraryReorderEntry `json:"items"`
+}
+
+// ItineraryReorderEntry 重排中的一个项目及其基线版本
+type ItineraryReorderEntry struct {
+	// BaseVersion 资源版本，正整数十进制字符串
+	//
+	// Example: 7
+	BaseVersion Version            `json:"base_version"`
+	Id          openapi_types.UUID `json:"id"`
+}
+
+// ItineraryStatus 项目状态；取值清单见 Metadata.itinerary_statuses
+type ItineraryStatus string
+
 // LoginRequest defines model for LoginRequest.
 type LoginRequest struct {
 	Client   ClientInfo `json:"client"`
@@ -389,6 +647,113 @@ type Metadata struct {
 type MetadataResponse struct {
 	Data Metadata `json:"data"`
 }
+
+// PackingBatchCreate 一个事务批量创建 1–100 件物品；与既有有效物品或请求内重复的同分类同名项被跳过
+type PackingBatchCreate struct {
+	Items []PackingBatchItem `json:"items"`
+}
+
+// PackingBatchItem 批量创建中的一件物品；状态固定为 pending
+type PackingBatchItem struct {
+	// Category 物资分类；取值清单见 Metadata.packing_categories
+	Category PackingCategory    `json:"category"`
+	Id       openapi_types.UUID `json:"id"`
+	Name     string             `json:"name"`
+	Notes    *string            `json:"notes,omitempty"`
+	Quantity *int32             `json:"quantity,omitempty"`
+}
+
+// PackingBatchResponse defines model for PackingBatchResponse.
+type PackingBatchResponse struct {
+	// Data WriteResult（primary 与 data 为 null，affected 为已创建物品）加批量结果明细
+	Data PackingBatchResult `json:"data"`
+}
+
+// PackingBatchResult WriteResult（primary 与 data 为 null，affected 为已创建物品）加批量结果明细
+type PackingBatchResult = packing.BatchResult
+
+// PackingCategory 物资分类；取值清单见 Metadata.packing_categories
+type PackingCategory string
+
+// PackingCreate 创建独立物品；同一旅行内同分类同名（去首尾空格、大小写不敏感）的有效物品唯一
+type PackingCreate struct {
+	// Category 物资分类；取值清单见 Metadata.packing_categories
+	Category PackingCategory    `json:"category"`
+	Id       openapi_types.UUID `json:"id"`
+	Name     string             `json:"name"`
+	Notes    *string            `json:"notes,omitempty"`
+	Quantity *int32             `json:"quantity,omitempty"`
+
+	// Status 物品状态；取值清单见 Metadata.packing_statuses
+	Status *PackingStatus `json:"status,omitempty"`
+}
+
+// PackingItem 行李清单物品的规范资源（接口设计 3.4）；同一结构也是同步日志与快照中的表示
+type PackingItem = packing.Resource
+
+// PackingItemResponse defines model for PackingItemResponse.
+type PackingItemResponse struct {
+	// Data 行李清单物品的规范资源（接口设计 3.4）；同一结构也是同步日志与快照中的表示
+	Data PackingItem `json:"data"`
+}
+
+// PackingLibrary 随程序发布的版本化内置物品库；不落库，version 变化时客户端可刷新缓存
+type PackingLibrary = packing.Library
+
+// PackingLibraryCategory defines model for PackingLibraryCategory.
+type PackingLibraryCategory struct {
+	// Category 物资分类；取值清单见 Metadata.packing_categories
+	Category PackingCategory      `json:"category"`
+	Items    []PackingLibraryItem `json:"items"`
+
+	// Name 分类的中文名称，供直接展示
+	Name string `json:"name"`
+}
+
+// PackingLibraryItem defines model for PackingLibraryItem.
+type PackingLibraryItem struct {
+	Name     string `json:"name"`
+	Quantity int32  `json:"quantity"`
+}
+
+// PackingLibraryResponse defines model for PackingLibraryResponse.
+type PackingLibraryResponse struct {
+	// Data 随程序发布的版本化内置物品库；不落库，version 变化时客户端可刷新缓存
+	Data PackingLibrary `json:"data"`
+}
+
+// PackingPage Page<PackingItem>；按 category、created_at、id 升序
+type PackingPage struct {
+	Items      []PackingItem             `json:"items"`
+	NextCursor nullable.Nullable[string] `json:"next_cursor"`
+}
+
+// PackingPatch 局部更新：缺省字段保持原值；改名同样受同分类同名唯一约束
+type PackingPatch struct {
+	// Category 物资分类；取值清单见 Metadata.packing_categories
+	Category *PackingCategory `json:"category,omitempty"`
+	Name     *string          `json:"name,omitempty"`
+	Notes    *string          `json:"notes,omitempty"`
+	Quantity *int32           `json:"quantity,omitempty"`
+
+	// Status 物品状态；取值清单见 Metadata.packing_statuses
+	Status *PackingStatus `json:"status,omitempty"`
+}
+
+// PackingSkipped 被跳过的物品；reason=duplicate 表示同分类同名已存在或请求内重复
+type PackingSkipped struct {
+	// Category 物资分类；取值清单见 Metadata.packing_categories
+	Category PackingCategory      `json:"category"`
+	Id       openapi_types.UUID   `json:"id"`
+	Name     string               `json:"name"`
+	Reason   PackingSkippedReason `json:"reason"`
+}
+
+// PackingSkippedReason defines model for PackingSkipped.Reason.
+type PackingSkippedReason string
+
+// PackingStatus 物品状态；取值清单见 Metadata.packing_statuses
+type PackingStatus string
 
 // Problem 统一错误响应，媒体类型 application/problem+json；代码清单见接口设计 1.4
 type Problem struct {
@@ -460,6 +825,44 @@ type Session = account.SessionResource
 type SessionListResponse struct {
 	Data []Session `json:"data"`
 }
+
+// Todo 待办的规范资源（接口设计 3.4）；同一结构也是同步日志与快照中的表示
+type Todo = todo.Resource
+
+// TodoCreate 创建待办；completed=true 时服务端同时写入 completed_at
+type TodoCreate struct {
+	Completed *bool                     `json:"completed,omitempty"`
+	DueOn     nullable.Nullable[string] `json:"due_on,omitempty"`
+	Id        openapi_types.UUID        `json:"id"`
+	Notes     *string                   `json:"notes,omitempty"`
+	Title     string                    `json:"title"`
+}
+
+// TodoListItem 列表项：Todo 加按旅行时区当天计算的逾期标识；逾期不落列
+type TodoListItem = todo.ListItem
+
+// TodoPage Page<TodoListItem>；按 due_on 升序（空日期最后）、再按 id 升序
+type TodoPage struct {
+	Items      []TodoListItem            `json:"items"`
+	NextCursor nullable.Nullable[string] `json:"next_cursor"`
+}
+
+// TodoPatch 局部更新：缺省字段保持原值；due_on 显式 null 表示清空；completed 可设为 true 或 false
+type TodoPatch struct {
+	Completed *bool                     `json:"completed,omitempty"`
+	DueOn     nullable.Nullable[string] `json:"due_on,omitempty"`
+	Notes     *string                   `json:"notes,omitempty"`
+	Title     *string                   `json:"title,omitempty"`
+}
+
+// TodoResponse defines model for TodoResponse.
+type TodoResponse struct {
+	// Data 待办的规范资源（接口设计 3.4）；同一结构也是同步日志与快照中的表示
+	Data Todo `json:"data"`
+}
+
+// TodoState 列表筛选状态；overdue = 未完成且 due_on 早于旅行时区的今天
+type TodoState string
 
 // TrashedTrip 回收站中的旅行；按 purge_after_at 展示剩余保留时间，能否恢复以服务端判定为准
 type TrashedTrip = trip.Resource
@@ -750,6 +1153,120 @@ type SetTripArchivedParams struct {
 	IfMatch *IfMatch `json:"If-Match,omitempty"`
 }
 
+// ListItineraryItemsParams defines parameters for ListItineraryItems.
+type ListItineraryItemsParams struct {
+	// DateFrom 归属日期下界（闭区间）
+	DateFrom *Date `form:"date_from,omitempty" json:"date_from,omitempty"`
+
+	// DateTo 归属日期上界（闭区间），不得早于 date_from
+	DateTo *Date            `form:"date_to,omitempty" json:"date_to,omitempty"`
+	Status *ItineraryStatus `form:"status,omitempty" json:"status,omitempty"`
+	Limit  *int             `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor 上一页返回的 next_cursor；改变筛选需重新开始
+	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// CreateItineraryItemParams defines parameters for CreateItineraryItem.
+type CreateItineraryItemParams struct {
+	// IdempotencyKey 写请求的操作编号（UUID）；相同成功操作重试复用同一键
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
+// ReorderItineraryItemsParams defines parameters for ReorderItineraryItems.
+type ReorderItineraryItemsParams struct {
+	// IdempotencyKey 写请求的操作编号（UUID）；相同成功操作重试复用同一键
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
+// DeleteItineraryItemParams defines parameters for DeleteItineraryItem.
+type DeleteItineraryItemParams struct {
+	// IdempotencyKey 写请求的操作编号（UUID）；相同成功操作重试复用同一键
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+
+	// IfMatch 客户端所基于的资源版本，形如 "7"（带引号）
+	IfMatch *IfMatch `json:"If-Match,omitempty"`
+}
+
+// UpdateItineraryItemParams defines parameters for UpdateItineraryItem.
+type UpdateItineraryItemParams struct {
+	// IdempotencyKey 写请求的操作编号（UUID）；相同成功操作重试复用同一键
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+
+	// IfMatch 客户端所基于的资源版本，形如 "7"（带引号）
+	IfMatch *IfMatch `json:"If-Match,omitempty"`
+}
+
+// ListPackingItemsParams defines parameters for ListPackingItems.
+type ListPackingItemsParams struct {
+	Category *PackingCategory `form:"category,omitempty" json:"category,omitempty"`
+	Status   *PackingStatus   `form:"status,omitempty" json:"status,omitempty"`
+	Limit    *int             `form:"limit,omitempty" json:"limit,omitempty"`
+	Cursor   *string          `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// CreatePackingItemParams defines parameters for CreatePackingItem.
+type CreatePackingItemParams struct {
+	// IdempotencyKey 写请求的操作编号（UUID）；相同成功操作重试复用同一键
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
+// CreatePackingItemsParams defines parameters for CreatePackingItems.
+type CreatePackingItemsParams struct {
+	// IdempotencyKey 写请求的操作编号（UUID）；相同成功操作重试复用同一键
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
+// DeletePackingItemParams defines parameters for DeletePackingItem.
+type DeletePackingItemParams struct {
+	// IdempotencyKey 写请求的操作编号（UUID）；相同成功操作重试复用同一键
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+
+	// IfMatch 客户端所基于的资源版本，形如 "7"（带引号）
+	IfMatch *IfMatch `json:"If-Match,omitempty"`
+}
+
+// UpdatePackingItemParams defines parameters for UpdatePackingItem.
+type UpdatePackingItemParams struct {
+	// IdempotencyKey 写请求的操作编号（UUID）；相同成功操作重试复用同一键
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+
+	// IfMatch 客户端所基于的资源版本，形如 "7"（带引号）
+	IfMatch *IfMatch `json:"If-Match,omitempty"`
+}
+
+// ListTodosParams defines parameters for ListTodos.
+type ListTodosParams struct {
+	// State 逾期按旅行时区的今天判定；默认 all
+	State  *TodoState `form:"state,omitempty" json:"state,omitempty"`
+	Limit  *int       `form:"limit,omitempty" json:"limit,omitempty"`
+	Cursor *string    `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// CreateTodoParams defines parameters for CreateTodo.
+type CreateTodoParams struct {
+	// IdempotencyKey 写请求的操作编号（UUID）；相同成功操作重试复用同一键
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
+// DeleteTodoParams defines parameters for DeleteTodo.
+type DeleteTodoParams struct {
+	// IdempotencyKey 写请求的操作编号（UUID）；相同成功操作重试复用同一键
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+
+	// IfMatch 客户端所基于的资源版本，形如 "7"（带引号）
+	IfMatch *IfMatch `json:"If-Match,omitempty"`
+}
+
+// UpdateTodoParams defines parameters for UpdateTodo.
+type UpdateTodoParams struct {
+	// IdempotencyKey 写请求的操作编号（UUID）；相同成功操作重试复用同一键
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+
+	// IfMatch 客户端所基于的资源版本，形如 "7"（带引号）
+	IfMatch *IfMatch `json:"If-Match,omitempty"`
+}
+
 // UpdateAccountJSONRequestBody defines body for UpdateAccount for application/json ContentType.
 type UpdateAccountJSONRequestBody = AccountPatch
 
@@ -791,6 +1308,30 @@ type UpdateTripJSONRequestBody = TripPatch
 
 // SetTripArchivedJSONRequestBody defines body for SetTripArchived for application/json ContentType.
 type SetTripArchivedJSONRequestBody = ArchiveRequest
+
+// CreateItineraryItemJSONRequestBody defines body for CreateItineraryItem for application/json ContentType.
+type CreateItineraryItemJSONRequestBody = ItineraryCreate
+
+// ReorderItineraryItemsJSONRequestBody defines body for ReorderItineraryItems for application/json ContentType.
+type ReorderItineraryItemsJSONRequestBody = ItineraryReorder
+
+// UpdateItineraryItemJSONRequestBody defines body for UpdateItineraryItem for application/json ContentType.
+type UpdateItineraryItemJSONRequestBody = ItineraryPatch
+
+// CreatePackingItemJSONRequestBody defines body for CreatePackingItem for application/json ContentType.
+type CreatePackingItemJSONRequestBody = PackingCreate
+
+// CreatePackingItemsJSONRequestBody defines body for CreatePackingItems for application/json ContentType.
+type CreatePackingItemsJSONRequestBody = PackingBatchCreate
+
+// UpdatePackingItemJSONRequestBody defines body for UpdatePackingItem for application/json ContentType.
+type UpdatePackingItemJSONRequestBody = PackingPatch
+
+// CreateTodoJSONRequestBody defines body for CreateTodo for application/json ContentType.
+type CreateTodoJSONRequestBody = TodoCreate
+
+// UpdateTodoJSONRequestBody defines body for UpdateTodo for application/json ContentType.
+type UpdateTodoJSONRequestBody = TodoPatch
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
@@ -848,6 +1389,9 @@ type ServerInterface interface {
 	// GetMetadata 公开固定枚举、币种精度、上传上限与协议版本
 	// (GET /metadata)
 	GetMetadata(w http.ResponseWriter, r *http.Request)
+	// ListPackingLibrary 内置物品库的版本、分类与物品；随程序发布，不落库
+	// (GET /packing-library)
+	ListPackingLibrary(w http.ResponseWriter, r *http.Request)
 	// ListTrashedTrips 回收站旅行；按删除时间倒序，返回恢复截止时间与永久清理状态
 	// (GET /recycle-bin/trips)
 	ListTrashedTrips(w http.ResponseWriter, r *http.Request, params ListTrashedTripsParams)
@@ -878,6 +1422,57 @@ type ServerInterface interface {
 	// SetTripArchived 归档或取消归档；归档后仍允许修正；要求版本相等
 	// (POST /trips/{trip_id}/archive)
 	SetTripArchived(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, params SetTripArchivedParams)
+	// ListItineraryItems 旅行的行程项目列表；按日期区间与状态筛选，键集分页
+	// (GET /trips/{trip_id}/itinerary-items)
+	ListItineraryItems(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, params ListItineraryItemsParams)
+	// CreateItineraryItem 新建行程项目；默认追加到当天末尾
+	// (POST /trips/{trip_id}/itinerary-items)
+	CreateItineraryItem(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, params CreateItineraryItemParams)
+	// ReorderItineraryItems 重排受影响日期的行程；支持跨日移动，整体在一个事务中完成
+	// (POST /trips/{trip_id}/itinerary-items/reorder)
+	ReorderItineraryItems(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, params ReorderItineraryItemsParams)
+	// DeleteItineraryItem 软删除本项目，不影响其他记录；要求版本相等
+	// (DELETE /trips/{trip_id}/itinerary-items/{item_id})
+	DeleteItineraryItem(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, itemId openapi_types.UUID, params DeleteItineraryItemParams)
+	// GetItineraryItem 单个行程项目的规范资源
+	// (GET /trips/{trip_id}/itinerary-items/{item_id})
+	GetItineraryItem(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, itemId openapi_types.UUID)
+	// UpdateItineraryItem 局部更新内容与状态；跨日移动与排序走重排接口
+	// (PATCH /trips/{trip_id}/itinerary-items/{item_id})
+	UpdateItineraryItem(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, itemId openapi_types.UUID, params UpdateItineraryItemParams)
+	// ListPackingItems 旅行的行李清单；按分类与状态筛选，键集分页
+	// (GET /trips/{trip_id}/packing-items)
+	ListPackingItems(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, params ListPackingItemsParams)
+	// CreatePackingItem 创建独立物品；同分类同名冲突返回 422
+	// (POST /trips/{trip_id}/packing-items)
+	CreatePackingItem(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, params CreatePackingItemParams)
+	// CreatePackingItems 一个事务批量创建最多 100 件物品；同分类同名与请求内重复项跳过
+	// (POST /trips/{trip_id}/packing-items/batch)
+	CreatePackingItems(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, params CreatePackingItemsParams)
+	// DeletePackingItem 软删除物品；要求版本相等
+	// (DELETE /trips/{trip_id}/packing-items/{item_id})
+	DeletePackingItem(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, itemId openapi_types.UUID, params DeletePackingItemParams)
+	// GetPackingItem 单件物品的规范资源
+	// (GET /trips/{trip_id}/packing-items/{item_id})
+	GetPackingItem(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, itemId openapi_types.UUID)
+	// UpdatePackingItem 局部更新；内容编辑与状态变化使用同一业务规则
+	// (PATCH /trips/{trip_id}/packing-items/{item_id})
+	UpdatePackingItem(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, itemId openapi_types.UUID, params UpdatePackingItemParams)
+	// ListTodos 旅行的待办列表；全部、未完成、已完成或逾期，键集分页
+	// (GET /trips/{trip_id}/todos)
+	ListTodos(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, params ListTodosParams)
+	// CreateTodo 创建待办
+	// (POST /trips/{trip_id}/todos)
+	CreateTodo(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, params CreateTodoParams)
+	// DeleteTodo 软删除待办；要求版本相等
+	// (DELETE /trips/{trip_id}/todos/{todo_id})
+	DeleteTodo(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, todoId openapi_types.UUID, params DeleteTodoParams)
+	// GetTodo 单个待办的规范资源；逾期标识由列表上下文计算
+	// (GET /trips/{trip_id}/todos/{todo_id})
+	GetTodo(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, todoId openapi_types.UUID)
+	// UpdateTodo 局部更新；completed 可设为 true 或 false，completed_at 由服务端维护
+	// (PATCH /trips/{trip_id}/todos/{todo_id})
+	UpdateTodo(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, todoId openapi_types.UUID, params UpdateTodoParams)
 }
 
 // Unimplemented server implementation that returns http.StatusNotImplemented for each endpoint.
@@ -992,6 +1587,12 @@ func (_ Unimplemented) GetMetadata(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// ListPackingLibrary 内置物品库的版本、分类与物品；随程序发布，不落库
+// (GET /packing-library)
+func (_ Unimplemented) ListPackingLibrary(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // ListTrashedTrips 回收站旅行；按删除时间倒序，返回恢复截止时间与永久清理状态
 // (GET /recycle-bin/trips)
 func (_ Unimplemented) ListTrashedTrips(w http.ResponseWriter, r *http.Request, params ListTrashedTripsParams) {
@@ -1049,6 +1650,108 @@ func (_ Unimplemented) UpdateTrip(w http.ResponseWriter, r *http.Request, tripId
 // SetTripArchived 归档或取消归档；归档后仍允许修正；要求版本相等
 // (POST /trips/{trip_id}/archive)
 func (_ Unimplemented) SetTripArchived(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, params SetTripArchivedParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// ListItineraryItems 旅行的行程项目列表；按日期区间与状态筛选，键集分页
+// (GET /trips/{trip_id}/itinerary-items)
+func (_ Unimplemented) ListItineraryItems(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, params ListItineraryItemsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// CreateItineraryItem 新建行程项目；默认追加到当天末尾
+// (POST /trips/{trip_id}/itinerary-items)
+func (_ Unimplemented) CreateItineraryItem(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, params CreateItineraryItemParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// ReorderItineraryItems 重排受影响日期的行程；支持跨日移动，整体在一个事务中完成
+// (POST /trips/{trip_id}/itinerary-items/reorder)
+func (_ Unimplemented) ReorderItineraryItems(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, params ReorderItineraryItemsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// DeleteItineraryItem 软删除本项目，不影响其他记录；要求版本相等
+// (DELETE /trips/{trip_id}/itinerary-items/{item_id})
+func (_ Unimplemented) DeleteItineraryItem(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, itemId openapi_types.UUID, params DeleteItineraryItemParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetItineraryItem 单个行程项目的规范资源
+// (GET /trips/{trip_id}/itinerary-items/{item_id})
+func (_ Unimplemented) GetItineraryItem(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, itemId openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// UpdateItineraryItem 局部更新内容与状态；跨日移动与排序走重排接口
+// (PATCH /trips/{trip_id}/itinerary-items/{item_id})
+func (_ Unimplemented) UpdateItineraryItem(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, itemId openapi_types.UUID, params UpdateItineraryItemParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// ListPackingItems 旅行的行李清单；按分类与状态筛选，键集分页
+// (GET /trips/{trip_id}/packing-items)
+func (_ Unimplemented) ListPackingItems(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, params ListPackingItemsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// CreatePackingItem 创建独立物品；同分类同名冲突返回 422
+// (POST /trips/{trip_id}/packing-items)
+func (_ Unimplemented) CreatePackingItem(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, params CreatePackingItemParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// CreatePackingItems 一个事务批量创建最多 100 件物品；同分类同名与请求内重复项跳过
+// (POST /trips/{trip_id}/packing-items/batch)
+func (_ Unimplemented) CreatePackingItems(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, params CreatePackingItemsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// DeletePackingItem 软删除物品；要求版本相等
+// (DELETE /trips/{trip_id}/packing-items/{item_id})
+func (_ Unimplemented) DeletePackingItem(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, itemId openapi_types.UUID, params DeletePackingItemParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetPackingItem 单件物品的规范资源
+// (GET /trips/{trip_id}/packing-items/{item_id})
+func (_ Unimplemented) GetPackingItem(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, itemId openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// UpdatePackingItem 局部更新；内容编辑与状态变化使用同一业务规则
+// (PATCH /trips/{trip_id}/packing-items/{item_id})
+func (_ Unimplemented) UpdatePackingItem(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, itemId openapi_types.UUID, params UpdatePackingItemParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// ListTodos 旅行的待办列表；全部、未完成、已完成或逾期，键集分页
+// (GET /trips/{trip_id}/todos)
+func (_ Unimplemented) ListTodos(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, params ListTodosParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// CreateTodo 创建待办
+// (POST /trips/{trip_id}/todos)
+func (_ Unimplemented) CreateTodo(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, params CreateTodoParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// DeleteTodo 软删除待办；要求版本相等
+// (DELETE /trips/{trip_id}/todos/{todo_id})
+func (_ Unimplemented) DeleteTodo(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, todoId openapi_types.UUID, params DeleteTodoParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetTodo 单个待办的规范资源；逾期标识由列表上下文计算
+// (GET /trips/{trip_id}/todos/{todo_id})
+func (_ Unimplemented) GetTodo(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, todoId openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// UpdateTodo 局部更新；completed 可设为 true 或 false，completed_at 由服务端维护
+// (PATCH /trips/{trip_id}/todos/{todo_id})
+func (_ Unimplemented) UpdateTodo(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, todoId openapi_types.UUID, params UpdateTodoParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -1527,6 +2230,20 @@ func (siw *ServerInterfaceWrapper) GetMetadata(w http.ResponseWriter, r *http.Re
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetMetadata(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListPackingLibrary operation middleware
+func (siw *ServerInterfaceWrapper) ListPackingLibrary(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListPackingLibrary(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -2142,6 +2859,1116 @@ func (siw *ServerInterfaceWrapper) SetTripArchived(w http.ResponseWriter, r *htt
 	handler.ServeHTTP(w, r)
 }
 
+// ListItineraryItems operation middleware
+func (siw *ServerInterfaceWrapper) ListItineraryItems(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "trip_id" -------------
+	var tripId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "trip_id", chi.URLParam(r, "trip_id"), &tripId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "trip_id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListItineraryItemsParams
+
+	// ------------- Optional query parameter "date_from" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "date_from", r.URL.Query(), &params.DateFrom, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "date_from"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "date_from", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "date_to" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "date_to", r.URL.Query(), &params.DateTo, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "date_to"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "date_to", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "status" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "status", r.URL.Query(), &params.Status, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "status"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "status", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListItineraryItems(w, r, tripId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateItineraryItem operation middleware
+func (siw *ServerInterfaceWrapper) CreateItineraryItem(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "trip_id" -------------
+	var tripId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "trip_id", chi.URLParam(r, "trip_id"), &tripId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "trip_id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateItineraryItemParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateItineraryItem(w, r, tripId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ReorderItineraryItems operation middleware
+func (siw *ServerInterfaceWrapper) ReorderItineraryItems(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "trip_id" -------------
+	var tripId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "trip_id", chi.URLParam(r, "trip_id"), &tripId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "trip_id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ReorderItineraryItemsParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ReorderItineraryItems(w, r, tripId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteItineraryItem operation middleware
+func (siw *ServerInterfaceWrapper) DeleteItineraryItem(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "trip_id" -------------
+	var tripId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "trip_id", chi.URLParam(r, "trip_id"), &tripId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "trip_id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "item_id" -------------
+	var itemId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "item_id", chi.URLParam(r, "item_id"), &itemId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "item_id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params DeleteItineraryItemParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
+		return
+	}
+
+	// ------------- Optional header parameter "If-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
+		var IfMatch IfMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-Match", Err: err})
+			return
+		}
+
+		params.IfMatch = &IfMatch
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteItineraryItem(w, r, tripId, itemId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetItineraryItem operation middleware
+func (siw *ServerInterfaceWrapper) GetItineraryItem(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "trip_id" -------------
+	var tripId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "trip_id", chi.URLParam(r, "trip_id"), &tripId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "trip_id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "item_id" -------------
+	var itemId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "item_id", chi.URLParam(r, "item_id"), &itemId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "item_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetItineraryItem(w, r, tripId, itemId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateItineraryItem operation middleware
+func (siw *ServerInterfaceWrapper) UpdateItineraryItem(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "trip_id" -------------
+	var tripId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "trip_id", chi.URLParam(r, "trip_id"), &tripId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "trip_id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "item_id" -------------
+	var itemId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "item_id", chi.URLParam(r, "item_id"), &itemId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "item_id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params UpdateItineraryItemParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
+		return
+	}
+
+	// ------------- Optional header parameter "If-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
+		var IfMatch IfMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-Match", Err: err})
+			return
+		}
+
+		params.IfMatch = &IfMatch
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateItineraryItem(w, r, tripId, itemId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListPackingItems operation middleware
+func (siw *ServerInterfaceWrapper) ListPackingItems(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "trip_id" -------------
+	var tripId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "trip_id", chi.URLParam(r, "trip_id"), &tripId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "trip_id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListPackingItemsParams
+
+	// ------------- Optional query parameter "category" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "category", r.URL.Query(), &params.Category, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "category"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "category", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "status" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "status", r.URL.Query(), &params.Status, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "status"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "status", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListPackingItems(w, r, tripId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreatePackingItem operation middleware
+func (siw *ServerInterfaceWrapper) CreatePackingItem(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "trip_id" -------------
+	var tripId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "trip_id", chi.URLParam(r, "trip_id"), &tripId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "trip_id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreatePackingItemParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreatePackingItem(w, r, tripId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreatePackingItems operation middleware
+func (siw *ServerInterfaceWrapper) CreatePackingItems(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "trip_id" -------------
+	var tripId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "trip_id", chi.URLParam(r, "trip_id"), &tripId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "trip_id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreatePackingItemsParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreatePackingItems(w, r, tripId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeletePackingItem operation middleware
+func (siw *ServerInterfaceWrapper) DeletePackingItem(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "trip_id" -------------
+	var tripId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "trip_id", chi.URLParam(r, "trip_id"), &tripId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "trip_id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "item_id" -------------
+	var itemId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "item_id", chi.URLParam(r, "item_id"), &itemId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "item_id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params DeletePackingItemParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
+		return
+	}
+
+	// ------------- Optional header parameter "If-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
+		var IfMatch IfMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-Match", Err: err})
+			return
+		}
+
+		params.IfMatch = &IfMatch
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeletePackingItem(w, r, tripId, itemId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetPackingItem operation middleware
+func (siw *ServerInterfaceWrapper) GetPackingItem(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "trip_id" -------------
+	var tripId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "trip_id", chi.URLParam(r, "trip_id"), &tripId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "trip_id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "item_id" -------------
+	var itemId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "item_id", chi.URLParam(r, "item_id"), &itemId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "item_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetPackingItem(w, r, tripId, itemId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdatePackingItem operation middleware
+func (siw *ServerInterfaceWrapper) UpdatePackingItem(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "trip_id" -------------
+	var tripId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "trip_id", chi.URLParam(r, "trip_id"), &tripId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "trip_id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "item_id" -------------
+	var itemId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "item_id", chi.URLParam(r, "item_id"), &itemId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "item_id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params UpdatePackingItemParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
+		return
+	}
+
+	// ------------- Optional header parameter "If-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
+		var IfMatch IfMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-Match", Err: err})
+			return
+		}
+
+		params.IfMatch = &IfMatch
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdatePackingItem(w, r, tripId, itemId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListTodos operation middleware
+func (siw *ServerInterfaceWrapper) ListTodos(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "trip_id" -------------
+	var tripId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "trip_id", chi.URLParam(r, "trip_id"), &tripId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "trip_id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListTodosParams
+
+	// ------------- Optional query parameter "state" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "state", r.URL.Query(), &params.State, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "state"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "state", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListTodos(w, r, tripId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateTodo operation middleware
+func (siw *ServerInterfaceWrapper) CreateTodo(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "trip_id" -------------
+	var tripId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "trip_id", chi.URLParam(r, "trip_id"), &tripId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "trip_id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateTodoParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateTodo(w, r, tripId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteTodo operation middleware
+func (siw *ServerInterfaceWrapper) DeleteTodo(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "trip_id" -------------
+	var tripId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "trip_id", chi.URLParam(r, "trip_id"), &tripId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "trip_id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "todo_id" -------------
+	var todoId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "todo_id", chi.URLParam(r, "todo_id"), &todoId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "todo_id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params DeleteTodoParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
+		return
+	}
+
+	// ------------- Optional header parameter "If-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
+		var IfMatch IfMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-Match", Err: err})
+			return
+		}
+
+		params.IfMatch = &IfMatch
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteTodo(w, r, tripId, todoId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetTodo operation middleware
+func (siw *ServerInterfaceWrapper) GetTodo(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "trip_id" -------------
+	var tripId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "trip_id", chi.URLParam(r, "trip_id"), &tripId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "trip_id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "todo_id" -------------
+	var todoId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "todo_id", chi.URLParam(r, "todo_id"), &todoId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "todo_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetTodo(w, r, tripId, todoId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateTodo operation middleware
+func (siw *ServerInterfaceWrapper) UpdateTodo(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "trip_id" -------------
+	var tripId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "trip_id", chi.URLParam(r, "trip_id"), &tripId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "trip_id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "todo_id" -------------
+	var todoId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "todo_id", chi.URLParam(r, "todo_id"), &todoId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "todo_id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params UpdateTodoParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
+		return
+	}
+
+	// ------------- Optional header parameter "If-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
+		var IfMatch IfMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-Match", Err: err})
+			return
+		}
+
+		params.IfMatch = &IfMatch
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateTodo(w, r, tripId, todoId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 type UnescapedCookieParamError struct {
 	ParamName string
 	Err       error
@@ -2338,6 +4165,60 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/recycle-bin/trips/{trip_id}/purge", wrapper.PurgeTrip)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/trips/{trip_id}/itinerary-items", wrapper.ListItineraryItems)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/trips/{trip_id}/itinerary-items", wrapper.CreateItineraryItem)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/trips/{trip_id}/itinerary-items/reorder", wrapper.ReorderItineraryItems)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/trips/{trip_id}/itinerary-items/{item_id}", wrapper.DeleteItineraryItem)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/trips/{trip_id}/itinerary-items/{item_id}", wrapper.GetItineraryItem)
+	})
+	r.Group(func(r chi.Router) {
+		r.Patch(options.BaseURL+"/trips/{trip_id}/itinerary-items/{item_id}", wrapper.UpdateItineraryItem)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/trips/{trip_id}/packing-items", wrapper.ListPackingItems)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/trips/{trip_id}/packing-items", wrapper.CreatePackingItem)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/trips/{trip_id}/packing-items/batch", wrapper.CreatePackingItems)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/trips/{trip_id}/packing-items/{item_id}", wrapper.DeletePackingItem)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/trips/{trip_id}/packing-items/{item_id}", wrapper.GetPackingItem)
+	})
+	r.Group(func(r chi.Router) {
+		r.Patch(options.BaseURL+"/trips/{trip_id}/packing-items/{item_id}", wrapper.UpdatePackingItem)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/packing-library", wrapper.ListPackingLibrary)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/trips/{trip_id}/todos", wrapper.ListTodos)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/trips/{trip_id}/todos", wrapper.CreateTodo)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/trips/{trip_id}/todos/{todo_id}", wrapper.DeleteTodo)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/trips/{trip_id}/todos/{todo_id}", wrapper.GetTodo)
+	})
+	r.Group(func(r chi.Router) {
+		r.Patch(options.BaseURL+"/trips/{trip_id}/todos/{todo_id}", wrapper.UpdateTodo)
 	})
 
 	return r
@@ -3420,6 +5301,43 @@ func (response GetMetadata500ApplicationProblemPlusJSONResponse) VisitGetMetadat
 	return err
 }
 
+type ListPackingLibraryRequestObject struct {
+}
+
+type ListPackingLibraryResponseObject interface {
+	VisitListPackingLibraryResponse(w http.ResponseWriter) error
+}
+
+type ListPackingLibrary200JSONResponse PackingLibraryResponse
+
+func (response ListPackingLibrary200JSONResponse) VisitListPackingLibraryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListPackingLibrary401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response ListPackingLibrary401ApplicationProblemPlusJSONResponse) VisitListPackingLibraryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListTrashedTripsRequestObject struct {
 	Params ListTrashedTripsParams
 }
@@ -4357,6 +6275,1769 @@ func (response SetTripArchived428ApplicationProblemPlusJSONResponse) VisitSetTri
 	return err
 }
 
+type ListItineraryItemsRequestObject struct {
+	TripId openapi_types.UUID `json:"trip_id"`
+	Params ListItineraryItemsParams
+}
+
+type ListItineraryItemsResponseObject interface {
+	VisitListItineraryItemsResponse(w http.ResponseWriter) error
+}
+
+type ListItineraryItems200JSONResponse ItineraryPage
+
+func (response ListItineraryItems200JSONResponse) VisitListItineraryItemsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListItineraryItems400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response ListItineraryItems400ApplicationProblemPlusJSONResponse) VisitListItineraryItemsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListItineraryItems401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response ListItineraryItems401ApplicationProblemPlusJSONResponse) VisitListItineraryItemsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListItineraryItems404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response ListItineraryItems404ApplicationProblemPlusJSONResponse) VisitListItineraryItemsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListItineraryItems410ApplicationProblemPlusJSONResponse struct {
+	GoneApplicationProblemPlusJSONResponse
+}
+
+func (response ListItineraryItems410ApplicationProblemPlusJSONResponse) VisitListItineraryItemsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(410)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListItineraryItems422ApplicationProblemPlusJSONResponse struct {
+	ValidationFailedApplicationProblemPlusJSONResponse
+}
+
+func (response ListItineraryItems422ApplicationProblemPlusJSONResponse) VisitListItineraryItemsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateItineraryItemRequestObject struct {
+	TripId openapi_types.UUID `json:"trip_id"`
+	Params CreateItineraryItemParams
+	Body   *CreateItineraryItemJSONRequestBody
+}
+
+type CreateItineraryItemResponseObject interface {
+	VisitCreateItineraryItemResponse(w http.ResponseWriter) error
+}
+
+type CreateItineraryItem201JSONResponse WriteResponse
+
+func (response CreateItineraryItem201JSONResponse) VisitCreateItineraryItemResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateItineraryItem401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response CreateItineraryItem401ApplicationProblemPlusJSONResponse) VisitCreateItineraryItemResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateItineraryItem404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response CreateItineraryItem404ApplicationProblemPlusJSONResponse) VisitCreateItineraryItemResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateItineraryItem409ApplicationProblemPlusJSONResponse struct {
+	ConflictApplicationProblemPlusJSONResponse
+}
+
+func (response CreateItineraryItem409ApplicationProblemPlusJSONResponse) VisitCreateItineraryItemResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateItineraryItem410ApplicationProblemPlusJSONResponse struct {
+	GoneApplicationProblemPlusJSONResponse
+}
+
+func (response CreateItineraryItem410ApplicationProblemPlusJSONResponse) VisitCreateItineraryItemResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(410)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateItineraryItem422ApplicationProblemPlusJSONResponse struct {
+	ValidationFailedApplicationProblemPlusJSONResponse
+}
+
+func (response CreateItineraryItem422ApplicationProblemPlusJSONResponse) VisitCreateItineraryItemResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReorderItineraryItemsRequestObject struct {
+	TripId openapi_types.UUID `json:"trip_id"`
+	Params ReorderItineraryItemsParams
+	Body   *ReorderItineraryItemsJSONRequestBody
+}
+
+type ReorderItineraryItemsResponseObject interface {
+	VisitReorderItineraryItemsResponse(w http.ResponseWriter) error
+}
+
+type ReorderItineraryItems200JSONResponse WriteResponse
+
+func (response ReorderItineraryItems200JSONResponse) VisitReorderItineraryItemsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReorderItineraryItems401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response ReorderItineraryItems401ApplicationProblemPlusJSONResponse) VisitReorderItineraryItemsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReorderItineraryItems404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response ReorderItineraryItems404ApplicationProblemPlusJSONResponse) VisitReorderItineraryItemsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReorderItineraryItems409ApplicationProblemPlusJSONResponse struct {
+	ConflictApplicationProblemPlusJSONResponse
+}
+
+func (response ReorderItineraryItems409ApplicationProblemPlusJSONResponse) VisitReorderItineraryItemsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReorderItineraryItems410ApplicationProblemPlusJSONResponse struct {
+	GoneApplicationProblemPlusJSONResponse
+}
+
+func (response ReorderItineraryItems410ApplicationProblemPlusJSONResponse) VisitReorderItineraryItemsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(410)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReorderItineraryItems412ApplicationProblemPlusJSONResponse struct {
+	PreconditionFailedApplicationProblemPlusJSONResponse
+}
+
+func (response ReorderItineraryItems412ApplicationProblemPlusJSONResponse) VisitReorderItineraryItemsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(412)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReorderItineraryItems422ApplicationProblemPlusJSONResponse struct {
+	ValidationFailedApplicationProblemPlusJSONResponse
+}
+
+func (response ReorderItineraryItems422ApplicationProblemPlusJSONResponse) VisitReorderItineraryItemsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteItineraryItemRequestObject struct {
+	TripId openapi_types.UUID `json:"trip_id"`
+	ItemId openapi_types.UUID `json:"item_id"`
+	Params DeleteItineraryItemParams
+}
+
+type DeleteItineraryItemResponseObject interface {
+	VisitDeleteItineraryItemResponse(w http.ResponseWriter) error
+}
+
+type DeleteItineraryItem200JSONResponse WriteResponse
+
+func (response DeleteItineraryItem200JSONResponse) VisitDeleteItineraryItemResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteItineraryItem401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response DeleteItineraryItem401ApplicationProblemPlusJSONResponse) VisitDeleteItineraryItemResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteItineraryItem404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response DeleteItineraryItem404ApplicationProblemPlusJSONResponse) VisitDeleteItineraryItemResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteItineraryItem410ApplicationProblemPlusJSONResponse struct {
+	GoneApplicationProblemPlusJSONResponse
+}
+
+func (response DeleteItineraryItem410ApplicationProblemPlusJSONResponse) VisitDeleteItineraryItemResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(410)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteItineraryItem412ApplicationProblemPlusJSONResponse struct {
+	PreconditionFailedApplicationProblemPlusJSONResponse
+}
+
+func (response DeleteItineraryItem412ApplicationProblemPlusJSONResponse) VisitDeleteItineraryItemResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(412)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteItineraryItem428ApplicationProblemPlusJSONResponse struct {
+	VersionRequiredApplicationProblemPlusJSONResponse
+}
+
+func (response DeleteItineraryItem428ApplicationProblemPlusJSONResponse) VisitDeleteItineraryItemResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(428)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetItineraryItemRequestObject struct {
+	TripId openapi_types.UUID `json:"trip_id"`
+	ItemId openapi_types.UUID `json:"item_id"`
+}
+
+type GetItineraryItemResponseObject interface {
+	VisitGetItineraryItemResponse(w http.ResponseWriter) error
+}
+
+type GetItineraryItem200ResponseHeaders struct {
+	ETag *string
+}
+
+type GetItineraryItem200JSONResponse struct {
+	Body    ItineraryItemResponse
+	Headers GetItineraryItem200ResponseHeaders
+}
+
+func (response GetItineraryItem200JSONResponse) VisitGetItineraryItemResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.ETag != nil {
+		w.Header().Set("ETag", fmt.Sprint(*response.Headers.ETag))
+	}
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetItineraryItem401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response GetItineraryItem401ApplicationProblemPlusJSONResponse) VisitGetItineraryItemResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetItineraryItem404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response GetItineraryItem404ApplicationProblemPlusJSONResponse) VisitGetItineraryItemResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetItineraryItem410ApplicationProblemPlusJSONResponse struct {
+	GoneApplicationProblemPlusJSONResponse
+}
+
+func (response GetItineraryItem410ApplicationProblemPlusJSONResponse) VisitGetItineraryItemResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(410)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateItineraryItemRequestObject struct {
+	TripId openapi_types.UUID `json:"trip_id"`
+	ItemId openapi_types.UUID `json:"item_id"`
+	Params UpdateItineraryItemParams
+	Body   *UpdateItineraryItemJSONRequestBody
+}
+
+type UpdateItineraryItemResponseObject interface {
+	VisitUpdateItineraryItemResponse(w http.ResponseWriter) error
+}
+
+type UpdateItineraryItem200JSONResponse WriteResponse
+
+func (response UpdateItineraryItem200JSONResponse) VisitUpdateItineraryItemResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateItineraryItem401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response UpdateItineraryItem401ApplicationProblemPlusJSONResponse) VisitUpdateItineraryItemResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateItineraryItem404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response UpdateItineraryItem404ApplicationProblemPlusJSONResponse) VisitUpdateItineraryItemResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateItineraryItem410ApplicationProblemPlusJSONResponse struct {
+	GoneApplicationProblemPlusJSONResponse
+}
+
+func (response UpdateItineraryItem410ApplicationProblemPlusJSONResponse) VisitUpdateItineraryItemResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(410)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateItineraryItem412ApplicationProblemPlusJSONResponse struct {
+	PreconditionFailedApplicationProblemPlusJSONResponse
+}
+
+func (response UpdateItineraryItem412ApplicationProblemPlusJSONResponse) VisitUpdateItineraryItemResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(412)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateItineraryItem422ApplicationProblemPlusJSONResponse struct {
+	ValidationFailedApplicationProblemPlusJSONResponse
+}
+
+func (response UpdateItineraryItem422ApplicationProblemPlusJSONResponse) VisitUpdateItineraryItemResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateItineraryItem428ApplicationProblemPlusJSONResponse struct {
+	VersionRequiredApplicationProblemPlusJSONResponse
+}
+
+func (response UpdateItineraryItem428ApplicationProblemPlusJSONResponse) VisitUpdateItineraryItemResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(428)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListPackingItemsRequestObject struct {
+	TripId openapi_types.UUID `json:"trip_id"`
+	Params ListPackingItemsParams
+}
+
+type ListPackingItemsResponseObject interface {
+	VisitListPackingItemsResponse(w http.ResponseWriter) error
+}
+
+type ListPackingItems200JSONResponse PackingPage
+
+func (response ListPackingItems200JSONResponse) VisitListPackingItemsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListPackingItems400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response ListPackingItems400ApplicationProblemPlusJSONResponse) VisitListPackingItemsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListPackingItems401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response ListPackingItems401ApplicationProblemPlusJSONResponse) VisitListPackingItemsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListPackingItems404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response ListPackingItems404ApplicationProblemPlusJSONResponse) VisitListPackingItemsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListPackingItems410ApplicationProblemPlusJSONResponse struct {
+	GoneApplicationProblemPlusJSONResponse
+}
+
+func (response ListPackingItems410ApplicationProblemPlusJSONResponse) VisitListPackingItemsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(410)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListPackingItems422ApplicationProblemPlusJSONResponse struct {
+	ValidationFailedApplicationProblemPlusJSONResponse
+}
+
+func (response ListPackingItems422ApplicationProblemPlusJSONResponse) VisitListPackingItemsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreatePackingItemRequestObject struct {
+	TripId openapi_types.UUID `json:"trip_id"`
+	Params CreatePackingItemParams
+	Body   *CreatePackingItemJSONRequestBody
+}
+
+type CreatePackingItemResponseObject interface {
+	VisitCreatePackingItemResponse(w http.ResponseWriter) error
+}
+
+type CreatePackingItem201JSONResponse WriteResponse
+
+func (response CreatePackingItem201JSONResponse) VisitCreatePackingItemResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreatePackingItem401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response CreatePackingItem401ApplicationProblemPlusJSONResponse) VisitCreatePackingItemResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreatePackingItem404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response CreatePackingItem404ApplicationProblemPlusJSONResponse) VisitCreatePackingItemResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreatePackingItem409ApplicationProblemPlusJSONResponse struct {
+	ConflictApplicationProblemPlusJSONResponse
+}
+
+func (response CreatePackingItem409ApplicationProblemPlusJSONResponse) VisitCreatePackingItemResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreatePackingItem410ApplicationProblemPlusJSONResponse struct {
+	GoneApplicationProblemPlusJSONResponse
+}
+
+func (response CreatePackingItem410ApplicationProblemPlusJSONResponse) VisitCreatePackingItemResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(410)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreatePackingItem422ApplicationProblemPlusJSONResponse struct {
+	ValidationFailedApplicationProblemPlusJSONResponse
+}
+
+func (response CreatePackingItem422ApplicationProblemPlusJSONResponse) VisitCreatePackingItemResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreatePackingItemsRequestObject struct {
+	TripId openapi_types.UUID `json:"trip_id"`
+	Params CreatePackingItemsParams
+	Body   *CreatePackingItemsJSONRequestBody
+}
+
+type CreatePackingItemsResponseObject interface {
+	VisitCreatePackingItemsResponse(w http.ResponseWriter) error
+}
+
+type CreatePackingItems201JSONResponse PackingBatchResponse
+
+func (response CreatePackingItems201JSONResponse) VisitCreatePackingItemsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreatePackingItems401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response CreatePackingItems401ApplicationProblemPlusJSONResponse) VisitCreatePackingItemsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreatePackingItems404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response CreatePackingItems404ApplicationProblemPlusJSONResponse) VisitCreatePackingItemsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreatePackingItems409ApplicationProblemPlusJSONResponse struct {
+	ConflictApplicationProblemPlusJSONResponse
+}
+
+func (response CreatePackingItems409ApplicationProblemPlusJSONResponse) VisitCreatePackingItemsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreatePackingItems410ApplicationProblemPlusJSONResponse struct {
+	GoneApplicationProblemPlusJSONResponse
+}
+
+func (response CreatePackingItems410ApplicationProblemPlusJSONResponse) VisitCreatePackingItemsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(410)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreatePackingItems422ApplicationProblemPlusJSONResponse struct {
+	ValidationFailedApplicationProblemPlusJSONResponse
+}
+
+func (response CreatePackingItems422ApplicationProblemPlusJSONResponse) VisitCreatePackingItemsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeletePackingItemRequestObject struct {
+	TripId openapi_types.UUID `json:"trip_id"`
+	ItemId openapi_types.UUID `json:"item_id"`
+	Params DeletePackingItemParams
+}
+
+type DeletePackingItemResponseObject interface {
+	VisitDeletePackingItemResponse(w http.ResponseWriter) error
+}
+
+type DeletePackingItem200JSONResponse WriteResponse
+
+func (response DeletePackingItem200JSONResponse) VisitDeletePackingItemResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeletePackingItem401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response DeletePackingItem401ApplicationProblemPlusJSONResponse) VisitDeletePackingItemResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeletePackingItem404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response DeletePackingItem404ApplicationProblemPlusJSONResponse) VisitDeletePackingItemResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeletePackingItem410ApplicationProblemPlusJSONResponse struct {
+	GoneApplicationProblemPlusJSONResponse
+}
+
+func (response DeletePackingItem410ApplicationProblemPlusJSONResponse) VisitDeletePackingItemResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(410)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeletePackingItem412ApplicationProblemPlusJSONResponse struct {
+	PreconditionFailedApplicationProblemPlusJSONResponse
+}
+
+func (response DeletePackingItem412ApplicationProblemPlusJSONResponse) VisitDeletePackingItemResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(412)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeletePackingItem428ApplicationProblemPlusJSONResponse struct {
+	VersionRequiredApplicationProblemPlusJSONResponse
+}
+
+func (response DeletePackingItem428ApplicationProblemPlusJSONResponse) VisitDeletePackingItemResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(428)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetPackingItemRequestObject struct {
+	TripId openapi_types.UUID `json:"trip_id"`
+	ItemId openapi_types.UUID `json:"item_id"`
+}
+
+type GetPackingItemResponseObject interface {
+	VisitGetPackingItemResponse(w http.ResponseWriter) error
+}
+
+type GetPackingItem200ResponseHeaders struct {
+	ETag *string
+}
+
+type GetPackingItem200JSONResponse struct {
+	Body    PackingItemResponse
+	Headers GetPackingItem200ResponseHeaders
+}
+
+func (response GetPackingItem200JSONResponse) VisitGetPackingItemResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.ETag != nil {
+		w.Header().Set("ETag", fmt.Sprint(*response.Headers.ETag))
+	}
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetPackingItem401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response GetPackingItem401ApplicationProblemPlusJSONResponse) VisitGetPackingItemResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetPackingItem404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response GetPackingItem404ApplicationProblemPlusJSONResponse) VisitGetPackingItemResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetPackingItem410ApplicationProblemPlusJSONResponse struct {
+	GoneApplicationProblemPlusJSONResponse
+}
+
+func (response GetPackingItem410ApplicationProblemPlusJSONResponse) VisitGetPackingItemResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(410)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdatePackingItemRequestObject struct {
+	TripId openapi_types.UUID `json:"trip_id"`
+	ItemId openapi_types.UUID `json:"item_id"`
+	Params UpdatePackingItemParams
+	Body   *UpdatePackingItemJSONRequestBody
+}
+
+type UpdatePackingItemResponseObject interface {
+	VisitUpdatePackingItemResponse(w http.ResponseWriter) error
+}
+
+type UpdatePackingItem200JSONResponse WriteResponse
+
+func (response UpdatePackingItem200JSONResponse) VisitUpdatePackingItemResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdatePackingItem401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response UpdatePackingItem401ApplicationProblemPlusJSONResponse) VisitUpdatePackingItemResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdatePackingItem404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response UpdatePackingItem404ApplicationProblemPlusJSONResponse) VisitUpdatePackingItemResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdatePackingItem410ApplicationProblemPlusJSONResponse struct {
+	GoneApplicationProblemPlusJSONResponse
+}
+
+func (response UpdatePackingItem410ApplicationProblemPlusJSONResponse) VisitUpdatePackingItemResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(410)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdatePackingItem412ApplicationProblemPlusJSONResponse struct {
+	PreconditionFailedApplicationProblemPlusJSONResponse
+}
+
+func (response UpdatePackingItem412ApplicationProblemPlusJSONResponse) VisitUpdatePackingItemResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(412)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdatePackingItem422ApplicationProblemPlusJSONResponse struct {
+	ValidationFailedApplicationProblemPlusJSONResponse
+}
+
+func (response UpdatePackingItem422ApplicationProblemPlusJSONResponse) VisitUpdatePackingItemResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdatePackingItem428ApplicationProblemPlusJSONResponse struct {
+	VersionRequiredApplicationProblemPlusJSONResponse
+}
+
+func (response UpdatePackingItem428ApplicationProblemPlusJSONResponse) VisitUpdatePackingItemResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(428)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListTodosRequestObject struct {
+	TripId openapi_types.UUID `json:"trip_id"`
+	Params ListTodosParams
+}
+
+type ListTodosResponseObject interface {
+	VisitListTodosResponse(w http.ResponseWriter) error
+}
+
+type ListTodos200JSONResponse TodoPage
+
+func (response ListTodos200JSONResponse) VisitListTodosResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListTodos400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response ListTodos400ApplicationProblemPlusJSONResponse) VisitListTodosResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListTodos401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response ListTodos401ApplicationProblemPlusJSONResponse) VisitListTodosResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListTodos404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response ListTodos404ApplicationProblemPlusJSONResponse) VisitListTodosResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListTodos410ApplicationProblemPlusJSONResponse struct {
+	GoneApplicationProblemPlusJSONResponse
+}
+
+func (response ListTodos410ApplicationProblemPlusJSONResponse) VisitListTodosResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(410)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListTodos422ApplicationProblemPlusJSONResponse struct {
+	ValidationFailedApplicationProblemPlusJSONResponse
+}
+
+func (response ListTodos422ApplicationProblemPlusJSONResponse) VisitListTodosResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateTodoRequestObject struct {
+	TripId openapi_types.UUID `json:"trip_id"`
+	Params CreateTodoParams
+	Body   *CreateTodoJSONRequestBody
+}
+
+type CreateTodoResponseObject interface {
+	VisitCreateTodoResponse(w http.ResponseWriter) error
+}
+
+type CreateTodo201JSONResponse WriteResponse
+
+func (response CreateTodo201JSONResponse) VisitCreateTodoResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateTodo401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response CreateTodo401ApplicationProblemPlusJSONResponse) VisitCreateTodoResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateTodo404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response CreateTodo404ApplicationProblemPlusJSONResponse) VisitCreateTodoResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateTodo409ApplicationProblemPlusJSONResponse struct {
+	ConflictApplicationProblemPlusJSONResponse
+}
+
+func (response CreateTodo409ApplicationProblemPlusJSONResponse) VisitCreateTodoResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateTodo410ApplicationProblemPlusJSONResponse struct {
+	GoneApplicationProblemPlusJSONResponse
+}
+
+func (response CreateTodo410ApplicationProblemPlusJSONResponse) VisitCreateTodoResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(410)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateTodo422ApplicationProblemPlusJSONResponse struct {
+	ValidationFailedApplicationProblemPlusJSONResponse
+}
+
+func (response CreateTodo422ApplicationProblemPlusJSONResponse) VisitCreateTodoResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteTodoRequestObject struct {
+	TripId openapi_types.UUID `json:"trip_id"`
+	TodoId openapi_types.UUID `json:"todo_id"`
+	Params DeleteTodoParams
+}
+
+type DeleteTodoResponseObject interface {
+	VisitDeleteTodoResponse(w http.ResponseWriter) error
+}
+
+type DeleteTodo200JSONResponse WriteResponse
+
+func (response DeleteTodo200JSONResponse) VisitDeleteTodoResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteTodo401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response DeleteTodo401ApplicationProblemPlusJSONResponse) VisitDeleteTodoResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteTodo404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response DeleteTodo404ApplicationProblemPlusJSONResponse) VisitDeleteTodoResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteTodo410ApplicationProblemPlusJSONResponse struct {
+	GoneApplicationProblemPlusJSONResponse
+}
+
+func (response DeleteTodo410ApplicationProblemPlusJSONResponse) VisitDeleteTodoResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(410)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteTodo412ApplicationProblemPlusJSONResponse struct {
+	PreconditionFailedApplicationProblemPlusJSONResponse
+}
+
+func (response DeleteTodo412ApplicationProblemPlusJSONResponse) VisitDeleteTodoResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(412)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteTodo428ApplicationProblemPlusJSONResponse struct {
+	VersionRequiredApplicationProblemPlusJSONResponse
+}
+
+func (response DeleteTodo428ApplicationProblemPlusJSONResponse) VisitDeleteTodoResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(428)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetTodoRequestObject struct {
+	TripId openapi_types.UUID `json:"trip_id"`
+	TodoId openapi_types.UUID `json:"todo_id"`
+}
+
+type GetTodoResponseObject interface {
+	VisitGetTodoResponse(w http.ResponseWriter) error
+}
+
+type GetTodo200ResponseHeaders struct {
+	ETag *string
+}
+
+type GetTodo200JSONResponse struct {
+	Body    TodoResponse
+	Headers GetTodo200ResponseHeaders
+}
+
+func (response GetTodo200JSONResponse) VisitGetTodoResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.ETag != nil {
+		w.Header().Set("ETag", fmt.Sprint(*response.Headers.ETag))
+	}
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetTodo401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response GetTodo401ApplicationProblemPlusJSONResponse) VisitGetTodoResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetTodo404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response GetTodo404ApplicationProblemPlusJSONResponse) VisitGetTodoResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetTodo410ApplicationProblemPlusJSONResponse struct {
+	GoneApplicationProblemPlusJSONResponse
+}
+
+func (response GetTodo410ApplicationProblemPlusJSONResponse) VisitGetTodoResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(410)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateTodoRequestObject struct {
+	TripId openapi_types.UUID `json:"trip_id"`
+	TodoId openapi_types.UUID `json:"todo_id"`
+	Params UpdateTodoParams
+	Body   *UpdateTodoJSONRequestBody
+}
+
+type UpdateTodoResponseObject interface {
+	VisitUpdateTodoResponse(w http.ResponseWriter) error
+}
+
+type UpdateTodo200JSONResponse WriteResponse
+
+func (response UpdateTodo200JSONResponse) VisitUpdateTodoResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateTodo401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response UpdateTodo401ApplicationProblemPlusJSONResponse) VisitUpdateTodoResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateTodo404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response UpdateTodo404ApplicationProblemPlusJSONResponse) VisitUpdateTodoResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateTodo410ApplicationProblemPlusJSONResponse struct {
+	GoneApplicationProblemPlusJSONResponse
+}
+
+func (response UpdateTodo410ApplicationProblemPlusJSONResponse) VisitUpdateTodoResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(410)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateTodo412ApplicationProblemPlusJSONResponse struct {
+	PreconditionFailedApplicationProblemPlusJSONResponse
+}
+
+func (response UpdateTodo412ApplicationProblemPlusJSONResponse) VisitUpdateTodoResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(412)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateTodo422ApplicationProblemPlusJSONResponse struct {
+	ValidationFailedApplicationProblemPlusJSONResponse
+}
+
+func (response UpdateTodo422ApplicationProblemPlusJSONResponse) VisitUpdateTodoResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateTodo428ApplicationProblemPlusJSONResponse struct {
+	VersionRequiredApplicationProblemPlusJSONResponse
+}
+
+func (response UpdateTodo428ApplicationProblemPlusJSONResponse) VisitUpdateTodoResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(428)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
 	// GetAccount 本人资料
@@ -4413,6 +8094,9 @@ type StrictServerInterface interface {
 	// GetMetadata 公开固定枚举、币种精度、上传上限与协议版本
 	// (GET /metadata)
 	GetMetadata(ctx context.Context, request GetMetadataRequestObject) (GetMetadataResponseObject, error)
+	// ListPackingLibrary 内置物品库的版本、分类与物品；随程序发布，不落库
+	// (GET /packing-library)
+	ListPackingLibrary(ctx context.Context, request ListPackingLibraryRequestObject) (ListPackingLibraryResponseObject, error)
 	// ListTrashedTrips 回收站旅行；按删除时间倒序，返回恢复截止时间与永久清理状态
 	// (GET /recycle-bin/trips)
 	ListTrashedTrips(ctx context.Context, request ListTrashedTripsRequestObject) (ListTrashedTripsResponseObject, error)
@@ -4443,6 +8127,57 @@ type StrictServerInterface interface {
 	// SetTripArchived 归档或取消归档；归档后仍允许修正；要求版本相等
 	// (POST /trips/{trip_id}/archive)
 	SetTripArchived(ctx context.Context, request SetTripArchivedRequestObject) (SetTripArchivedResponseObject, error)
+	// ListItineraryItems 旅行的行程项目列表；按日期区间与状态筛选，键集分页
+	// (GET /trips/{trip_id}/itinerary-items)
+	ListItineraryItems(ctx context.Context, request ListItineraryItemsRequestObject) (ListItineraryItemsResponseObject, error)
+	// CreateItineraryItem 新建行程项目；默认追加到当天末尾
+	// (POST /trips/{trip_id}/itinerary-items)
+	CreateItineraryItem(ctx context.Context, request CreateItineraryItemRequestObject) (CreateItineraryItemResponseObject, error)
+	// ReorderItineraryItems 重排受影响日期的行程；支持跨日移动，整体在一个事务中完成
+	// (POST /trips/{trip_id}/itinerary-items/reorder)
+	ReorderItineraryItems(ctx context.Context, request ReorderItineraryItemsRequestObject) (ReorderItineraryItemsResponseObject, error)
+	// DeleteItineraryItem 软删除本项目，不影响其他记录；要求版本相等
+	// (DELETE /trips/{trip_id}/itinerary-items/{item_id})
+	DeleteItineraryItem(ctx context.Context, request DeleteItineraryItemRequestObject) (DeleteItineraryItemResponseObject, error)
+	// GetItineraryItem 单个行程项目的规范资源
+	// (GET /trips/{trip_id}/itinerary-items/{item_id})
+	GetItineraryItem(ctx context.Context, request GetItineraryItemRequestObject) (GetItineraryItemResponseObject, error)
+	// UpdateItineraryItem 局部更新内容与状态；跨日移动与排序走重排接口
+	// (PATCH /trips/{trip_id}/itinerary-items/{item_id})
+	UpdateItineraryItem(ctx context.Context, request UpdateItineraryItemRequestObject) (UpdateItineraryItemResponseObject, error)
+	// ListPackingItems 旅行的行李清单；按分类与状态筛选，键集分页
+	// (GET /trips/{trip_id}/packing-items)
+	ListPackingItems(ctx context.Context, request ListPackingItemsRequestObject) (ListPackingItemsResponseObject, error)
+	// CreatePackingItem 创建独立物品；同分类同名冲突返回 422
+	// (POST /trips/{trip_id}/packing-items)
+	CreatePackingItem(ctx context.Context, request CreatePackingItemRequestObject) (CreatePackingItemResponseObject, error)
+	// CreatePackingItems 一个事务批量创建最多 100 件物品；同分类同名与请求内重复项跳过
+	// (POST /trips/{trip_id}/packing-items/batch)
+	CreatePackingItems(ctx context.Context, request CreatePackingItemsRequestObject) (CreatePackingItemsResponseObject, error)
+	// DeletePackingItem 软删除物品；要求版本相等
+	// (DELETE /trips/{trip_id}/packing-items/{item_id})
+	DeletePackingItem(ctx context.Context, request DeletePackingItemRequestObject) (DeletePackingItemResponseObject, error)
+	// GetPackingItem 单件物品的规范资源
+	// (GET /trips/{trip_id}/packing-items/{item_id})
+	GetPackingItem(ctx context.Context, request GetPackingItemRequestObject) (GetPackingItemResponseObject, error)
+	// UpdatePackingItem 局部更新；内容编辑与状态变化使用同一业务规则
+	// (PATCH /trips/{trip_id}/packing-items/{item_id})
+	UpdatePackingItem(ctx context.Context, request UpdatePackingItemRequestObject) (UpdatePackingItemResponseObject, error)
+	// ListTodos 旅行的待办列表；全部、未完成、已完成或逾期，键集分页
+	// (GET /trips/{trip_id}/todos)
+	ListTodos(ctx context.Context, request ListTodosRequestObject) (ListTodosResponseObject, error)
+	// CreateTodo 创建待办
+	// (POST /trips/{trip_id}/todos)
+	CreateTodo(ctx context.Context, request CreateTodoRequestObject) (CreateTodoResponseObject, error)
+	// DeleteTodo 软删除待办；要求版本相等
+	// (DELETE /trips/{trip_id}/todos/{todo_id})
+	DeleteTodo(ctx context.Context, request DeleteTodoRequestObject) (DeleteTodoResponseObject, error)
+	// GetTodo 单个待办的规范资源；逾期标识由列表上下文计算
+	// (GET /trips/{trip_id}/todos/{todo_id})
+	GetTodo(ctx context.Context, request GetTodoRequestObject) (GetTodoResponseObject, error)
+	// UpdateTodo 局部更新；completed 可设为 true 或 false，completed_at 由服务端维护
+	// (PATCH /trips/{trip_id}/todos/{todo_id})
+	UpdateTodo(ctx context.Context, request UpdateTodoRequestObject) (UpdateTodoResponseObject, error)
 }
 
 type StrictHandlerFunc func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error)
@@ -5003,6 +8738,30 @@ func (sh *strictHandler) GetMetadata(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// ListPackingLibrary operation middleware
+func (sh *strictHandler) ListPackingLibrary(w http.ResponseWriter, r *http.Request) {
+	var request ListPackingLibraryRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListPackingLibrary(ctx, request.(ListPackingLibraryRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListPackingLibrary")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListPackingLibraryResponseObject); ok {
+		if err := validResponse.VisitListPackingLibraryResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // ListTrashedTrips operation middleware
 func (sh *strictHandler) ListTrashedTrips(w http.ResponseWriter, r *http.Request, params ListTrashedTripsParams) {
 	var request ListTrashedTripsRequestObject
@@ -5289,6 +9048,527 @@ func (sh *strictHandler) SetTripArchived(w http.ResponseWriter, r *http.Request,
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(SetTripArchivedResponseObject); ok {
 		if err := validResponse.VisitSetTripArchivedResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListItineraryItems operation middleware
+func (sh *strictHandler) ListItineraryItems(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, params ListItineraryItemsParams) {
+	var request ListItineraryItemsRequestObject
+
+	request.TripId = tripId
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListItineraryItems(ctx, request.(ListItineraryItemsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListItineraryItems")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListItineraryItemsResponseObject); ok {
+		if err := validResponse.VisitListItineraryItemsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateItineraryItem operation middleware
+func (sh *strictHandler) CreateItineraryItem(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, params CreateItineraryItemParams) {
+	var request CreateItineraryItemRequestObject
+
+	request.TripId = tripId
+	request.Params = params
+
+	var body CreateItineraryItemJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateItineraryItem(ctx, request.(CreateItineraryItemRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateItineraryItem")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateItineraryItemResponseObject); ok {
+		if err := validResponse.VisitCreateItineraryItemResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ReorderItineraryItems operation middleware
+func (sh *strictHandler) ReorderItineraryItems(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, params ReorderItineraryItemsParams) {
+	var request ReorderItineraryItemsRequestObject
+
+	request.TripId = tripId
+	request.Params = params
+
+	var body ReorderItineraryItemsJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ReorderItineraryItems(ctx, request.(ReorderItineraryItemsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ReorderItineraryItems")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ReorderItineraryItemsResponseObject); ok {
+		if err := validResponse.VisitReorderItineraryItemsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteItineraryItem operation middleware
+func (sh *strictHandler) DeleteItineraryItem(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, itemId openapi_types.UUID, params DeleteItineraryItemParams) {
+	var request DeleteItineraryItemRequestObject
+
+	request.TripId = tripId
+	request.ItemId = itemId
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteItineraryItem(ctx, request.(DeleteItineraryItemRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteItineraryItem")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteItineraryItemResponseObject); ok {
+		if err := validResponse.VisitDeleteItineraryItemResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetItineraryItem operation middleware
+func (sh *strictHandler) GetItineraryItem(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, itemId openapi_types.UUID) {
+	var request GetItineraryItemRequestObject
+
+	request.TripId = tripId
+	request.ItemId = itemId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetItineraryItem(ctx, request.(GetItineraryItemRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetItineraryItem")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetItineraryItemResponseObject); ok {
+		if err := validResponse.VisitGetItineraryItemResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateItineraryItem operation middleware
+func (sh *strictHandler) UpdateItineraryItem(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, itemId openapi_types.UUID, params UpdateItineraryItemParams) {
+	var request UpdateItineraryItemRequestObject
+
+	request.TripId = tripId
+	request.ItemId = itemId
+	request.Params = params
+
+	var body UpdateItineraryItemJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateItineraryItem(ctx, request.(UpdateItineraryItemRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateItineraryItem")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateItineraryItemResponseObject); ok {
+		if err := validResponse.VisitUpdateItineraryItemResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListPackingItems operation middleware
+func (sh *strictHandler) ListPackingItems(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, params ListPackingItemsParams) {
+	var request ListPackingItemsRequestObject
+
+	request.TripId = tripId
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListPackingItems(ctx, request.(ListPackingItemsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListPackingItems")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListPackingItemsResponseObject); ok {
+		if err := validResponse.VisitListPackingItemsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreatePackingItem operation middleware
+func (sh *strictHandler) CreatePackingItem(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, params CreatePackingItemParams) {
+	var request CreatePackingItemRequestObject
+
+	request.TripId = tripId
+	request.Params = params
+
+	var body CreatePackingItemJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreatePackingItem(ctx, request.(CreatePackingItemRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreatePackingItem")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreatePackingItemResponseObject); ok {
+		if err := validResponse.VisitCreatePackingItemResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreatePackingItems operation middleware
+func (sh *strictHandler) CreatePackingItems(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, params CreatePackingItemsParams) {
+	var request CreatePackingItemsRequestObject
+
+	request.TripId = tripId
+	request.Params = params
+
+	var body CreatePackingItemsJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreatePackingItems(ctx, request.(CreatePackingItemsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreatePackingItems")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreatePackingItemsResponseObject); ok {
+		if err := validResponse.VisitCreatePackingItemsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeletePackingItem operation middleware
+func (sh *strictHandler) DeletePackingItem(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, itemId openapi_types.UUID, params DeletePackingItemParams) {
+	var request DeletePackingItemRequestObject
+
+	request.TripId = tripId
+	request.ItemId = itemId
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeletePackingItem(ctx, request.(DeletePackingItemRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeletePackingItem")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeletePackingItemResponseObject); ok {
+		if err := validResponse.VisitDeletePackingItemResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetPackingItem operation middleware
+func (sh *strictHandler) GetPackingItem(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, itemId openapi_types.UUID) {
+	var request GetPackingItemRequestObject
+
+	request.TripId = tripId
+	request.ItemId = itemId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetPackingItem(ctx, request.(GetPackingItemRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetPackingItem")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetPackingItemResponseObject); ok {
+		if err := validResponse.VisitGetPackingItemResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdatePackingItem operation middleware
+func (sh *strictHandler) UpdatePackingItem(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, itemId openapi_types.UUID, params UpdatePackingItemParams) {
+	var request UpdatePackingItemRequestObject
+
+	request.TripId = tripId
+	request.ItemId = itemId
+	request.Params = params
+
+	var body UpdatePackingItemJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdatePackingItem(ctx, request.(UpdatePackingItemRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdatePackingItem")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdatePackingItemResponseObject); ok {
+		if err := validResponse.VisitUpdatePackingItemResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListTodos operation middleware
+func (sh *strictHandler) ListTodos(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, params ListTodosParams) {
+	var request ListTodosRequestObject
+
+	request.TripId = tripId
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListTodos(ctx, request.(ListTodosRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListTodos")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListTodosResponseObject); ok {
+		if err := validResponse.VisitListTodosResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateTodo operation middleware
+func (sh *strictHandler) CreateTodo(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, params CreateTodoParams) {
+	var request CreateTodoRequestObject
+
+	request.TripId = tripId
+	request.Params = params
+
+	var body CreateTodoJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateTodo(ctx, request.(CreateTodoRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateTodo")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateTodoResponseObject); ok {
+		if err := validResponse.VisitCreateTodoResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteTodo operation middleware
+func (sh *strictHandler) DeleteTodo(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, todoId openapi_types.UUID, params DeleteTodoParams) {
+	var request DeleteTodoRequestObject
+
+	request.TripId = tripId
+	request.TodoId = todoId
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteTodo(ctx, request.(DeleteTodoRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteTodo")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteTodoResponseObject); ok {
+		if err := validResponse.VisitDeleteTodoResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetTodo operation middleware
+func (sh *strictHandler) GetTodo(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, todoId openapi_types.UUID) {
+	var request GetTodoRequestObject
+
+	request.TripId = tripId
+	request.TodoId = todoId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetTodo(ctx, request.(GetTodoRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetTodo")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetTodoResponseObject); ok {
+		if err := validResponse.VisitGetTodoResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateTodo operation middleware
+func (sh *strictHandler) UpdateTodo(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, todoId openapi_types.UUID, params UpdateTodoParams) {
+	var request UpdateTodoRequestObject
+
+	request.TripId = tripId
+	request.TodoId = todoId
+	request.Params = params
+
+	var body UpdateTodoJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateTodo(ctx, request.(UpdateTodoRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateTodo")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateTodoResponseObject); ok {
+		if err := validResponse.VisitUpdateTodoResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

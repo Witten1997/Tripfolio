@@ -50,6 +50,27 @@ const pages = {
     desktop: () => import('@/desktop/pages/ThemesPage.vue'),
     mobile: () => import('@/mobile/pages/ThemesPage.vue'),
   },
+  // 旅行详情与页签：移动壳在安卓阶段用 Vant 重做，网页优先阶段共用桌面实现。
+  tripDetail: {
+    desktop: () => import('@/desktop/pages/TripDetailPage.vue'),
+    mobile: () => import('@/desktop/pages/TripDetailPage.vue'),
+  },
+  tripItinerary: {
+    desktop: () => import('@/desktop/pages/trip/ItineraryTab.vue'),
+    mobile: () => import('@/desktop/pages/trip/ItineraryTab.vue'),
+  },
+  tripPacking: {
+    desktop: () => import('@/desktop/pages/trip/PackingTab.vue'),
+    mobile: () => import('@/desktop/pages/trip/PackingTab.vue'),
+  },
+  tripTodos: {
+    desktop: () => import('@/desktop/pages/trip/TodosTab.vue'),
+    mobile: () => import('@/desktop/pages/trip/TodosTab.vue'),
+  },
+  tripPlaceholder: {
+    desktop: () => import('@/desktop/pages/trip/PlaceholderTab.vue'),
+    mobile: () => import('@/desktop/pages/trip/PlaceholderTab.vue'),
+  },
 } satisfies Record<string, PagePair>
 
 /** 只在移动壳提供的页面（本地数据库等平台能力的自检）。 */
@@ -76,6 +97,29 @@ export function buildRoutes(shell: Shell): RouteRecordRaw[] {
       meta: guest,
     },
     { path: '/trips', name: 'trips', component: pick(pages.tripList) },
+    {
+      path: '/trips/:tripId',
+      name: 'trip-detail',
+      component: pick(pages.tripDetail),
+      redirect: { name: 'trip-itinerary' },
+      children: [
+        { path: 'itinerary', name: 'trip-itinerary', component: pick(pages.tripItinerary) },
+        {
+          path: 'ledger',
+          name: 'trip-ledger',
+          component: pick(pages.tripPlaceholder),
+          props: { title: '账单', slice: '切片 4' },
+        },
+        { path: 'packing', name: 'trip-packing', component: pick(pages.tripPacking) },
+        {
+          path: 'album',
+          name: 'trip-album',
+          component: pick(pages.tripPlaceholder),
+          props: { title: '相册', slice: '切片 5' },
+        },
+        { path: 'todos', name: 'trip-todos', component: pick(pages.tripTodos) },
+      ],
+    },
     { path: '/account', name: 'account', component: pick(pages.account) },
     { path: '/recycle-bin', name: 'recycle-bin', component: pick(pages.recycleBin) },
     { path: '/themes', name: 'themes', component: pick(pages.themes), meta: { public: true } },

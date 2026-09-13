@@ -9,6 +9,9 @@ import (
 	"tripfolio/server/internal/modules/account"
 	"tripfolio/server/internal/modules/finance"
 	"tripfolio/server/internal/modules/metadata"
+	"tripfolio/server/internal/modules/travel/itinerary"
+	"tripfolio/server/internal/modules/travel/packing"
+	"tripfolio/server/internal/modules/travel/todo"
 	"tripfolio/server/internal/modules/travel/trip"
 	"tripfolio/server/internal/transport/httpapi/generated"
 	"tripfolio/server/internal/transport/httpapi/middleware"
@@ -24,6 +27,9 @@ type Handler struct {
 	profile     *account.ProfileService
 	categories  *finance.CategoryService
 	trips       *trip.Service
+	itinerary   *itinerary.Service
+	packing     *packing.Service
+	todos       *todo.Service
 	cookies     CookieSettings
 	corsOrigins []string
 }

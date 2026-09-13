@@ -31,7 +31,8 @@ const session = useSessionStore()
         </nav>
       </ElHeader>
       <ElMain>
-        <RouterView />
+        <!-- 按旅行 id 作 key：从一趟旅行的详情直接跳到另一趟时整页重新挂载，上下文不串。 -->
+        <RouterView :key="String($route.params.tripId ?? '')" />
       </ElMain>
     </ElContainer>
   </ElConfigProvider>
