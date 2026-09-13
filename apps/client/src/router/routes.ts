@@ -42,6 +42,10 @@ const pages = {
     desktop: () => import('@/desktop/pages/AccountPage.vue'),
     mobile: () => import('@/desktop/pages/AccountPage.vue'),
   },
+  recycleBin: {
+    desktop: () => import('@/desktop/pages/RecycleBinPage.vue'),
+    mobile: () => import('@/desktop/pages/RecycleBinPage.vue'),
+  },
 } satisfies Record<string, PagePair>
 
 /** 只在移动壳提供的页面（本地数据库等平台能力的自检）。 */
@@ -69,6 +73,7 @@ export function buildRoutes(shell: Shell): RouteRecordRaw[] {
     },
     { path: '/trips', name: 'trips', component: pick(pages.tripList) },
     { path: '/account', name: 'account', component: pick(pages.account) },
+    { path: '/recycle-bin', name: 'recycle-bin', component: pick(pages.recycleBin) },
     ...(shell === 'mobile' ? mobileOnlyRoutes : []),
     { path: '/:pathMatch(.*)*', redirect: { name: 'trips' } },
   ]

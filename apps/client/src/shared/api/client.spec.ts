@@ -104,6 +104,29 @@ describe('api client 刷新重放', () => {
     expect(session.isAuthenticated).toBe(false)
   })
 
+  it('重放兼容浏览器原生 fetch 的接收者约束', async () => {
+    const session = useSessionStore()
+    session.setAccessToken('stale', 900)
+    let attempts = 0
+    const fetch = async function (this: unknown) {
+      if (this !== undefined) throw new TypeError('Illegal invocation')
+      attempts++
+      if (attempts === 1) return problem(401, 'SESSION_EXPIRED')
+      return jsonResponse(200, { data: { id: 'a', email: 'x@example.com' } })
+    }
+    const api = createApiClient({
+      baseUrl: 'http://api.test/v1',
+      fetch,
+      refresh: async () => {
+        session.setAccessToken('fresh', 900)
+        return true
+      },
+    })
+    const { data } = await api.GET('/account')
+    expect(data?.data.email).toBe('x@example.com')
+    expect(attempts).toBe(2)
+  })
+
   it('认证接口自身的 401 不触发刷新', async () => {
     const fetch = vi.fn(async () => problem(401, 'INVALID_CREDENTIALS'))
     const refresh = vi.fn(async () => true)
@@ -113,5 +136,51 @@ describe('api client 刷新重放', () => {
     })
     expect(error?.code).toBe('INVALID_CREDENTIALS')
     expect(refresh).not.toHaveBeenCalled()
+  })
+
+  it('密码复验的 SESSION_EXPIRED 刷新一次并保留密码正文重放', async () => {
+    const session = useSessionStore()
+    session.setAccessToken('stale', 900)
+    const bodies: string[] = []
+    const authorizations: string[] = []
+    const password = 'correct password 文本'
+    const fetch = vi.fn(async (request: Request) => {
+      expect(request.method).toBe('POST')
+      expect(new URL(request.url).pathname).toBe('/v1/auth/reauthenticate')
+      bodies.push(await request.text())
+      authorizations.push(request.headers.get('Authorization') ?? '')
+      if (bodies.length === 1) return problem(401, 'SESSION_EXPIRED')
+      return new Response(null, { status: 204 })
+    })
+    const refresh = vi.fn(async () => {
+      session.setAccessToken('fresh', 900)
+      return true
+    })
+    const api = createApiClient({ baseUrl: 'http://api.test/v1', fetch, refresh })
+    const { error, response } = await api.POST('/auth/reauthenticate', { body: { password } })
+    expect(response.status).toBe(204)
+    expect(error).toBeUndefined()
+    expect(refresh).toHaveBeenCalledTimes(1)
+    expect(fetch).toHaveBeenCalledTimes(2)
+    expect(bodies).toEqual([JSON.stringify({ password }), JSON.stringify({ password })])
+    expect(authorizations).toEqual(['Bearer stale', 'Bearer fresh'])
+    expect(session.accessToken).toBe('fresh')
+  })
+
+  it('密码复验的 INVALID_CREDENTIALS 不刷新、不退出，错误正文仍可读取', async () => {
+    const session = useSessionStore()
+    session.setAccessToken('current', 900)
+    const fetch = vi.fn(async () => problem(401, 'INVALID_CREDENTIALS'))
+    const refresh = vi.fn(async () => false)
+    const api = createApiClient({ baseUrl: 'http://api.test/v1', fetch, refresh })
+    const { error, response } = await api.POST('/auth/reauthenticate', {
+      body: { password: 'wrong password' },
+    })
+    expect(response.status).toBe(401)
+    expect(error?.code).toBe('INVALID_CREDENTIALS')
+    expect(refresh).not.toHaveBeenCalled()
+    expect(fetch).toHaveBeenCalledTimes(1)
+    expect(session.accessToken).toBe('current')
+    expect(session.isAuthenticated).toBe(true)
   })
 })

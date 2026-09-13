@@ -15,6 +15,7 @@ const session = useSessionStore()
         <RouterLink to="/trips" class="desktop-shell__brand">Tripfolio</RouterLink>
         <nav v-if="session.isAuthenticated" class="desktop-shell__nav">
           <RouterLink :to="{ name: 'trips' }">旅行</RouterLink>
+          <RouterLink :to="{ name: 'recycle-bin' }">回收站</RouterLink>
           <RouterLink :to="{ name: 'account' }" class="desktop-shell__account">
             {{ session.account?.nickname ?? '账号' }}
           </RouterLink>

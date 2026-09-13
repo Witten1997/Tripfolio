@@ -6,7 +6,7 @@ import { useSessionStore } from '@/shared/stores/session'
 
 export type ApiClient = Client<paths>
 
-/** 401 后尝试刷新并重放一次的请求；认证接口本身不重放。 */
+/** 公开认证请求不重放；受保护的密码复验仍需处理会话过期。 */
 const NO_REPLAY_PATHS = new Set([
   '/auth/email-challenges',
   '/auth/register',
@@ -54,10 +54,24 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
       }
       return request
     },
-    async onResponse({ response, id, options: merged }) {
+    async onResponse({ response, id, schemaPath, options: merged }) {
       const original = pending.get(id)
       pending.delete(id)
       if (response.status !== 401 || !original) return response
+      if (schemaPath === '/auth/reauthenticate') {
+        // 密码错误不代表会话失效；读取副本，保留原问题响应供调用方展示。
+        const problem: unknown = await response
+          .clone()
+          .json()
+          .catch(() => null)
+        if (
+          problem &&
+          typeof problem === 'object' &&
+          'code' in problem &&
+          problem.code === 'INVALID_CREDENTIALS'
+        )
+          return response
+      }
       const session = useSessionStore()
       if (!(await refresh())) {
         session.clear()
@@ -65,7 +79,9 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
       }
       const replay = new Request(original)
       replay.headers.set('Authorization', `Bearer ${session.accessToken}`)
-      return merged.fetch(replay)
+      // 原生 window.fetch 不能把客户端配置对象当作 this；与首次请求一样独立调用。
+      const replayFetch = merged.fetch
+      return replayFetch(replay)
     },
     onError({ id }) {
       pending.delete(id)

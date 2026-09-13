@@ -126,6 +126,12 @@ export async function resetPassword(input: {
   if (error) throw new ApiError(error)
 }
 
+/** 永久清理前复验当前密码；认证状态仅由服务端绑定到当前会话。 */
+export async function reauthenticate(password: string): Promise<void> {
+  const { error } = await api.POST('/auth/reauthenticate', { body: { password } })
+  if (error) throw new ApiError(error)
+}
+
 /** 退出：服务端撤销会话并清 Cookie；无论结果如何本地都清空。 */
 export async function logout() {
   const session = useSessionStore()
