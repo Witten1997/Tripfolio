@@ -27,6 +27,45 @@ services:
       - -c
       - log_min_duration_statement=500ms
 
+  minio:
+    image: minio/minio:latest
+    container_name: tripfolio-minio
+    environment:
+      MINIO_ROOT_USER: tripfolio
+      MINIO_ROOT_PASSWORD: tripfolio-dev-secret
+      # MinIO 不实现按桶 CORS（PutBucketCors 返回 NotImplemented），CORS 是服务端全局配置。
+      # 这里按网页开发服务器与 Capacitor 来源收紧，默认值是 `*`。
+      # 生产的 OSS 按桶在控制台配置：允许 PUT/GET/HEAD、暴露 ETag、来源为正式网页域。
+      MINIO_API_CORS_ALLOW_ORIGIN: 'http://localhost:5173,https://localhost'
+    ports:
+      # 9000 是 S3 API，9001 是控制台（http://localhost:9001，用上面的用户名密码登录）
+      - '9000:9000'
+      - '9001:9001'
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ['CMD', 'mc', 'ready', 'local']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    command: ['server', '/data', '--console-address', ':9001']
+
+  # 一次性初始化：建私有桶、配置直传 CORS、给暂存前缀加过期清理。
+  # 跑完即退出，compose up 时用 --exit-code-from 之外的方式忽略其退出状态。
+  minio-init:
+    image: minio/mc:latest
+    container_name: tripfolio-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    volumes:
+      - ./minio/init.sh:/init.sh:ro
+    entrypoint: ['/bin/sh', '/init.sh']
+    environment:
+      MINIO_ROOT_USER: tripfolio
+      MINIO_ROOT_PASSWORD: tripfolio-dev-secret
+      TRIPFOLIO_BUCKET: tripfolio
+
   api:
     profiles: ['app']
     build:
@@ -73,5 +112,6 @@ services:
 
 volumes:
   postgres-data:
+  minio-data:
   caddy-data:
   caddy-config:

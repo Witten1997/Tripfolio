@@ -10,7 +10,9 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"tripfolio/server/internal/adapters/geo"
 	"tripfolio/server/internal/adapters/mail"
+	"tripfolio/server/internal/adapters/objectstore"
 	accountpg "tripfolio/server/internal/adapters/postgres/account"
 	financepg "tripfolio/server/internal/adapters/postgres/finance"
 	"tripfolio/server/internal/adapters/postgres/pgcore"
@@ -42,6 +44,10 @@ type Services struct {
 	Todos      *todo.Service
 	Ledger     *finance.LedgerService
 	Statistics *finance.StatisticsService
+	// ObjectStore 与 Geo 是外部依赖适配器，未配置时为 nil，
+	// 由使用方的处理器返回 503 DEPENDENCY_UNAVAILABLE。
+	ObjectStore *objectstore.S3Store
+	Geo         *geo.AmapClient
 }
 
 // BuildServices 用连接池装配服务。mailer 为 nil 时按配置创建。
@@ -78,10 +84,62 @@ func BuildServices(pool *pgxpool.Pool, cfg config.Config, logger *slog.Logger, m
 	ledger := finance.NewLedgerService(financepg.NewLedgerUnitOfWork(writer), ledgerReader, cursors, clk)
 	statistics := finance.NewStatisticsService(ledgerReader, cursors)
 
+	objects, err := buildObjectStore(cfg, logger)
+	if err != nil {
+		return Services{}, err
+	}
+	places, err := buildGeo(cfg, logger)
+	if err != nil {
+		return Services{}, err
+	}
+
 	return Services{
 		Identity: identity, Sessions: sessions, Profile: profile, Categories: categories,
 		Trips: trips, Itinerary: itineraries, Packing: packings, Todos: todos, Ledger: ledger, Statistics: statistics,
+		ObjectStore: objects, Geo: places,
 	}, nil
+}
+
+// buildObjectStore 按配置创建对象存储客户端。未配置时返回 nil：
+// 开发环境允许不接对象存储，文件接口返回依赖不可用；生产由 config 校验保证已配置。
+func buildObjectStore(cfg config.Config, logger *slog.Logger) (*objectstore.S3Store, error) {
+	if !cfg.ObjectStore.Configured() {
+		logger.Warn("未配置对象存储，文件相关接口将返回依赖不可用")
+		return nil, nil
+	}
+	store, err := objectstore.NewS3Store(objectstore.Config{
+		Endpoint:        cfg.ObjectStore.Endpoint,
+		Region:          cfg.ObjectStore.Region,
+		Bucket:          cfg.ObjectStore.Bucket,
+		AccessKeyID:     cfg.ObjectStore.AccessKeyID,
+		SecretAccessKey: cfg.ObjectStore.SecretAccessKey,
+		UsePathStyle:    cfg.ObjectStore.UsePathStyle,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("创建对象存储客户端: %w", err)
+	}
+	logger.Info("对象存储已装配", "endpoint", cfg.ObjectStore.Endpoint, "bucket", cfg.ObjectStore.Bucket, "path_style", cfg.ObjectStore.UsePathStyle)
+	return store, nil
+}
+
+// buildGeo 按配置创建高德客户端。未配置时返回 nil，地点接口返回依赖不可用。
+func buildGeo(cfg config.Config, logger *slog.Logger) (*geo.AmapClient, error) {
+	if !cfg.Geo.Configured() {
+		logger.Warn("未配置高德 Web 服务 key，地点接口将返回依赖不可用")
+		return nil, nil
+	}
+	client, err := geo.NewAmapClient(geo.Config{
+		Key:                 cfg.Geo.AmapKey,
+		Timeout:             cfg.Geo.Timeout,
+		PerAccountPerMinute: cfg.Geo.PerAccountPerMinute,
+		GlobalDailyLimit:    cfg.Geo.GlobalDailyLimit,
+		CacheTTL:            cfg.Geo.CacheTTL,
+	}, ratelimit.New())
+	if err != nil {
+		return nil, fmt.Errorf("创建高德客户端: %w", err)
+	}
+	logger.Info("地点服务已装配", "per_account_per_minute", cfg.Geo.PerAccountPerMinute, "global_daily_limit", cfg.Geo.GlobalDailyLimit)
+	return client, nil
 }
 
 func loadKeyring(cfg config.Config, logger *slog.Logger) (*security.Keyring, error) {

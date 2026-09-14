@@ -26,6 +26,35 @@ type MailConfig struct {
 	ImplicitTLS  bool
 }
 
+// ObjectStoreConfig 是私有对象存储配置（S3 兼容）。
+// 开发用 MinIO：Endpoint=http://localhost:9000、UsePathStyle=true。
+// 生产用阿里云 OSS：Endpoint=https://oss-cn-hangzhou.aliyuncs.com、UsePathStyle=false。
+type ObjectStoreConfig struct {
+	Endpoint        string
+	Region          string
+	Bucket          string
+	AccessKeyID     string
+	SecretAccessKey string
+	UsePathStyle    bool
+}
+
+// Configured 表示是否已配置对象存储；未配置时文件相关接口返回依赖不可用。
+func (c ObjectStoreConfig) Configured() bool {
+	return c.Endpoint != "" && c.Bucket != "" && c.AccessKeyID != "" && c.SecretAccessKey != ""
+}
+
+// GeoConfig 是高德 Web 服务代理配置。Key 只在服务端使用，不下发给客户端。
+type GeoConfig struct {
+	AmapKey             string
+	PerAccountPerMinute int
+	GlobalDailyLimit    int
+	CacheTTL            time.Duration
+	Timeout             time.Duration
+}
+
+// Configured 表示是否已配置高德；未配置时地点接口返回依赖不可用。
+func (c GeoConfig) Configured() bool { return c.AmapKey != "" }
+
 // Config 是 API、worker 与 migrate 共用的运行配置。
 type Config struct {
 	// Env 为 dev、test 或 prod，只影响日志与调试行为，不改变业务规则。
@@ -52,6 +81,10 @@ type Config struct {
 	PasswordHashConcurrency int
 	// Mail 是邮件投递配置。
 	Mail MailConfig
+	// ObjectStore 是私有对象存储配置。
+	ObjectStore ObjectStoreConfig
+	// Geo 是高德地点服务代理配置。
+	Geo GeoConfig
 }
 
 // Load 读取环境变量。getenv 通常传 os.Getenv，测试可传 map 查找函数。
@@ -161,6 +194,53 @@ func Load(getenv func(string) string) (Config, error) {
 		}
 	default:
 		errs = append(errs, fmt.Errorf("%sMAIL_DRIVER 必须是 log 或 smtp", Prefix))
+	}
+
+	cfg.ObjectStore = ObjectStoreConfig{
+		Endpoint:        get("OBJECTSTORE_ENDPOINT", ""),
+		Region:          get("OBJECTSTORE_REGION", "us-east-1"),
+		Bucket:          get("OBJECTSTORE_BUCKET", ""),
+		AccessKeyID:     get("OBJECTSTORE_ACCESS_KEY_ID", ""),
+		SecretAccessKey: get("OBJECTSTORE_SECRET_ACCESS_KEY", ""),
+	}
+	// MinIO 必须用路径寻址，OSS 与 AWS 用虚拟主机寻址；默认跟随是否为生产环境。
+	if style := get("OBJECTSTORE_USE_PATH_STYLE", ""); style == "" {
+		cfg.ObjectStore.UsePathStyle = cfg.Env != "prod"
+	} else if b, err := strconv.ParseBool(style); err != nil {
+		errs = append(errs, fmt.Errorf("%sOBJECTSTORE_USE_PATH_STYLE 必须是 true 或 false", Prefix))
+	} else {
+		cfg.ObjectStore.UsePathStyle = b
+	}
+	// 生产必须配齐：文件功能不可降级。开发允许缺省，相关接口返回依赖不可用。
+	if cfg.Env == "prod" && !cfg.ObjectStore.Configured() {
+		errs = append(errs, fmt.Errorf("%sOBJECTSTORE_ENDPOINT、%sOBJECTSTORE_BUCKET、%sOBJECTSTORE_ACCESS_KEY_ID 与 %sOBJECTSTORE_SECRET_ACCESS_KEY 在生产环境必填",
+			Prefix, Prefix, Prefix, Prefix))
+	}
+
+	cfg.Geo = GeoConfig{AmapKey: get("AMAP_WEB_SERVICE_KEY", "")}
+	if n, err := strconv.Atoi(get("GEO_PER_ACCOUNT_PER_MINUTE", "60")); err != nil || n < 1 {
+		errs = append(errs, fmt.Errorf("%sGEO_PER_ACCOUNT_PER_MINUTE 必须是正整数", Prefix))
+	} else {
+		cfg.Geo.PerAccountPerMinute = n
+	}
+	// 0 表示不设全局日上限；设置后用于保护高德免费配额。
+	if n, err := strconv.Atoi(get("GEO_GLOBAL_DAILY_LIMIT", "0")); err != nil || n < 0 {
+		errs = append(errs, fmt.Errorf("%sGEO_GLOBAL_DAILY_LIMIT 必须是非负整数", Prefix))
+	} else {
+		cfg.Geo.GlobalDailyLimit = n
+	}
+	if d, err := time.ParseDuration(get("GEO_CACHE_TTL", "24h")); err != nil || d <= 0 {
+		errs = append(errs, fmt.Errorf("%sGEO_CACHE_TTL 必须是正的时长，例如 24h", Prefix))
+	} else {
+		cfg.Geo.CacheTTL = d
+	}
+	if d, err := time.ParseDuration(get("GEO_TIMEOUT", "5s")); err != nil || d <= 0 {
+		errs = append(errs, fmt.Errorf("%sGEO_TIMEOUT 必须是正的时长，例如 5s", Prefix))
+	} else {
+		cfg.Geo.Timeout = d
+	}
+	if cfg.Env == "prod" && !cfg.Geo.Configured() {
+		errs = append(errs, fmt.Errorf("%sAMAP_WEB_SERVICE_KEY 在生产环境必填", Prefix))
 	}
 
 	if len(errs) > 0 {

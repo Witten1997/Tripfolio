@@ -30,7 +30,8 @@ docs/         需求、架构、接口、数据库设计与评审
 pnpm install
 pnpm --filter @tripfolio/contracts build            # 契约 lint、打包与 TS 类型
 
-docker compose -f infra/compose.yaml up -d postgres
+docker compose -f infra/compose.yaml up -d postgres minio
+docker compose -f infra/compose.yaml run --rm minio-init    # 建私有桶与暂存前缀清理规则；控制台 http://localhost:9001
 cp apps/server/.env.example apps/server/.env         # 开发配置，启动时自动读取；也可直接 export 同名变量
 (cd apps/server && go run ./cmd/migrate up && go run ./cmd/api)   # http://localhost:8080/api/v1/metadata
 
@@ -44,6 +45,10 @@ pnpm --filter @tripfolio/client dev                 # http://localhost:5173
 pnpm typecheck && pnpm test && pnpm build
 pnpm format:check
 ```
+
+对象存储用例需要额外设置 `TRIPFOLIO_TEST_OBJECTSTORE_ENDPOINT`（开发指向 MinIO 的 `http://localhost:9000`），未设置时自动跳过。高德地点服务需要 `TRIPFOLIO_AMAP_WEB_SERVICE_KEY`，未配置时地点接口返回 503；它与前端 JS API 的安全密钥是两套凭证，后者由 Caddy 在 `/_AMapService` 路径追加。
+
+浏览器直传对象存储需要桶的 CORS 允许 PUT 并暴露 `ETag`。MinIO 不实现按桶 CORS（`PutBucketCors` 返回 NotImplemented），开发环境由 `infra/compose.yaml` 里 minio 服务的 `MINIO_API_CORS_ALLOW_ORIGIN` 全局配置；生产使用 OSS 时在控制台按桶配置。
 
 ## 生成代码
 
