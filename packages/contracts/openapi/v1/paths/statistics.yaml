@@ -1,0 +1,66 @@
+statistics:
+  parameters:
+    - name: trip_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  get:
+    tags: [finance]
+    operationId: getTripStatistics
+    summary: 旅行开支统计：总额、分类汇总与占比、每日明细摘要及总预算对比
+    description: |
+      在同一个只读一致性事务中读取各项聚合。日期与分类筛选只影响 filtered_totals、by_category 的筛选金额与 daily；
+      trip_budget 始终基于整趟旅行。无日期筛选时统计全部关联账目，不自动套用旅行起止日期。
+    parameters:
+      - name: date_from
+        in: query
+        required: false
+        schema:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+      - name: date_to
+        in: query
+        required: false
+        description: 须不早于 date_from
+        schema:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+      - name: category_id
+        in: query
+        required: false
+        schema:
+          type: string
+          format: uuid
+      - name: daily_limit
+        in: query
+        required: false
+        description: 每日明细的页大小
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 31
+      - name: daily_cursor
+        in: query
+        required: false
+        schema:
+          type: string
+    responses:
+      '200':
+        description: 统计结果
+        content:
+          application/json:
+            schema:
+              $ref: ../openapi.yaml#/components/schemas/TripStatisticsResponse
+      '400':
+        $ref: ../openapi.yaml#/components/responses/BadRequest
+      '401':
+        $ref: ../openapi.yaml#/components/responses/Unauthorized
+      '404':
+        $ref: ../openapi.yaml#/components/responses/NotFound
+      '410':
+        $ref: ../openapi.yaml#/components/responses/Gone
+      '422':
+        $ref: ../openapi.yaml#/components/responses/ValidationFailed

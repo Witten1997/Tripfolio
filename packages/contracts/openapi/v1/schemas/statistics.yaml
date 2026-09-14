@@ -1,0 +1,157 @@
+StatisticsScope:
+  type: object
+  description: 实际采用的筛选范围；未筛选的项为 null
+  required: [date_from, date_to, category_id]
+  properties:
+    date_from:
+      type: string
+      nullable: true
+      pattern: '^\d{4}-\d{2}-\d{2}$'
+    date_to:
+      type: string
+      nullable: true
+      pattern: '^\d{4}-\d{2}-\d{2}$'
+    category_id:
+      type: string
+      format: uuid
+      nullable: true
+
+StatisticsTotals:
+  type: object
+  description: 筛选范围内的支出、退款、净额与账目条数；净额 = 支出 − 退款，可能为负
+  required: [expense_amount, refund_amount, net_amount, entry_count]
+  properties:
+    expense_amount:
+      $ref: ./common.yaml#/Money
+    refund_amount:
+      $ref: ./common.yaml#/Money
+    net_amount:
+      $ref: ./common.yaml#/SignedMoney
+    entry_count:
+      type: integer
+      format: int64
+      minimum: 0
+
+TripBudget:
+  type: object
+  description: 整趟旅行的预算对比；不受日期与分类筛选影响。无总预算时 remaining_amount 与 overspent_amount 为 null
+  required: [budget_amount, trip_net_amount, remaining_amount, overspent_amount]
+  properties:
+    budget_amount:
+      type: string
+      nullable: true
+      pattern: '^[0-9]{1,14}(\.[0-9]{1,4})?$'
+      description: 旅行的 budget_amount；未设置为 null
+    trip_net_amount:
+      $ref: ./common.yaml#/SignedMoney
+    remaining_amount:
+      type: string
+      nullable: true
+      pattern: '^-?[0-9]{1,14}(\.[0-9]{1,4})?$'
+      description: 总预算 − 整趟净支出；可能为负，不改为零
+    overspent_amount:
+      type: string
+      nullable: true
+      pattern: '^[0-9]{1,14}(\.[0-9]{1,4})?$'
+      description: max(整趟净支出 − 总预算, 0)
+
+CategoryTotals:
+  type: object
+  description: 单个分类在筛选范围内的汇总；share 仅供展示，不参与金额结算
+  required:
+    [
+      category_id,
+      name,
+      icon,
+      expense_amount,
+      refund_amount,
+      net_amount,
+      share,
+      trip_category_net_amount,
+    ]
+  properties:
+    category_id:
+      type: string
+      format: uuid
+    name:
+      type: string
+    icon:
+      type: string
+      nullable: true
+    expense_amount:
+      $ref: ./common.yaml#/Money
+    refund_amount:
+      $ref: ./common.yaml#/Money
+    net_amount:
+      $ref: ./common.yaml#/SignedMoney
+    share:
+      type: number
+      format: double
+      nullable: true
+      minimum: 0
+      maximum: 1
+      description: 分类净额占筛选后总净额的比例；ratio_available=false 时为 null
+    trip_category_net_amount:
+      $ref: ./common.yaml#/SignedMoney
+
+DailyTotals:
+  type: object
+  required: [date, expense_amount, refund_amount, net_amount]
+  properties:
+    date:
+      $ref: ./write.yaml#/Date
+    expense_amount:
+      $ref: ./common.yaml#/Money
+    refund_amount:
+      $ref: ./common.yaml#/Money
+    net_amount:
+      $ref: ./common.yaml#/SignedMoney
+
+DailyTotalsPage:
+  type: object
+  description: Page<DailyTotals>；按日期降序，只含有账目的日期
+  required: [items, next_cursor]
+  properties:
+    items:
+      type: array
+      items:
+        $ref: '#/DailyTotals'
+    next_cursor:
+      type: string
+      nullable: true
+
+TripStatistics:
+  type: object
+  description: |
+    旅行开支统计（接口设计 3.8）。日期与分类筛选只影响 filtered_totals、by_category 的筛选金额与 daily；
+    trip_budget 始终基于整趟旅行的累计净支出。by_category 包含每个当前有效分类以及仍被有效账目引用的已删除分类。
+  x-go-type: finance.Statistics
+  x-go-type-import:
+    path: tripfolio/server/internal/modules/finance
+  required:
+    [scope, currency_code, filtered_totals, trip_budget, by_category, ratio_available, daily]
+  properties:
+    scope:
+      $ref: '#/StatisticsScope'
+    currency_code:
+      $ref: ./common.yaml#/CurrencyCode
+    filtered_totals:
+      $ref: '#/StatisticsTotals'
+    trip_budget:
+      $ref: '#/TripBudget'
+    by_category:
+      type: array
+      items:
+        $ref: '#/CategoryTotals'
+    ratio_available:
+      type: boolean
+      description: 仅筛选后总净额 > 0 且各分类净额 >= 0 时为 true；否则各 share 为 null
+    daily:
+      $ref: '#/DailyTotalsPage'
+
+TripStatisticsResponse:
+  type: object
+  required: [data]
+  properties:
+    data:
+      $ref: '#/TripStatistics'

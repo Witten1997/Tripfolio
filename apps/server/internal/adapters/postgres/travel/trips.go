@@ -21,6 +21,9 @@ import (
 	"tripfolio/server/internal/modules/travel/trip"
 )
 
+// ToTripResource 把 trips 行转为规范资源，预算按币种小数位转回规范字符串；供其他适配器（如账目的币种锁定）复用。
+func ToTripResource(row dbgen.Trip) (trip.Resource, error) { return toResource(row) }
+
 func toResource(row dbgen.Trip) (trip.Resource, error) {
 	var budget *string
 	if row.BudgetAmount != nil {

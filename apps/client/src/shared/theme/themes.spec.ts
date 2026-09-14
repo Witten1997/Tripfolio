@@ -2,10 +2,13 @@ import { describe, expect, it } from 'vitest'
 
 import { DEFAULT_THEME, findTheme, isThemeId, themeIds, themes } from './registry'
 import {
+  CHART_ADJACENT_DELTA_MIN,
+  CHART_TOKENS,
   COLOR_TOKENS,
   REQUIRED_TOKENS,
   composite,
   contrastRatio,
+  deltaEOk,
   isBluePurple,
   parseColor,
   parseThemeTokens,
@@ -93,5 +96,18 @@ describe.each(themeIds)('主题 %s 的令牌文件', (id) => {
       expect(contrastRatio(color('text-3'), bg)).toBeGreaterThanOrEqual(3)
     }
     expect(contrastRatio(color('accent-contrast'), color('accent'))).toBeGreaterThanOrEqual(4.5)
+  })
+  // 图表按 chart-1..6 的固定顺序取色，相邻切片必须能分辨；
+  // 完整的色觉障碍校验见 dataviz 技能的 validate_palette，这里守住正常视力硬门槛。
+  it('图表色板相邻色可分辨', () => {
+    const { tokens } = tokensOf(id)
+    const palette = CHART_TOKENS.map((name) => parseColor(tokens.get(name)!)!)
+    for (let i = 1; i < palette.length; i++) {
+      const delta = deltaEOk(palette[i - 1]!, palette[i]!)
+      expect(
+        delta,
+        `--tf-${CHART_TOKENS[i - 1]} 与 --tf-${CHART_TOKENS[i]} ΔE ${delta.toFixed(1)}`,
+      ).toBeGreaterThanOrEqual(CHART_ADJACENT_DELTA_MIN)
+    }
   })
 })

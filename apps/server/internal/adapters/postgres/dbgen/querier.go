@@ -16,6 +16,7 @@ type Querier interface {
 	AdvanceAccountSeq(ctx context.Context, arg AdvanceAccountSeqParams) error
 	ChangedFieldsBetweenVersions(ctx context.Context, arg ChangedFieldsBetweenVersionsParams) ([]ChangedFieldsBetweenVersionsRow, error)
 	ConsumeChallenge(ctx context.Context, arg ConsumeChallengeParams) error
+	CountActiveLedgerEntries(ctx context.Context, arg CountActiveLedgerEntriesParams) (int64, error)
 	CountChallengesSince(ctx context.Context, arg CountChallengesSinceParams) (int64, error)
 	CountExpenseCategories(ctx context.Context, accountID uuid.UUID) (int64, error)
 	CountLedgerEntriesUsingCategory(ctx context.Context, arg CountLedgerEntriesUsingCategoryParams) (int64, error)
@@ -27,6 +28,9 @@ type Querier interface {
 	// 登录会话。摘要列只做常量时间比较，所有查找按主键。
 	CreateSession(ctx context.Context, arg CreateSessionParams) (AccountSession, error)
 	DeleteExpiredChallenges(ctx context.Context, expiresAt time.Time) (int64, error)
+	// 票据引用：整体替换。
+	DeleteLedgerAttachments(ctx context.Context, arg DeleteLedgerAttachmentsParams) error
+	ExpenseCategoryActive(ctx context.Context, arg ExpenseCategoryActiveParams) (bool, error)
 	ExpenseCategoryIDExists(ctx context.Context, id uuid.UUID) (bool, error)
 	GetAccountByEmailKey(ctx context.Context, emailKey string) (Account, error)
 	GetAccountByID(ctx context.Context, id uuid.UUID) (Account, error)
@@ -38,6 +42,11 @@ type Querier interface {
 	GetExpenseCategoryForUpdate(ctx context.Context, arg GetExpenseCategoryForUpdateParams) (ExpenseCategory, error)
 	GetItineraryItem(ctx context.Context, arg GetItineraryItemParams) (ItineraryItem, error)
 	GetItineraryItemForUpdate(ctx context.Context, arg GetItineraryItemForUpdateParams) (ItineraryItem, error)
+	GetLedgerEntry(ctx context.Context, arg GetLedgerEntryParams) (GetLedgerEntryRow, error)
+	GetLedgerEntryForUpdate(ctx context.Context, arg GetLedgerEntryForUpdateParams) (GetLedgerEntryForUpdateRow, error)
+	// 账目与票据（数据库设计表 9、10）与开支统计（数据库设计 §5）。
+	// currency_code 不存列，查询时从 trips 派生；金额 NUMERIC(18,4) 由适配器按币种小数位转回规范字符串。
+	GetLedgerTripInfo(ctx context.Context, arg GetLedgerTripInfoParams) (GetLedgerTripInfoRow, error)
 	GetMutationReceipt(ctx context.Context, arg GetMutationReceiptParams) (MutationReceipt, error)
 	// 行李清单物品（数据库设计表 6）。同分类同名唯一由部分唯一索引兜底，应用层先用 PackingNameTaken 预检以返回 422。
 	GetPackingItem(ctx context.Context, arg GetPackingItemParams) (PackingItem, error)
@@ -56,6 +65,8 @@ type Querier interface {
 	// 账号级账单分类。
 	InsertExpenseCategory(ctx context.Context, arg InsertExpenseCategoryParams) (ExpenseCategory, error)
 	InsertItineraryItem(ctx context.Context, arg InsertItineraryItemParams) (ItineraryItem, error)
+	InsertLedgerAttachments(ctx context.Context, arg InsertLedgerAttachmentsParams) error
+	InsertLedgerEntry(ctx context.Context, arg InsertLedgerEntryParams) (LedgerEntry, error)
 	InsertMutationReceipt(ctx context.Context, arg InsertMutationReceiptParams) error
 	InsertPackingItem(ctx context.Context, arg InsertPackingItemParams) (PackingItem, error)
 	InsertSyncChange(ctx context.Context, arg InsertSyncChangeParams) error
@@ -66,17 +77,32 @@ type Querier interface {
 	InvalidateChallenges(ctx context.Context, arg InvalidateChallengesParams) error
 	ItineraryItemIDExists(ctx context.Context, arg ItineraryItemIDExistsParams) (*bool, error)
 	LatestChallengeCreatedAt(ctx context.Context, arg LatestChallengeCreatedAtParams) (time.Time, error)
+	// 每个有效分类以及仍被本旅行有效账目引用的已删除分类；筛选范围的金额与整趟的金额分别聚合。
+	LedgerCategoryTotals(ctx context.Context, arg LedgerCategoryTotalsParams) ([]LedgerCategoryTotalsRow, error)
+	// 每日明细：只含有账目的日期，按日期降序，游标取更早的日期。
+	LedgerDailyTotals(ctx context.Context, arg LedgerDailyTotalsParams) ([]LedgerDailyTotalsRow, error)
+	LedgerEntryIDExists(ctx context.Context, arg LedgerEntryIDExistsParams) (*bool, error)
+	// 统计（数据库设计 §5）：净额用 CASE 聚合，按实际 occurred_on；下面四条在同一个只读一致性事务中执行。
+	LedgerFilteredTotals(ctx context.Context, arg LedgerFilteredTotalsParams) (LedgerFilteredTotalsRow, error)
+	LedgerTripTotals(ctx context.Context, arg LedgerTripTotalsParams) (LedgerTripTotalsRow, error)
 	ListActiveSessions(ctx context.Context, arg ListActiveSessionsParams) ([]AccountSession, error)
 	ListExpenseCategories(ctx context.Context, accountID uuid.UUID) ([]ExpenseCategory, error)
 	// 列表：接口设计 3.9 ItineraryFilters；游标用行比较走 (account_id, trip_id, scheduled_on, sort_order, id) 部分索引。
 	ListItineraryItems(ctx context.Context, arg ListItineraryItemsParams) ([]ItineraryItem, error)
 	ListItineraryItemsForDays(ctx context.Context, arg ListItineraryItemsForDaysParams) ([]ItineraryItem, error)
+	ListLedgerAttachments(ctx context.Context, arg ListLedgerAttachmentsParams) ([]ListLedgerAttachmentsRow, error)
+	// 列表：接口设计 3.9 LedgerFilters；游标用行比较走 (account_id, trip_id, occurred_on DESC, id DESC) 部分索引。
+	ListLedgerEntries(ctx context.Context, arg ListLedgerEntriesParams) ([]ListLedgerEntriesRow, error)
+	// 关联到某原支出的全部有效退款并锁定，按创建时间、id 升序。
+	ListLinkedRefundsForUpdate(ctx context.Context, arg ListLinkedRefundsForUpdateParams) ([]LedgerEntry, error)
 	// 列表：接口设计 3.9 PackingFilters；游标走 (account_id, trip_id, category, created_at, id) 部分索引。
 	ListPackingItems(ctx context.Context, arg ListPackingItemsParams) ([]PackingItem, error)
 	ListSyncChanges(ctx context.Context, arg ListSyncChangesParams) ([]SyncChange, error)
 	// 列表：接口设计 3.9 TodoFilters；state 为 all/pending/completed/overdue，today 为旅行时区的今天。
 	ListTodoItems(ctx context.Context, arg ListTodoItemsParams) ([]TodoItem, error)
 	ListTrashedTrips(ctx context.Context, arg ListTrashedTripsParams) ([]Trip, error)
+	// 票据引用校验：同账号同旅行、未删除的图片资产，状态不限。
+	ListTripImageAssetIDs(ctx context.Context, arg ListTripImageAssetIDsParams) ([]uuid.UUID, error)
 	// 列表：接口设计 3.9 TripFilters。q 由应用转义 LIKE 通配符；游标用行比较走 (account_id, start_date DESC, id DESC) 索引。
 	ListTripsByStartDate(ctx context.Context, arg ListTripsByStartDateParams) ([]ListTripsByStartDateRow, error)
 	ListTripsByUpdatedAt(ctx context.Context, arg ListTripsByUpdatedAtParams) ([]ListTripsByUpdatedAtRow, error)
@@ -98,8 +124,11 @@ type Querier interface {
 	SetChallengeDelivery(ctx context.Context, arg SetChallengeDeliveryParams) error
 	SetSessionReauthenticated(ctx context.Context, arg SetSessionReauthenticatedParams) error
 	SetTripArchived(ctx context.Context, arg SetTripArchivedParams) (Trip, error)
+	// 币种锁定与解锁：只改 currency_locked_at，递增旅行版本并返回整行作为同步快照。
+	SetTripCurrencyLock(ctx context.Context, arg SetTripCurrencyLockParams) (Trip, error)
 	SoftDeleteExpenseCategory(ctx context.Context, arg SoftDeleteExpenseCategoryParams) (ExpenseCategory, error)
 	SoftDeleteItineraryItem(ctx context.Context, arg SoftDeleteItineraryItemParams) (ItineraryItem, error)
+	SoftDeleteLedgerEntry(ctx context.Context, arg SoftDeleteLedgerEntryParams) (LedgerEntry, error)
 	SoftDeletePackingItem(ctx context.Context, arg SoftDeletePackingItemParams) (PackingItem, error)
 	SoftDeleteTodoItem(ctx context.Context, arg SoftDeleteTodoItemParams) (TodoItem, error)
 	TodoItemIDExists(ctx context.Context, arg TodoItemIDExistsParams) (*bool, error)
@@ -113,6 +142,7 @@ type Querier interface {
 	UpdateAccountProfile(ctx context.Context, arg UpdateAccountProfileParams) (Account, error)
 	UpdateExpenseCategory(ctx context.Context, arg UpdateExpenseCategoryParams) (ExpenseCategory, error)
 	UpdateItineraryItem(ctx context.Context, arg UpdateItineraryItemParams) (ItineraryItem, error)
+	UpdateLedgerEntry(ctx context.Context, arg UpdateLedgerEntryParams) (LedgerEntry, error)
 	UpdatePackingItem(ctx context.Context, arg UpdatePackingItemParams) (PackingItem, error)
 	UpdateTodoItem(ctx context.Context, arg UpdateTodoItemParams) (TodoItem, error)
 	UpdateTrip(ctx context.Context, arg UpdateTripParams) (Trip, error)

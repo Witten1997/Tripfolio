@@ -40,6 +40,8 @@ type Services struct {
 	Itinerary  *itinerary.Service
 	Packing    *packing.Service
 	Todos      *todo.Service
+	Ledger     *finance.LedgerService
+	Statistics *finance.StatisticsService
 }
 
 // BuildServices 用连接池装配服务。mailer 为 nil 时按配置创建。
@@ -72,10 +74,13 @@ func BuildServices(pool *pgxpool.Pool, cfg config.Config, logger *slog.Logger, m
 	itineraries := itinerary.NewService(travelpg.NewItineraryUnitOfWork(writer), travelpg.NewItineraryReader(pool), cursors, clk)
 	packings := packing.NewService(travelpg.NewPackingUnitOfWork(writer), travelpg.NewPackingReader(pool), cursors, clk)
 	todos := todo.NewService(travelpg.NewTodoUnitOfWork(writer), travelpg.NewTodoReader(pool), cursors, clk)
+	ledgerReader := financepg.NewLedgerReader(pool)
+	ledger := finance.NewLedgerService(financepg.NewLedgerUnitOfWork(writer), ledgerReader, cursors, clk)
+	statistics := finance.NewStatisticsService(ledgerReader, cursors)
 
 	return Services{
 		Identity: identity, Sessions: sessions, Profile: profile, Categories: categories,
-		Trips: trips, Itinerary: itineraries, Packing: packings, Todos: todos,
+		Trips: trips, Itinerary: itineraries, Packing: packings, Todos: todos, Ledger: ledger, Statistics: statistics,
 	}, nil
 }
 
@@ -130,6 +135,7 @@ func RunAPI(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		Cookies:  httpapi.CookieSettings{Secure: cfg.CookieSecure},
 		Identity: services.Identity, Sessions: services.Sessions, Profile: services.Profile, Categories: services.Categories,
 		Trips: services.Trips, Itinerary: services.Itinerary, Packing: services.Packing, Todos: services.Todos,
+		Ledger: services.Ledger, Statistics: services.Statistics,
 	})
 	srv := httpapi.NewServer(cfg.HTTPAddr, router)
 	logger.Info("api 启动", "env", cfg.Env, "addr", cfg.HTTPAddr, "cors_origins", cfg.CORSOrigins, "cookie_secure", cfg.CookieSecure, "mail_driver", cfg.Mail.Driver)

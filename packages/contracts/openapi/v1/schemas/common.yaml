@@ -6,6 +6,14 @@ Money:
   pattern: '^[0-9]{1,14}(\.[0-9]{1,4})?$'
   example: '128.50'
 
+SignedMoney:
+  type: string
+  description: |
+    可带负号的十进制字符串，仅用于统计里的净额、剩余预算等派生金额；格式其余同 Money。
+    净额 = 支出 − 退款，独立退款可使退款超过支出而为负。
+  pattern: '^-?[0-9]{1,14}(\.[0-9]{1,4})?$'
+  example: '-12.50'
+
 CurrencyCode:
   type: string
   description: 支持清单内的 ISO 4217 三字母大写代码；清单见 Metadata.currencies

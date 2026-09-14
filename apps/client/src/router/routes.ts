@@ -67,6 +67,10 @@ const pages = {
     desktop: () => import('@/desktop/pages/trip/TodosTab.vue'),
     mobile: () => import('@/desktop/pages/trip/TodosTab.vue'),
   },
+  tripLedger: {
+    desktop: () => import('@/desktop/pages/trip/LedgerTab.vue'),
+    mobile: () => import('@/desktop/pages/trip/LedgerTab.vue'),
+  },
   tripPlaceholder: {
     desktop: () => import('@/desktop/pages/trip/PlaceholderTab.vue'),
     mobile: () => import('@/desktop/pages/trip/PlaceholderTab.vue'),
@@ -104,12 +108,7 @@ export function buildRoutes(shell: Shell): RouteRecordRaw[] {
       redirect: { name: 'trip-itinerary' },
       children: [
         { path: 'itinerary', name: 'trip-itinerary', component: pick(pages.tripItinerary) },
-        {
-          path: 'ledger',
-          name: 'trip-ledger',
-          component: pick(pages.tripPlaceholder),
-          props: { title: '账单', slice: '切片 4' },
-        },
+        { path: 'ledger', name: 'trip-ledger', component: pick(pages.tripLedger) },
         { path: 'packing', name: 'trip-packing', component: pick(pages.tripPacking) },
         {
           path: 'album',

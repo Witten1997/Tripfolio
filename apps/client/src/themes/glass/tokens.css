@@ -45,12 +45,12 @@
   --tf-duration-fast: 120ms;
   --tf-duration: 220ms;
 
-  --tf-chart-1: #1f7a6d;
-  --tf-chart-2: #c4855a;
-  --tf-chart-3: #7a9a5f;
-  --tf-chart-4: #d1a83f;
-  --tf-chart-5: #c4553d;
-  --tf-chart-6: #6e7f78;
+  --tf-chart-1: #0a6e4c;
+  --tf-chart-2: #d19a2f;
+  --tf-chart-3: #12998d;
+  --tf-chart-4: #d1673c;
+  --tf-chart-5: #9c3f5e;
+  --tf-chart-6: #6f9a58;
 }
 
 @media (prefers-reduced-transparency: reduce), (forced-colors: active) {

@@ -468,6 +468,48 @@ export type paths = {
         patch?: never;
         trace?: never;
     };
+    "/trips/{trip_id}/ledger-entries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        /** 旅行的账目列表；按实际日期、分类、类型及关联筛选，键集分页 */
+        get: operations["listLedgerEntries"];
+        put?: never;
+        /** 记录支出或退款；校验币种、分类有效与原支出关系，第一条有效账目锁定旅行币种 */
+        post: operations["createLedgerEntry"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/trips/{trip_id}/ledger-entries/{entry_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entry_id: string;
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        /** 单条账目，含票据资产 ID，不含临时下载地址 */
+        get: operations["getLedgerEntry"];
+        put?: never;
+        post?: never;
+        /** 软删除；删除原支出时同事务解除其关联退款并进入 affected（warnings 含 REFUNDS_UNLINKED），最后一条账目删除后解锁旅行币种 */
+        delete: operations["deleteLedgerEntry"];
+        options?: never;
+        head?: never;
+        /** 局部更新；类型不可改，修改金额与分类须与关联退款保持一致 */
+        patch: operations["updateLedgerEntry"];
+        trace?: never;
+    };
     "/trips/{trip_id}/packing-items": {
         parameters: {
             query?: never;
@@ -523,6 +565,29 @@ export type paths = {
         put?: never;
         /** 一个事务批量创建最多 100 件物品；同分类同名与请求内重复项跳过 */
         post: operations["createPackingItems"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/trips/{trip_id}/statistics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * 旅行开支统计：总额、分类汇总与占比、每日明细摘要及总预算对比
+         * @description 在同一个只读一致性事务中读取各项聚合。日期与分类筛选只影响 filtered_totals、by_category 的筛选金额与 daily；
+         *     trip_budget 始终基于整趟旅行。无日期筛选时统计全部关联账目，不自动套用旅行起止日期。
+         */
+        get: operations["getTripStatistics"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -617,6 +682,22 @@ export type components = {
             /** @enum {string} */
             token_type: "Bearer";
         };
+        /** @description 单个分类在筛选范围内的汇总；share 仅供展示，不参与金额结算 */
+        CategoryTotals: {
+            /** Format: uuid */
+            category_id: string;
+            expense_amount: components["schemas"]["Money"];
+            icon: string | null;
+            name: string;
+            net_amount: components["schemas"]["SignedMoney"];
+            refund_amount: components["schemas"]["Money"];
+            /**
+             * Format: double
+             * @description 分类净额占筛选后总净额的比例；ratio_available=false 时为 null
+             */
+            share: number | null;
+            trip_category_net_amount: components["schemas"]["SignedMoney"];
+        };
         ChangePasswordRequest: {
             current_password: string;
             new_password: string;
@@ -644,6 +725,17 @@ export type components = {
          * @example CNY
          */
         CurrencyCode: string;
+        DailyTotals: {
+            date: components["schemas"]["Date"];
+            expense_amount: components["schemas"]["Money"];
+            net_amount: components["schemas"]["SignedMoney"];
+            refund_amount: components["schemas"]["Money"];
+        };
+        /** @description Page<DailyTotals>；按日期降序，只含有账目的日期 */
+        DailyTotalsPage: {
+            items: components["schemas"]["DailyTotals"][];
+            next_cursor: string | null;
+        };
         /**
          * @description YYYY-MM-DD，不带时区
          * @example 2026-10-01
@@ -862,6 +954,85 @@ export type components = {
          * @enum {string}
          */
         ItineraryStatus: "pending" | "completed" | "skipped";
+        /**
+         * @description 创建支出或退款。currency_code 可省略，提供时必须等于旅行币种（否则 422 CURRENCY_MISMATCH）；
+         *     occurred_on 默认旅行时区的今天。退款可通过 refunded_entry_id 关联同旅行的有效支出，
+         *     分类须与原支出一致，关联退款合计不得超过原支出金额（422 REFUND_AMOUNT_EXCEEDED）。
+         */
+        LedgerCreate: {
+            amount: components["schemas"]["Money"];
+            /** @description 同旅行、未删除的图片资产；顺序即显示顺序 */
+            attachment_asset_ids?: string[];
+            /** Format: uuid */
+            category_id: string;
+            currency_code?: components["schemas"]["CurrencyCode"];
+            /** Format: uuid */
+            id: string;
+            kind: components["schemas"]["LedgerKind"];
+            notes?: string;
+            occurred_on?: components["schemas"]["Date"];
+            /**
+             * Format: uuid
+             * @description 仅 kind=refund 可填写
+             */
+            refunded_entry_id?: string | null;
+        };
+        /**
+         * @description 账目（支出或退款）的规范资源（接口设计 3.5）；同一结构也是同步日志与快照中的表示。
+         *     currency_code 由旅行派生，只读；attachment_asset_ids 是票据图片资产 ID，不含临时下载地址。
+         */
+        LedgerEntry: {
+            amount: components["schemas"]["Money"];
+            attachment_asset_ids: string[];
+            /** Format: uuid */
+            category_id: string;
+            created_at: components["schemas"]["Instant"];
+            currency_code: components["schemas"]["CurrencyCode"];
+            /** Format: date-time */
+            deleted_at: string | null;
+            /** Format: uuid */
+            id: string;
+            kind: components["schemas"]["LedgerKind"];
+            notes: string;
+            occurred_on: components["schemas"]["Date"];
+            /**
+             * Format: uuid
+             * @description 退款关联的原支出；独立退款与支出为 null
+             */
+            refunded_entry_id: string | null;
+            /** Format: uuid */
+            trip_id: string;
+            updated_at: components["schemas"]["Instant"];
+            version: components["schemas"]["Version"];
+        };
+        LedgerEntryResponse: {
+            data: components["schemas"]["LedgerEntry"];
+        };
+        /**
+         * @description 账目类型；金额一律为正数，方向由类型决定。创建后不可改
+         * @enum {string}
+         */
+        LedgerKind: "expense" | "refund";
+        /** @description Page<LedgerEntry>；按 occurred_on、id 均降序 */
+        LedgerPage: {
+            items: components["schemas"]["LedgerEntry"][];
+            next_cursor: string | null;
+        };
+        /**
+         * @description 局部更新：缺省字段保持原值；refunded_entry_id 显式 null 表示解除关联；attachment_asset_ids 出现时整体替换。
+         *     kind 不可改。修改原支出的金额须仍能覆盖其关联退款；修改原支出的分类会同事务更新其关联退款。
+         */
+        LedgerPatch: {
+            amount?: components["schemas"]["Money"];
+            attachment_asset_ids?: string[];
+            /** Format: uuid */
+            category_id?: string;
+            currency_code?: components["schemas"]["CurrencyCode"];
+            notes?: string;
+            occurred_on?: components["schemas"]["Date"];
+            /** Format: uuid */
+            refunded_entry_id?: string | null;
+        };
         /**
          * @description YYYY-MM-DDTHH:mm:ss，不带 Z 或偏移，按旅行 timezone 解释
          * @example 2026-10-02T14:30:00
@@ -1099,6 +1270,27 @@ export type components = {
         SessionListResponse: {
             data: components["schemas"]["Session"][];
         };
+        /**
+         * @description 可带负号的十进制字符串，仅用于统计里的净额、剩余预算等派生金额；格式其余同 Money。
+         *     净额 = 支出 − 退款，独立退款可使退款超过支出而为负。
+         * @example -12.50
+         */
+        SignedMoney: string;
+        /** @description 实际采用的筛选范围；未筛选的项为 null */
+        StatisticsScope: {
+            /** Format: uuid */
+            category_id: string | null;
+            date_from: string | null;
+            date_to: string | null;
+        };
+        /** @description 筛选范围内的支出、退款、净额与账目条数；净额 = 支出 − 退款，可能为负 */
+        StatisticsTotals: {
+            /** Format: int64 */
+            entry_count: number;
+            expense_amount: components["schemas"]["Money"];
+            net_amount: components["schemas"]["SignedMoney"];
+            refund_amount: components["schemas"]["Money"];
+        };
         /** @description 待办的规范资源（接口设计 3.4）；同一结构也是同步日志与快照中的表示 */
         Todo: {
             /** @description 是否已完成；与 completed_at 是否为空一致 */
@@ -1209,6 +1401,16 @@ export type components = {
             updated_at: components["schemas"]["Instant"];
             version: components["schemas"]["Version"];
         };
+        /** @description 整趟旅行的预算对比；不受日期与分类筛选影响。无总预算时 remaining_amount 与 overspent_amount 为 null */
+        TripBudget: {
+            /** @description 旅行的 budget_amount；未设置为 null */
+            budget_amount: string | null;
+            /** @description max(整趟净支出 − 总预算, 0) */
+            overspent_amount: string | null;
+            /** @description 总预算 − 整趟净支出；可能为负，不改为零 */
+            remaining_amount: string | null;
+            trip_net_amount: components["schemas"]["SignedMoney"];
+        };
         /** @description 创建旅行；currency_code 默认 CNY，timezone 默认账号 default_timezone */
         TripCreate: {
             /** @description 总预算，按币种小数位规范化；缺省或 null 表示未设置 */
@@ -1255,6 +1457,23 @@ export type components = {
         };
         TripResponse: {
             data: components["schemas"]["Trip"];
+        };
+        /**
+         * @description 旅行开支统计（接口设计 3.8）。日期与分类筛选只影响 filtered_totals、by_category 的筛选金额与 daily；
+         *     trip_budget 始终基于整趟旅行的累计净支出。by_category 包含每个当前有效分类以及仍被有效账目引用的已删除分类。
+         */
+        TripStatistics: {
+            by_category: components["schemas"]["CategoryTotals"][];
+            currency_code: components["schemas"]["CurrencyCode"];
+            daily: components["schemas"]["DailyTotalsPage"];
+            filtered_totals: components["schemas"]["StatisticsTotals"];
+            /** @description 仅筛选后总净额 > 0 且各分类净额 >= 0 时为 true；否则各 share 为 null */
+            ratio_available: boolean;
+            scope: components["schemas"]["StatisticsScope"];
+            trip_budget: components["schemas"]["TripBudget"];
+        };
+        TripStatisticsResponse: {
+            data: components["schemas"]["TripStatistics"];
         };
         UploadLimits: {
             /**
@@ -2425,6 +2644,192 @@ export interface operations {
             422: components["responses"]["ValidationFailed"];
         };
     };
+    listLedgerEntries: {
+        parameters: {
+            query?: {
+                category_id?: string;
+                cursor?: string;
+                /** @description 实际发生日期闭区间起点 */
+                date_from?: string;
+                /** @description 实际发生日期闭区间终点，须不早于 date_from */
+                date_to?: string;
+                kind?: components["schemas"]["LedgerKind"];
+                limit?: number;
+                /** @description 只返回关联到该原支出的退款 */
+                refunded_entry_id?: string;
+            };
+            header?: never;
+            path: {
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 一页账目，按 occurred_on、id 均降序 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LedgerPage"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            410: components["responses"]["Gone"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    createLedgerEntry: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 写请求的操作编号（UUID）；相同成功操作重试复用同一键 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LedgerCreate"];
+            };
+        };
+        responses: {
+            /** @description 已创建；币种首次锁定时旅行进入 affected */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WriteResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            410: components["responses"]["Gone"];
+            /** @description 校验失败（VALIDATION_FAILED）、币种与旅行不符（CURRENCY_MISMATCH）、退款超额（REFUND_AMOUNT_EXCEEDED）或分类/原支出/票据无效（INVALID_REFERENCE） */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getLedgerEntry: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entry_id: string;
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 账目，带 ETag */
+            200: {
+                headers: {
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LedgerEntryResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            410: components["responses"]["Gone"];
+        };
+    };
+    deleteLedgerEntry: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 写请求的操作编号（UUID）；相同成功操作重试复用同一键 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /** @description 客户端所基于的资源版本，形如 "7"（带引号） */
+                "If-Match"?: components["parameters"]["IfMatch"];
+            };
+            path: {
+                entry_id: string;
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已删除；data 为带 deleted_at 的账目 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WriteResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            410: components["responses"]["Gone"];
+            412: components["responses"]["PreconditionFailed"];
+            428: components["responses"]["VersionRequired"];
+        };
+    };
+    updateLedgerEntry: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 写请求的操作编号（UUID）；相同成功操作重试复用同一键 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /** @description 客户端所基于的资源版本，形如 "7"（带引号） */
+                "If-Match"?: components["parameters"]["IfMatch"];
+            };
+            path: {
+                entry_id: string;
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LedgerPatch"];
+            };
+        };
+        responses: {
+            /** @description 已更新；修改原支出分类时其关联退款进入 affected；warnings 可能含 MERGED_WITH_NEWER_VERSION */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WriteResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            410: components["responses"]["Gone"];
+            412: components["responses"]["PreconditionFailed"];
+            /** @description 校验失败（VALIDATION_FAILED）、币种与旅行不符（CURRENCY_MISMATCH）、退款超额（REFUND_AMOUNT_EXCEEDED）或引用无效（INVALID_REFERENCE） */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            428: components["responses"]["VersionRequired"];
+        };
+    };
     listPackingItems: {
         parameters: {
             query?: {
@@ -2619,6 +3024,41 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+            410: components["responses"]["Gone"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    getTripStatistics: {
+        parameters: {
+            query?: {
+                category_id?: string;
+                daily_cursor?: string;
+                /** @description 每日明细的页大小 */
+                daily_limit?: number;
+                date_from?: string;
+                /** @description 须不早于 date_from */
+                date_to?: string;
+            };
+            header?: never;
+            path: {
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 统计结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TripStatisticsResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
             410: components["responses"]["Gone"];
             422: components["responses"]["ValidationFailed"];
         };

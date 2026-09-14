@@ -1,0 +1,159 @@
+LedgerKind:
+  type: string
+  description: 账目类型；金额一律为正数，方向由类型决定。创建后不可改
+  enum: [expense, refund]
+
+LedgerEntry:
+  type: object
+  description: |
+    账目（支出或退款）的规范资源（接口设计 3.5）；同一结构也是同步日志与快照中的表示。
+    currency_code 由旅行派生，只读；attachment_asset_ids 是票据图片资产 ID，不含临时下载地址。
+  x-go-type: finance.LedgerResource
+  x-go-type-import:
+    path: tripfolio/server/internal/modules/finance
+  required:
+    [
+      id,
+      trip_id,
+      kind,
+      amount,
+      currency_code,
+      category_id,
+      occurred_on,
+      notes,
+      refunded_entry_id,
+      attachment_asset_ids,
+      version,
+      created_at,
+      updated_at,
+      deleted_at,
+    ]
+  properties:
+    id:
+      type: string
+      format: uuid
+    trip_id:
+      type: string
+      format: uuid
+    kind:
+      $ref: '#/LedgerKind'
+    amount:
+      $ref: ./common.yaml#/Money
+    currency_code:
+      $ref: ./common.yaml#/CurrencyCode
+    category_id:
+      type: string
+      format: uuid
+    occurred_on:
+      $ref: ./write.yaml#/Date
+    notes:
+      type: string
+      maxLength: 4000
+    refunded_entry_id:
+      type: string
+      format: uuid
+      nullable: true
+      description: 退款关联的原支出；独立退款与支出为 null
+    attachment_asset_ids:
+      type: array
+      maxItems: 10
+      items:
+        type: string
+        format: uuid
+    version:
+      $ref: ./write.yaml#/Version
+    created_at:
+      $ref: ./write.yaml#/Instant
+    updated_at:
+      $ref: ./write.yaml#/Instant
+    deleted_at:
+      type: string
+      format: date-time
+      nullable: true
+
+LedgerEntryResponse:
+  type: object
+  required: [data]
+  properties:
+    data:
+      $ref: '#/LedgerEntry'
+
+LedgerPage:
+  type: object
+  description: Page<LedgerEntry>；按 occurred_on、id 均降序
+  required: [items, next_cursor]
+  properties:
+    items:
+      type: array
+      items:
+        $ref: '#/LedgerEntry'
+    next_cursor:
+      type: string
+      nullable: true
+
+LedgerCreate:
+  type: object
+  description: |
+    创建支出或退款。currency_code 可省略，提供时必须等于旅行币种（否则 422 CURRENCY_MISMATCH）；
+    occurred_on 默认旅行时区的今天。退款可通过 refunded_entry_id 关联同旅行的有效支出，
+    分类须与原支出一致，关联退款合计不得超过原支出金额（422 REFUND_AMOUNT_EXCEEDED）。
+  required: [id, kind, amount, category_id]
+  properties:
+    id:
+      type: string
+      format: uuid
+    kind:
+      $ref: '#/LedgerKind'
+    amount:
+      $ref: ./common.yaml#/Money
+    currency_code:
+      $ref: ./common.yaml#/CurrencyCode
+    category_id:
+      type: string
+      format: uuid
+    occurred_on:
+      $ref: ./write.yaml#/Date
+    notes:
+      type: string
+      maxLength: 4000
+    refunded_entry_id:
+      type: string
+      format: uuid
+      nullable: true
+      description: 仅 kind=refund 可填写
+    attachment_asset_ids:
+      type: array
+      maxItems: 10
+      description: 同旅行、未删除的图片资产；顺序即显示顺序
+      items:
+        type: string
+        format: uuid
+
+LedgerPatch:
+  type: object
+  description: |
+    局部更新：缺省字段保持原值；refunded_entry_id 显式 null 表示解除关联；attachment_asset_ids 出现时整体替换。
+    kind 不可改。修改原支出的金额须仍能覆盖其关联退款；修改原支出的分类会同事务更新其关联退款。
+  properties:
+    amount:
+      $ref: ./common.yaml#/Money
+    currency_code:
+      $ref: ./common.yaml#/CurrencyCode
+    category_id:
+      type: string
+      format: uuid
+    occurred_on:
+      $ref: ./write.yaml#/Date
+    notes:
+      type: string
+      maxLength: 4000
+    refunded_entry_id:
+      type: string
+      format: uuid
+      nullable: true
+    attachment_asset_ids:
+      type: array
+      maxItems: 10
+      items:
+        type: string
+        format: uuid

@@ -129,6 +129,24 @@ func (e ItineraryStatus) Valid() bool {
 	}
 }
 
+// Defines values for LedgerKind.
+const (
+	Expense LedgerKind = "expense"
+	Refund  LedgerKind = "refund"
+)
+
+// Valid indicates whether the value is a known member of the LedgerKind enum.
+func (e LedgerKind) Valid() bool {
+	switch e {
+	case Expense:
+		return true
+	case Refund:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for MapSettingsCoordinateSystem.
 const (
 	GCJ02 MapSettingsCoordinateSystem = "GCJ-02"
@@ -355,6 +373,44 @@ type AuthResult struct {
 // AuthResultTokenType defines model for AuthResult.TokenType.
 type AuthResultTokenType string
 
+// CategoryTotals 单个分类在筛选范围内的汇总；share 仅供展示，不参与金额结算
+type CategoryTotals struct {
+	CategoryId openapi_types.UUID `json:"category_id"`
+
+	// ExpenseAmount 非科学计数法的十进制字符串，无符号、无分组符，小数位不超过币种 minor_units；
+	// 服务端按币种规范化（"128.5" 与 "128.50" 相同），超精度被拒绝。存储上限 NUMERIC(18,4)，最多 14 位整数。
+	//
+	//
+	// Example: 128.50
+	ExpenseAmount Money                     `json:"expense_amount"`
+	Icon          nullable.Nullable[string] `json:"icon"`
+	Name          string                    `json:"name"`
+
+	// NetAmount 可带负号的十进制字符串，仅用于统计里的净额、剩余预算等派生金额；格式其余同 Money。
+	// 净额 = 支出 − 退款，独立退款可使退款超过支出而为负。
+	//
+	//
+	// Example: -12.50
+	NetAmount SignedMoney `json:"net_amount"`
+
+	// RefundAmount 非科学计数法的十进制字符串，无符号、无分组符，小数位不超过币种 minor_units；
+	// 服务端按币种规范化（"128.5" 与 "128.50" 相同），超精度被拒绝。存储上限 NUMERIC(18,4)，最多 14 位整数。
+	//
+	//
+	// Example: 128.50
+	RefundAmount Money `json:"refund_amount"`
+
+	// Share 分类净额占筛选后总净额的比例；ratio_available=false 时为 null
+	Share nullable.Nullable[float64] `json:"share"`
+
+	// TripCategoryNetAmount 可带负号的十进制字符串，仅用于统计里的净额、剩余预算等派生金额；格式其余同 Money。
+	// 净额 = 支出 − 退款，独立退款可使退款超过支出而为负。
+	//
+	//
+	// Example: -12.50
+	TripCategoryNetAmount SignedMoney `json:"trip_category_net_amount"`
+}
+
 // ChangePasswordRequest defines model for ChangePasswordRequest.
 type ChangePasswordRequest struct {
 	CurrentPassword string `json:"current_password"`
@@ -387,6 +443,41 @@ type Currency struct {
 //
 // Example: CNY
 type CurrencyCode = string
+
+// DailyTotals defines model for DailyTotals.
+type DailyTotals struct {
+	// Date YYYY-MM-DD，不带时区
+	//
+	// Example: 2026-10-01
+	Date Date `json:"date"`
+
+	// ExpenseAmount 非科学计数法的十进制字符串，无符号、无分组符，小数位不超过币种 minor_units；
+	// 服务端按币种规范化（"128.5" 与 "128.50" 相同），超精度被拒绝。存储上限 NUMERIC(18,4)，最多 14 位整数。
+	//
+	//
+	// Example: 128.50
+	ExpenseAmount Money `json:"expense_amount"`
+
+	// NetAmount 可带负号的十进制字符串，仅用于统计里的净额、剩余预算等派生金额；格式其余同 Money。
+	// 净额 = 支出 − 退款，独立退款可使退款超过支出而为负。
+	//
+	//
+	// Example: -12.50
+	NetAmount SignedMoney `json:"net_amount"`
+
+	// RefundAmount 非科学计数法的十进制字符串，无符号、无分组符，小数位不超过币种 minor_units；
+	// 服务端按币种规范化（"128.5" 与 "128.50" 相同），超精度被拒绝。存储上限 NUMERIC(18,4)，最多 14 位整数。
+	//
+	//
+	// Example: 128.50
+	RefundAmount Money `json:"refund_amount"`
+}
+
+// DailyTotalsPage Page<DailyTotals>；按日期降序，只含有账目的日期
+type DailyTotalsPage struct {
+	Items      []DailyTotals             `json:"items"`
+	NextCursor nullable.Nullable[string] `json:"next_cursor"`
+}
 
 // Date YYYY-MM-DD，不带时区
 //
@@ -582,6 +673,85 @@ type ItineraryReorderEntry struct {
 // ItineraryStatus 项目状态；取值清单见 Metadata.itinerary_statuses
 type ItineraryStatus string
 
+// LedgerCreate 创建支出或退款。currency_code 可省略，提供时必须等于旅行币种（否则 422 CURRENCY_MISMATCH）；
+// occurred_on 默认旅行时区的今天。退款可通过 refunded_entry_id 关联同旅行的有效支出，
+// 分类须与原支出一致，关联退款合计不得超过原支出金额（422 REFUND_AMOUNT_EXCEEDED）。
+type LedgerCreate struct {
+	// Amount 非科学计数法的十进制字符串，无符号、无分组符，小数位不超过币种 minor_units；
+	// 服务端按币种规范化（"128.5" 与 "128.50" 相同），超精度被拒绝。存储上限 NUMERIC(18,4)，最多 14 位整数。
+	//
+	//
+	// Example: 128.50
+	Amount Money `json:"amount"`
+
+	// AttachmentAssetIds 同旅行、未删除的图片资产；顺序即显示顺序
+	AttachmentAssetIds *[]openapi_types.UUID `json:"attachment_asset_ids,omitempty"`
+	CategoryId         openapi_types.UUID    `json:"category_id"`
+
+	// CurrencyCode 支持清单内的 ISO 4217 三字母大写代码；清单见 Metadata.currencies
+	//
+	// Example: CNY
+	CurrencyCode *CurrencyCode      `json:"currency_code,omitempty"`
+	Id           openapi_types.UUID `json:"id"`
+
+	// Kind 账目类型；金额一律为正数，方向由类型决定。创建后不可改
+	Kind  LedgerKind `json:"kind"`
+	Notes *string    `json:"notes,omitempty"`
+
+	// OccurredOn YYYY-MM-DD，不带时区
+	//
+	// Example: 2026-10-01
+	OccurredOn *Date `json:"occurred_on,omitempty"`
+
+	// RefundedEntryId 仅 kind=refund 可填写
+	RefundedEntryId nullable.Nullable[openapi_types.UUID] `json:"refunded_entry_id,omitempty"`
+}
+
+// LedgerEntry 账目（支出或退款）的规范资源（接口设计 3.5）；同一结构也是同步日志与快照中的表示。
+// currency_code 由旅行派生，只读；attachment_asset_ids 是票据图片资产 ID，不含临时下载地址。
+type LedgerEntry = finance.LedgerResource
+
+// LedgerEntryResponse defines model for LedgerEntryResponse.
+type LedgerEntryResponse struct {
+	// Data 账目（支出或退款）的规范资源（接口设计 3.5）；同一结构也是同步日志与快照中的表示。
+	// currency_code 由旅行派生，只读；attachment_asset_ids 是票据图片资产 ID，不含临时下载地址。
+	Data LedgerEntry `json:"data"`
+}
+
+// LedgerKind 账目类型；金额一律为正数，方向由类型决定。创建后不可改
+type LedgerKind string
+
+// LedgerPage Page<LedgerEntry>；按 occurred_on、id 均降序
+type LedgerPage struct {
+	Items      []LedgerEntry             `json:"items"`
+	NextCursor nullable.Nullable[string] `json:"next_cursor"`
+}
+
+// LedgerPatch 局部更新：缺省字段保持原值；refunded_entry_id 显式 null 表示解除关联；attachment_asset_ids 出现时整体替换。
+// kind 不可改。修改原支出的金额须仍能覆盖其关联退款；修改原支出的分类会同事务更新其关联退款。
+type LedgerPatch struct {
+	// Amount 非科学计数法的十进制字符串，无符号、无分组符，小数位不超过币种 minor_units；
+	// 服务端按币种规范化（"128.5" 与 "128.50" 相同），超精度被拒绝。存储上限 NUMERIC(18,4)，最多 14 位整数。
+	//
+	//
+	// Example: 128.50
+	Amount             *Money                `json:"amount,omitempty"`
+	AttachmentAssetIds *[]openapi_types.UUID `json:"attachment_asset_ids,omitempty"`
+	CategoryId         *openapi_types.UUID   `json:"category_id,omitempty"`
+
+	// CurrencyCode 支持清单内的 ISO 4217 三字母大写代码；清单见 Metadata.currencies
+	//
+	// Example: CNY
+	CurrencyCode *CurrencyCode `json:"currency_code,omitempty"`
+	Notes        *string       `json:"notes,omitempty"`
+
+	// OccurredOn YYYY-MM-DD，不带时区
+	//
+	// Example: 2026-10-01
+	OccurredOn      *Date                                 `json:"occurred_on,omitempty"`
+	RefundedEntryId nullable.Nullable[openapi_types.UUID] `json:"refunded_entry_id,omitempty"`
+}
+
 // LoginRequest defines model for LoginRequest.
 type LoginRequest struct {
 	Client   ClientInfo `json:"client"`
@@ -647,6 +817,12 @@ type Metadata struct {
 type MetadataResponse struct {
 	Data Metadata `json:"data"`
 }
+
+// Money 非科学计数法的十进制字符串，无符号、无分组符，小数位不超过币种 minor_units；
+// 服务端按币种规范化（"128.5" 与 "128.50" 相同），超精度被拒绝。存储上限 NUMERIC(18,4)，最多 14 位整数。
+//
+// Example: 128.50
+type Money = string
 
 // PackingBatchCreate 一个事务批量创建 1–100 件物品；与既有有效物品或请求内重复的同分类同名项被跳过
 type PackingBatchCreate struct {
@@ -826,6 +1002,45 @@ type SessionListResponse struct {
 	Data []Session `json:"data"`
 }
 
+// SignedMoney 可带负号的十进制字符串，仅用于统计里的净额、剩余预算等派生金额；格式其余同 Money。
+// 净额 = 支出 − 退款，独立退款可使退款超过支出而为负。
+//
+// Example: -12.50
+type SignedMoney = string
+
+// StatisticsScope 实际采用的筛选范围；未筛选的项为 null
+type StatisticsScope struct {
+	CategoryId nullable.Nullable[openapi_types.UUID] `json:"category_id"`
+	DateFrom   nullable.Nullable[string]             `json:"date_from"`
+	DateTo     nullable.Nullable[string]             `json:"date_to"`
+}
+
+// StatisticsTotals 筛选范围内的支出、退款、净额与账目条数；净额 = 支出 − 退款，可能为负
+type StatisticsTotals struct {
+	EntryCount int64 `json:"entry_count"`
+
+	// ExpenseAmount 非科学计数法的十进制字符串，无符号、无分组符，小数位不超过币种 minor_units；
+	// 服务端按币种规范化（"128.5" 与 "128.50" 相同），超精度被拒绝。存储上限 NUMERIC(18,4)，最多 14 位整数。
+	//
+	//
+	// Example: 128.50
+	ExpenseAmount Money `json:"expense_amount"`
+
+	// NetAmount 可带负号的十进制字符串，仅用于统计里的净额、剩余预算等派生金额；格式其余同 Money。
+	// 净额 = 支出 − 退款，独立退款可使退款超过支出而为负。
+	//
+	//
+	// Example: -12.50
+	NetAmount SignedMoney `json:"net_amount"`
+
+	// RefundAmount 非科学计数法的十进制字符串，无符号、无分组符，小数位不超过币种 minor_units；
+	// 服务端按币种规范化（"128.5" 与 "128.50" 相同），超精度被拒绝。存储上限 NUMERIC(18,4)，最多 14 位整数。
+	//
+	//
+	// Example: 128.50
+	RefundAmount Money `json:"refund_amount"`
+}
+
 // Todo 待办的规范资源（接口设计 3.4）；同一结构也是同步日志与快照中的表示
 type Todo = todo.Resource
 
@@ -881,6 +1096,25 @@ type TrashedTripResponse struct {
 
 // Trip 旅行的规范资源（接口设计 3.2）；同一结构也是同步日志与快照中的表示
 type Trip = trip.Resource
+
+// TripBudget 整趟旅行的预算对比；不受日期与分类筛选影响。无总预算时 remaining_amount 与 overspent_amount 为 null
+type TripBudget struct {
+	// BudgetAmount 旅行的 budget_amount；未设置为 null
+	BudgetAmount nullable.Nullable[string] `json:"budget_amount"`
+
+	// OverspentAmount max(整趟净支出 − 总预算, 0)
+	OverspentAmount nullable.Nullable[string] `json:"overspent_amount"`
+
+	// RemainingAmount 总预算 − 整趟净支出；可能为负，不改为零
+	RemainingAmount nullable.Nullable[string] `json:"remaining_amount"`
+
+	// TripNetAmount 可带负号的十进制字符串，仅用于统计里的净额、剩余预算等派生金额；格式其余同 Money。
+	// 净额 = 支出 − 退款，独立退款可使退款超过支出而为负。
+	//
+	//
+	// Example: -12.50
+	TripNetAmount SignedMoney `json:"trip_net_amount"`
+}
 
 // TripCreate 创建旅行；currency_code 默认 CNY，timezone 默认账号 default_timezone
 type TripCreate struct {
@@ -950,6 +1184,17 @@ type TripPatch struct {
 type TripResponse struct {
 	// Data 旅行的规范资源（接口设计 3.2）；同一结构也是同步日志与快照中的表示
 	Data Trip `json:"data"`
+}
+
+// TripStatistics 旅行开支统计（接口设计 3.8）。日期与分类筛选只影响 filtered_totals、by_category 的筛选金额与 daily；
+// trip_budget 始终基于整趟旅行的累计净支出。by_category 包含每个当前有效分类以及仍被有效账目引用的已删除分类。
+type TripStatistics = finance.Statistics
+
+// TripStatisticsResponse defines model for TripStatisticsResponse.
+type TripStatisticsResponse struct {
+	// Data 旅行开支统计（接口设计 3.8）。日期与分类筛选只影响 filtered_totals、by_category 的筛选金额与 daily；
+	// trip_budget 始终基于整趟旅行的累计净支出。by_category 包含每个当前有效分类以及仍被有效账目引用的已删除分类。
+	Data TripStatistics `json:"data"`
 }
 
 // UploadLimits defines model for UploadLimits.
@@ -1197,6 +1442,46 @@ type UpdateItineraryItemParams struct {
 	IfMatch *IfMatch `json:"If-Match,omitempty"`
 }
 
+// ListLedgerEntriesParams defines parameters for ListLedgerEntries.
+type ListLedgerEntriesParams struct {
+	// DateFrom 实际发生日期闭区间起点
+	DateFrom *string `form:"date_from,omitempty" json:"date_from,omitempty"`
+
+	// DateTo 实际发生日期闭区间终点，须不早于 date_from
+	DateTo     *string             `form:"date_to,omitempty" json:"date_to,omitempty"`
+	CategoryId *openapi_types.UUID `form:"category_id,omitempty" json:"category_id,omitempty"`
+	Kind       *LedgerKind         `form:"kind,omitempty" json:"kind,omitempty"`
+
+	// RefundedEntryId 只返回关联到该原支出的退款
+	RefundedEntryId *openapi_types.UUID `form:"refunded_entry_id,omitempty" json:"refunded_entry_id,omitempty"`
+	Limit           *int                `form:"limit,omitempty" json:"limit,omitempty"`
+	Cursor          *string             `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// CreateLedgerEntryParams defines parameters for CreateLedgerEntry.
+type CreateLedgerEntryParams struct {
+	// IdempotencyKey 写请求的操作编号（UUID）；相同成功操作重试复用同一键
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
+// DeleteLedgerEntryParams defines parameters for DeleteLedgerEntry.
+type DeleteLedgerEntryParams struct {
+	// IdempotencyKey 写请求的操作编号（UUID）；相同成功操作重试复用同一键
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+
+	// IfMatch 客户端所基于的资源版本，形如 "7"（带引号）
+	IfMatch *IfMatch `json:"If-Match,omitempty"`
+}
+
+// UpdateLedgerEntryParams defines parameters for UpdateLedgerEntry.
+type UpdateLedgerEntryParams struct {
+	// IdempotencyKey 写请求的操作编号（UUID）；相同成功操作重试复用同一键
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+
+	// IfMatch 客户端所基于的资源版本，形如 "7"（带引号）
+	IfMatch *IfMatch `json:"If-Match,omitempty"`
+}
+
 // ListPackingItemsParams defines parameters for ListPackingItems.
 type ListPackingItemsParams struct {
 	Category *PackingCategory `form:"category,omitempty" json:"category,omitempty"`
@@ -1233,6 +1518,19 @@ type UpdatePackingItemParams struct {
 
 	// IfMatch 客户端所基于的资源版本，形如 "7"（带引号）
 	IfMatch *IfMatch `json:"If-Match,omitempty"`
+}
+
+// GetTripStatisticsParams defines parameters for GetTripStatistics.
+type GetTripStatisticsParams struct {
+	DateFrom *string `form:"date_from,omitempty" json:"date_from,omitempty"`
+
+	// DateTo 须不早于 date_from
+	DateTo     *string             `form:"date_to,omitempty" json:"date_to,omitempty"`
+	CategoryId *openapi_types.UUID `form:"category_id,omitempty" json:"category_id,omitempty"`
+
+	// DailyLimit 每日明细的页大小
+	DailyLimit  *int    `form:"daily_limit,omitempty" json:"daily_limit,omitempty"`
+	DailyCursor *string `form:"daily_cursor,omitempty" json:"daily_cursor,omitempty"`
 }
 
 // ListTodosParams defines parameters for ListTodos.
@@ -1317,6 +1615,12 @@ type ReorderItineraryItemsJSONRequestBody = ItineraryReorder
 
 // UpdateItineraryItemJSONRequestBody defines body for UpdateItineraryItem for application/json ContentType.
 type UpdateItineraryItemJSONRequestBody = ItineraryPatch
+
+// CreateLedgerEntryJSONRequestBody defines body for CreateLedgerEntry for application/json ContentType.
+type CreateLedgerEntryJSONRequestBody = LedgerCreate
+
+// UpdateLedgerEntryJSONRequestBody defines body for UpdateLedgerEntry for application/json ContentType.
+type UpdateLedgerEntryJSONRequestBody = LedgerPatch
 
 // CreatePackingItemJSONRequestBody defines body for CreatePackingItem for application/json ContentType.
 type CreatePackingItemJSONRequestBody = PackingCreate
@@ -1440,6 +1744,21 @@ type ServerInterface interface {
 	// UpdateItineraryItem 局部更新内容与状态；跨日移动与排序走重排接口
 	// (PATCH /trips/{trip_id}/itinerary-items/{item_id})
 	UpdateItineraryItem(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, itemId openapi_types.UUID, params UpdateItineraryItemParams)
+	// ListLedgerEntries 旅行的账目列表；按实际日期、分类、类型及关联筛选，键集分页
+	// (GET /trips/{trip_id}/ledger-entries)
+	ListLedgerEntries(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, params ListLedgerEntriesParams)
+	// CreateLedgerEntry 记录支出或退款；校验币种、分类有效与原支出关系，第一条有效账目锁定旅行币种
+	// (POST /trips/{trip_id}/ledger-entries)
+	CreateLedgerEntry(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, params CreateLedgerEntryParams)
+	// DeleteLedgerEntry 软删除；删除原支出时同事务解除其关联退款并进入 affected（warnings 含 REFUNDS_UNLINKED），最后一条账目删除后解锁旅行币种
+	// (DELETE /trips/{trip_id}/ledger-entries/{entry_id})
+	DeleteLedgerEntry(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, entryId openapi_types.UUID, params DeleteLedgerEntryParams)
+	// GetLedgerEntry 单条账目，含票据资产 ID，不含临时下载地址
+	// (GET /trips/{trip_id}/ledger-entries/{entry_id})
+	GetLedgerEntry(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, entryId openapi_types.UUID)
+	// UpdateLedgerEntry 局部更新；类型不可改，修改金额与分类须与关联退款保持一致
+	// (PATCH /trips/{trip_id}/ledger-entries/{entry_id})
+	UpdateLedgerEntry(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, entryId openapi_types.UUID, params UpdateLedgerEntryParams)
 	// ListPackingItems 旅行的行李清单；按分类与状态筛选，键集分页
 	// (GET /trips/{trip_id}/packing-items)
 	ListPackingItems(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, params ListPackingItemsParams)
@@ -1458,6 +1777,9 @@ type ServerInterface interface {
 	// UpdatePackingItem 局部更新；内容编辑与状态变化使用同一业务规则
 	// (PATCH /trips/{trip_id}/packing-items/{item_id})
 	UpdatePackingItem(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, itemId openapi_types.UUID, params UpdatePackingItemParams)
+	// GetTripStatistics 旅行开支统计：总额、分类汇总与占比、每日明细摘要及总预算对比
+	// (GET /trips/{trip_id}/statistics)
+	GetTripStatistics(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, params GetTripStatisticsParams)
 	// ListTodos 旅行的待办列表；全部、未完成、已完成或逾期，键集分页
 	// (GET /trips/{trip_id}/todos)
 	ListTodos(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, params ListTodosParams)
@@ -1689,6 +2011,36 @@ func (_ Unimplemented) UpdateItineraryItem(w http.ResponseWriter, r *http.Reques
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// ListLedgerEntries 旅行的账目列表；按实际日期、分类、类型及关联筛选，键集分页
+// (GET /trips/{trip_id}/ledger-entries)
+func (_ Unimplemented) ListLedgerEntries(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, params ListLedgerEntriesParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// CreateLedgerEntry 记录支出或退款；校验币种、分类有效与原支出关系，第一条有效账目锁定旅行币种
+// (POST /trips/{trip_id}/ledger-entries)
+func (_ Unimplemented) CreateLedgerEntry(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, params CreateLedgerEntryParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// DeleteLedgerEntry 软删除；删除原支出时同事务解除其关联退款并进入 affected（warnings 含 REFUNDS_UNLINKED），最后一条账目删除后解锁旅行币种
+// (DELETE /trips/{trip_id}/ledger-entries/{entry_id})
+func (_ Unimplemented) DeleteLedgerEntry(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, entryId openapi_types.UUID, params DeleteLedgerEntryParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetLedgerEntry 单条账目，含票据资产 ID，不含临时下载地址
+// (GET /trips/{trip_id}/ledger-entries/{entry_id})
+func (_ Unimplemented) GetLedgerEntry(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, entryId openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// UpdateLedgerEntry 局部更新；类型不可改，修改金额与分类须与关联退款保持一致
+// (PATCH /trips/{trip_id}/ledger-entries/{entry_id})
+func (_ Unimplemented) UpdateLedgerEntry(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, entryId openapi_types.UUID, params UpdateLedgerEntryParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // ListPackingItems 旅行的行李清单；按分类与状态筛选，键集分页
 // (GET /trips/{trip_id}/packing-items)
 func (_ Unimplemented) ListPackingItems(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, params ListPackingItemsParams) {
@@ -1722,6 +2074,12 @@ func (_ Unimplemented) GetPackingItem(w http.ResponseWriter, r *http.Request, tr
 // UpdatePackingItem 局部更新；内容编辑与状态变化使用同一业务规则
 // (PATCH /trips/{trip_id}/packing-items/{item_id})
 func (_ Unimplemented) UpdatePackingItem(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, itemId openapi_types.UUID, params UpdatePackingItemParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetTripStatistics 旅行开支统计：总额、分类汇总与占比、每日明细摘要及总预算对比
+// (GET /trips/{trip_id}/statistics)
+func (_ Unimplemented) GetTripStatistics(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, params GetTripStatisticsParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -3260,6 +3618,379 @@ func (siw *ServerInterfaceWrapper) UpdateItineraryItem(w http.ResponseWriter, r 
 	handler.ServeHTTP(w, r)
 }
 
+// ListLedgerEntries operation middleware
+func (siw *ServerInterfaceWrapper) ListLedgerEntries(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "trip_id" -------------
+	var tripId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "trip_id", chi.URLParam(r, "trip_id"), &tripId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "trip_id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListLedgerEntriesParams
+
+	// ------------- Optional query parameter "date_from" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "date_from", r.URL.Query(), &params.DateFrom, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "date_from"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "date_from", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "date_to" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "date_to", r.URL.Query(), &params.DateTo, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "date_to"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "date_to", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "category_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "category_id", r.URL.Query(), &params.CategoryId, runtime.BindQueryParameterOptions{Type: "string", Format: "uuid"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "category_id"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "category_id", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "kind" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "kind", r.URL.Query(), &params.Kind, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "kind"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "kind", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "refunded_entry_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "refunded_entry_id", r.URL.Query(), &params.RefundedEntryId, runtime.BindQueryParameterOptions{Type: "string", Format: "uuid"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "refunded_entry_id"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "refunded_entry_id", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListLedgerEntries(w, r, tripId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateLedgerEntry operation middleware
+func (siw *ServerInterfaceWrapper) CreateLedgerEntry(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "trip_id" -------------
+	var tripId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "trip_id", chi.URLParam(r, "trip_id"), &tripId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "trip_id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateLedgerEntryParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateLedgerEntry(w, r, tripId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteLedgerEntry operation middleware
+func (siw *ServerInterfaceWrapper) DeleteLedgerEntry(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "trip_id" -------------
+	var tripId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "trip_id", chi.URLParam(r, "trip_id"), &tripId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "trip_id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "entry_id" -------------
+	var entryId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "entry_id", chi.URLParam(r, "entry_id"), &entryId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "entry_id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params DeleteLedgerEntryParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
+		return
+	}
+
+	// ------------- Optional header parameter "If-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
+		var IfMatch IfMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-Match", Err: err})
+			return
+		}
+
+		params.IfMatch = &IfMatch
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteLedgerEntry(w, r, tripId, entryId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetLedgerEntry operation middleware
+func (siw *ServerInterfaceWrapper) GetLedgerEntry(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "trip_id" -------------
+	var tripId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "trip_id", chi.URLParam(r, "trip_id"), &tripId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "trip_id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "entry_id" -------------
+	var entryId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "entry_id", chi.URLParam(r, "entry_id"), &entryId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "entry_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetLedgerEntry(w, r, tripId, entryId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateLedgerEntry operation middleware
+func (siw *ServerInterfaceWrapper) UpdateLedgerEntry(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "trip_id" -------------
+	var tripId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "trip_id", chi.URLParam(r, "trip_id"), &tripId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "trip_id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "entry_id" -------------
+	var entryId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "entry_id", chi.URLParam(r, "entry_id"), &entryId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "entry_id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params UpdateLedgerEntryParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
+		return
+	}
+
+	// ------------- Optional header parameter "If-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
+		var IfMatch IfMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-Match", Err: err})
+			return
+		}
+
+		params.IfMatch = &IfMatch
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateLedgerEntry(w, r, tripId, entryId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListPackingItems operation middleware
 func (siw *ServerInterfaceWrapper) ListPackingItems(w http.ResponseWriter, r *http.Request) {
 
@@ -3639,6 +4370,100 @@ func (siw *ServerInterfaceWrapper) UpdatePackingItem(w http.ResponseWriter, r *h
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.UpdatePackingItem(w, r, tripId, itemId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetTripStatistics operation middleware
+func (siw *ServerInterfaceWrapper) GetTripStatistics(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "trip_id" -------------
+	var tripId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "trip_id", chi.URLParam(r, "trip_id"), &tripId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "trip_id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetTripStatisticsParams
+
+	// ------------- Optional query parameter "date_from" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "date_from", r.URL.Query(), &params.DateFrom, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "date_from"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "date_from", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "date_to" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "date_to", r.URL.Query(), &params.DateTo, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "date_to"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "date_to", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "category_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "category_id", r.URL.Query(), &params.CategoryId, runtime.BindQueryParameterOptions{Type: "string", Format: "uuid"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "category_id"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "category_id", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "daily_limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "daily_limit", r.URL.Query(), &params.DailyLimit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "daily_limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "daily_limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "daily_cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "daily_cursor", r.URL.Query(), &params.DailyCursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "daily_cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "daily_cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetTripStatistics(w, r, tripId, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -4219,6 +5044,24 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Patch(options.BaseURL+"/trips/{trip_id}/todos/{todo_id}", wrapper.UpdateTodo)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/trips/{trip_id}/ledger-entries", wrapper.ListLedgerEntries)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/trips/{trip_id}/ledger-entries", wrapper.CreateLedgerEntry)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/trips/{trip_id}/ledger-entries/{entry_id}", wrapper.DeleteLedgerEntry)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/trips/{trip_id}/ledger-entries/{entry_id}", wrapper.GetLedgerEntry)
+	})
+	r.Group(func(r chi.Router) {
+		r.Patch(options.BaseURL+"/trips/{trip_id}/ledger-entries/{entry_id}", wrapper.UpdateLedgerEntry)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/trips/{trip_id}/statistics", wrapper.GetTripStatistics)
 	})
 
 	return r
@@ -6908,6 +7751,515 @@ func (response UpdateItineraryItem428ApplicationProblemPlusJSONResponse) VisitUp
 	return err
 }
 
+type ListLedgerEntriesRequestObject struct {
+	TripId openapi_types.UUID `json:"trip_id"`
+	Params ListLedgerEntriesParams
+}
+
+type ListLedgerEntriesResponseObject interface {
+	VisitListLedgerEntriesResponse(w http.ResponseWriter) error
+}
+
+type ListLedgerEntries200JSONResponse LedgerPage
+
+func (response ListLedgerEntries200JSONResponse) VisitListLedgerEntriesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListLedgerEntries400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response ListLedgerEntries400ApplicationProblemPlusJSONResponse) VisitListLedgerEntriesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListLedgerEntries401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response ListLedgerEntries401ApplicationProblemPlusJSONResponse) VisitListLedgerEntriesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListLedgerEntries404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response ListLedgerEntries404ApplicationProblemPlusJSONResponse) VisitListLedgerEntriesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListLedgerEntries410ApplicationProblemPlusJSONResponse struct {
+	GoneApplicationProblemPlusJSONResponse
+}
+
+func (response ListLedgerEntries410ApplicationProblemPlusJSONResponse) VisitListLedgerEntriesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(410)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListLedgerEntries422ApplicationProblemPlusJSONResponse struct {
+	ValidationFailedApplicationProblemPlusJSONResponse
+}
+
+func (response ListLedgerEntries422ApplicationProblemPlusJSONResponse) VisitListLedgerEntriesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateLedgerEntryRequestObject struct {
+	TripId openapi_types.UUID `json:"trip_id"`
+	Params CreateLedgerEntryParams
+	Body   *CreateLedgerEntryJSONRequestBody
+}
+
+type CreateLedgerEntryResponseObject interface {
+	VisitCreateLedgerEntryResponse(w http.ResponseWriter) error
+}
+
+type CreateLedgerEntry201JSONResponse WriteResponse
+
+func (response CreateLedgerEntry201JSONResponse) VisitCreateLedgerEntryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateLedgerEntry401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response CreateLedgerEntry401ApplicationProblemPlusJSONResponse) VisitCreateLedgerEntryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateLedgerEntry404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response CreateLedgerEntry404ApplicationProblemPlusJSONResponse) VisitCreateLedgerEntryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateLedgerEntry409ApplicationProblemPlusJSONResponse struct {
+	ConflictApplicationProblemPlusJSONResponse
+}
+
+func (response CreateLedgerEntry409ApplicationProblemPlusJSONResponse) VisitCreateLedgerEntryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateLedgerEntry410ApplicationProblemPlusJSONResponse struct {
+	GoneApplicationProblemPlusJSONResponse
+}
+
+func (response CreateLedgerEntry410ApplicationProblemPlusJSONResponse) VisitCreateLedgerEntryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(410)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateLedgerEntry422ApplicationProblemPlusJSONResponse Problem
+
+func (response CreateLedgerEntry422ApplicationProblemPlusJSONResponse) VisitCreateLedgerEntryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteLedgerEntryRequestObject struct {
+	TripId  openapi_types.UUID `json:"trip_id"`
+	EntryId openapi_types.UUID `json:"entry_id"`
+	Params  DeleteLedgerEntryParams
+}
+
+type DeleteLedgerEntryResponseObject interface {
+	VisitDeleteLedgerEntryResponse(w http.ResponseWriter) error
+}
+
+type DeleteLedgerEntry200JSONResponse WriteResponse
+
+func (response DeleteLedgerEntry200JSONResponse) VisitDeleteLedgerEntryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteLedgerEntry401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response DeleteLedgerEntry401ApplicationProblemPlusJSONResponse) VisitDeleteLedgerEntryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteLedgerEntry404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response DeleteLedgerEntry404ApplicationProblemPlusJSONResponse) VisitDeleteLedgerEntryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteLedgerEntry410ApplicationProblemPlusJSONResponse struct {
+	GoneApplicationProblemPlusJSONResponse
+}
+
+func (response DeleteLedgerEntry410ApplicationProblemPlusJSONResponse) VisitDeleteLedgerEntryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(410)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteLedgerEntry412ApplicationProblemPlusJSONResponse struct {
+	PreconditionFailedApplicationProblemPlusJSONResponse
+}
+
+func (response DeleteLedgerEntry412ApplicationProblemPlusJSONResponse) VisitDeleteLedgerEntryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(412)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteLedgerEntry428ApplicationProblemPlusJSONResponse struct {
+	VersionRequiredApplicationProblemPlusJSONResponse
+}
+
+func (response DeleteLedgerEntry428ApplicationProblemPlusJSONResponse) VisitDeleteLedgerEntryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(428)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetLedgerEntryRequestObject struct {
+	TripId  openapi_types.UUID `json:"trip_id"`
+	EntryId openapi_types.UUID `json:"entry_id"`
+}
+
+type GetLedgerEntryResponseObject interface {
+	VisitGetLedgerEntryResponse(w http.ResponseWriter) error
+}
+
+type GetLedgerEntry200ResponseHeaders struct {
+	ETag *string
+}
+
+type GetLedgerEntry200JSONResponse struct {
+	Body    LedgerEntryResponse
+	Headers GetLedgerEntry200ResponseHeaders
+}
+
+func (response GetLedgerEntry200JSONResponse) VisitGetLedgerEntryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.ETag != nil {
+		w.Header().Set("ETag", fmt.Sprint(*response.Headers.ETag))
+	}
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetLedgerEntry401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response GetLedgerEntry401ApplicationProblemPlusJSONResponse) VisitGetLedgerEntryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetLedgerEntry404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response GetLedgerEntry404ApplicationProblemPlusJSONResponse) VisitGetLedgerEntryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetLedgerEntry410ApplicationProblemPlusJSONResponse struct {
+	GoneApplicationProblemPlusJSONResponse
+}
+
+func (response GetLedgerEntry410ApplicationProblemPlusJSONResponse) VisitGetLedgerEntryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(410)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateLedgerEntryRequestObject struct {
+	TripId  openapi_types.UUID `json:"trip_id"`
+	EntryId openapi_types.UUID `json:"entry_id"`
+	Params  UpdateLedgerEntryParams
+	Body    *UpdateLedgerEntryJSONRequestBody
+}
+
+type UpdateLedgerEntryResponseObject interface {
+	VisitUpdateLedgerEntryResponse(w http.ResponseWriter) error
+}
+
+type UpdateLedgerEntry200JSONResponse WriteResponse
+
+func (response UpdateLedgerEntry200JSONResponse) VisitUpdateLedgerEntryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateLedgerEntry401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response UpdateLedgerEntry401ApplicationProblemPlusJSONResponse) VisitUpdateLedgerEntryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateLedgerEntry404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response UpdateLedgerEntry404ApplicationProblemPlusJSONResponse) VisitUpdateLedgerEntryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateLedgerEntry410ApplicationProblemPlusJSONResponse struct {
+	GoneApplicationProblemPlusJSONResponse
+}
+
+func (response UpdateLedgerEntry410ApplicationProblemPlusJSONResponse) VisitUpdateLedgerEntryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(410)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateLedgerEntry412ApplicationProblemPlusJSONResponse struct {
+	PreconditionFailedApplicationProblemPlusJSONResponse
+}
+
+func (response UpdateLedgerEntry412ApplicationProblemPlusJSONResponse) VisitUpdateLedgerEntryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(412)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateLedgerEntry422ApplicationProblemPlusJSONResponse Problem
+
+func (response UpdateLedgerEntry422ApplicationProblemPlusJSONResponse) VisitUpdateLedgerEntryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateLedgerEntry428ApplicationProblemPlusJSONResponse struct {
+	VersionRequiredApplicationProblemPlusJSONResponse
+}
+
+func (response UpdateLedgerEntry428ApplicationProblemPlusJSONResponse) VisitUpdateLedgerEntryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(428)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListPackingItemsRequestObject struct {
 	TripId openapi_types.UUID `json:"trip_id"`
 	Params ListPackingItemsParams
@@ -7521,6 +8873,109 @@ func (response UpdatePackingItem428ApplicationProblemPlusJSONResponse) VisitUpda
 	}
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(428)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetTripStatisticsRequestObject struct {
+	TripId openapi_types.UUID `json:"trip_id"`
+	Params GetTripStatisticsParams
+}
+
+type GetTripStatisticsResponseObject interface {
+	VisitGetTripStatisticsResponse(w http.ResponseWriter) error
+}
+
+type GetTripStatistics200JSONResponse TripStatisticsResponse
+
+func (response GetTripStatistics200JSONResponse) VisitGetTripStatisticsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetTripStatistics400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response GetTripStatistics400ApplicationProblemPlusJSONResponse) VisitGetTripStatisticsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetTripStatistics401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response GetTripStatistics401ApplicationProblemPlusJSONResponse) VisitGetTripStatisticsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetTripStatistics404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response GetTripStatistics404ApplicationProblemPlusJSONResponse) VisitGetTripStatisticsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetTripStatistics410ApplicationProblemPlusJSONResponse struct {
+	GoneApplicationProblemPlusJSONResponse
+}
+
+func (response GetTripStatistics410ApplicationProblemPlusJSONResponse) VisitGetTripStatisticsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(410)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetTripStatistics422ApplicationProblemPlusJSONResponse struct {
+	ValidationFailedApplicationProblemPlusJSONResponse
+}
+
+func (response GetTripStatistics422ApplicationProblemPlusJSONResponse) VisitGetTripStatisticsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(422)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -8145,6 +9600,21 @@ type StrictServerInterface interface {
 	// UpdateItineraryItem 局部更新内容与状态；跨日移动与排序走重排接口
 	// (PATCH /trips/{trip_id}/itinerary-items/{item_id})
 	UpdateItineraryItem(ctx context.Context, request UpdateItineraryItemRequestObject) (UpdateItineraryItemResponseObject, error)
+	// ListLedgerEntries 旅行的账目列表；按实际日期、分类、类型及关联筛选，键集分页
+	// (GET /trips/{trip_id}/ledger-entries)
+	ListLedgerEntries(ctx context.Context, request ListLedgerEntriesRequestObject) (ListLedgerEntriesResponseObject, error)
+	// CreateLedgerEntry 记录支出或退款；校验币种、分类有效与原支出关系，第一条有效账目锁定旅行币种
+	// (POST /trips/{trip_id}/ledger-entries)
+	CreateLedgerEntry(ctx context.Context, request CreateLedgerEntryRequestObject) (CreateLedgerEntryResponseObject, error)
+	// DeleteLedgerEntry 软删除；删除原支出时同事务解除其关联退款并进入 affected（warnings 含 REFUNDS_UNLINKED），最后一条账目删除后解锁旅行币种
+	// (DELETE /trips/{trip_id}/ledger-entries/{entry_id})
+	DeleteLedgerEntry(ctx context.Context, request DeleteLedgerEntryRequestObject) (DeleteLedgerEntryResponseObject, error)
+	// GetLedgerEntry 单条账目，含票据资产 ID，不含临时下载地址
+	// (GET /trips/{trip_id}/ledger-entries/{entry_id})
+	GetLedgerEntry(ctx context.Context, request GetLedgerEntryRequestObject) (GetLedgerEntryResponseObject, error)
+	// UpdateLedgerEntry 局部更新；类型不可改，修改金额与分类须与关联退款保持一致
+	// (PATCH /trips/{trip_id}/ledger-entries/{entry_id})
+	UpdateLedgerEntry(ctx context.Context, request UpdateLedgerEntryRequestObject) (UpdateLedgerEntryResponseObject, error)
 	// ListPackingItems 旅行的行李清单；按分类与状态筛选，键集分页
 	// (GET /trips/{trip_id}/packing-items)
 	ListPackingItems(ctx context.Context, request ListPackingItemsRequestObject) (ListPackingItemsResponseObject, error)
@@ -8163,6 +9633,9 @@ type StrictServerInterface interface {
 	// UpdatePackingItem 局部更新；内容编辑与状态变化使用同一业务规则
 	// (PATCH /trips/{trip_id}/packing-items/{item_id})
 	UpdatePackingItem(ctx context.Context, request UpdatePackingItemRequestObject) (UpdatePackingItemResponseObject, error)
+	// GetTripStatistics 旅行开支统计：总额、分类汇总与占比、每日明细摘要及总预算对比
+	// (GET /trips/{trip_id}/statistics)
+	GetTripStatistics(ctx context.Context, request GetTripStatisticsRequestObject) (GetTripStatisticsResponseObject, error)
 	// ListTodos 旅行的待办列表；全部、未完成、已完成或逾期，键集分页
 	// (GET /trips/{trip_id}/todos)
 	ListTodos(ctx context.Context, request ListTodosRequestObject) (ListTodosResponseObject, error)
@@ -9240,6 +10713,157 @@ func (sh *strictHandler) UpdateItineraryItem(w http.ResponseWriter, r *http.Requ
 	}
 }
 
+// ListLedgerEntries operation middleware
+func (sh *strictHandler) ListLedgerEntries(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, params ListLedgerEntriesParams) {
+	var request ListLedgerEntriesRequestObject
+
+	request.TripId = tripId
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListLedgerEntries(ctx, request.(ListLedgerEntriesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListLedgerEntries")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListLedgerEntriesResponseObject); ok {
+		if err := validResponse.VisitListLedgerEntriesResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateLedgerEntry operation middleware
+func (sh *strictHandler) CreateLedgerEntry(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, params CreateLedgerEntryParams) {
+	var request CreateLedgerEntryRequestObject
+
+	request.TripId = tripId
+	request.Params = params
+
+	var body CreateLedgerEntryJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateLedgerEntry(ctx, request.(CreateLedgerEntryRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateLedgerEntry")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateLedgerEntryResponseObject); ok {
+		if err := validResponse.VisitCreateLedgerEntryResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteLedgerEntry operation middleware
+func (sh *strictHandler) DeleteLedgerEntry(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, entryId openapi_types.UUID, params DeleteLedgerEntryParams) {
+	var request DeleteLedgerEntryRequestObject
+
+	request.TripId = tripId
+	request.EntryId = entryId
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteLedgerEntry(ctx, request.(DeleteLedgerEntryRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteLedgerEntry")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteLedgerEntryResponseObject); ok {
+		if err := validResponse.VisitDeleteLedgerEntryResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetLedgerEntry operation middleware
+func (sh *strictHandler) GetLedgerEntry(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, entryId openapi_types.UUID) {
+	var request GetLedgerEntryRequestObject
+
+	request.TripId = tripId
+	request.EntryId = entryId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetLedgerEntry(ctx, request.(GetLedgerEntryRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetLedgerEntry")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetLedgerEntryResponseObject); ok {
+		if err := validResponse.VisitGetLedgerEntryResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateLedgerEntry operation middleware
+func (sh *strictHandler) UpdateLedgerEntry(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, entryId openapi_types.UUID, params UpdateLedgerEntryParams) {
+	var request UpdateLedgerEntryRequestObject
+
+	request.TripId = tripId
+	request.EntryId = entryId
+	request.Params = params
+
+	var body UpdateLedgerEntryJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateLedgerEntry(ctx, request.(UpdateLedgerEntryRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateLedgerEntry")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateLedgerEntryResponseObject); ok {
+		if err := validResponse.VisitUpdateLedgerEntryResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // ListPackingItems operation middleware
 func (sh *strictHandler) ListPackingItems(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, params ListPackingItemsParams) {
 	var request ListPackingItemsRequestObject
@@ -9418,6 +11042,33 @@ func (sh *strictHandler) UpdatePackingItem(w http.ResponseWriter, r *http.Reques
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(UpdatePackingItemResponseObject); ok {
 		if err := validResponse.VisitUpdatePackingItemResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetTripStatistics operation middleware
+func (sh *strictHandler) GetTripStatistics(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, params GetTripStatisticsParams) {
+	var request GetTripStatisticsRequestObject
+
+	request.TripId = tripId
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetTripStatistics(ctx, request.(GetTripStatisticsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetTripStatistics")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetTripStatisticsResponseObject); ok {
+		if err := validResponse.VisitGetTripStatisticsResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

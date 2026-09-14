@@ -26,6 +26,8 @@ type Handler struct {
 	sessions    *account.SessionService
 	profile     *account.ProfileService
 	categories  *finance.CategoryService
+	ledger      *finance.LedgerService
+	statistics  *finance.StatisticsService
 	trips       *trip.Service
 	itinerary   *itinerary.Service
 	packing     *packing.Service

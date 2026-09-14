@@ -1427,6 +1427,281 @@ paths:
           $ref: '#/components/responses/PreconditionFailed'
         '428':
           $ref: '#/components/responses/VersionRequired'
+  /trips/{trip_id}/ledger-entries:
+    parameters:
+      - name: trip_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags:
+        - finance
+      operationId: listLedgerEntries
+      summary: 旅行的账目列表；按实际日期、分类、类型及关联筛选，键集分页
+      parameters:
+        - name: date_from
+          in: query
+          required: false
+          description: 实际发生日期闭区间起点
+          schema:
+            type: string
+            pattern: ^\d{4}-\d{2}-\d{2}$
+        - name: date_to
+          in: query
+          required: false
+          description: 实际发生日期闭区间终点，须不早于 date_from
+          schema:
+            type: string
+            pattern: ^\d{4}-\d{2}-\d{2}$
+        - name: category_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: kind
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/LedgerKind'
+        - name: refunded_entry_id
+          in: query
+          required: false
+          description: 只返回关联到该原支出的退款
+          schema:
+            type: string
+            format: uuid
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 一页账目，按 occurred_on、id 均降序
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LedgerPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '410':
+          $ref: '#/components/responses/Gone'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+    post:
+      tags:
+        - finance
+      operationId: createLedgerEntry
+      summary: 记录支出或退款；校验币种、分类有效与原支出关系，第一条有效账目锁定旅行币种
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LedgerCreate'
+      responses:
+        '201':
+          description: 已创建；币种首次锁定时旅行进入 affected
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WriteResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '410':
+          $ref: '#/components/responses/Gone'
+        '422':
+          description: 校验失败（VALIDATION_FAILED）、币种与旅行不符（CURRENCY_MISMATCH）、退款超额（REFUND_AMOUNT_EXCEEDED）或分类/原支出/票据无效（INVALID_REFERENCE）
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+  /trips/{trip_id}/ledger-entries/{entry_id}:
+    parameters:
+      - name: trip_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: entry_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags:
+        - finance
+      operationId: getLedgerEntry
+      summary: 单条账目，含票据资产 ID，不含临时下载地址
+      responses:
+        '200':
+          description: 账目，带 ETag
+          headers:
+            ETag:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LedgerEntryResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '410':
+          $ref: '#/components/responses/Gone'
+    patch:
+      tags:
+        - finance
+      operationId: updateLedgerEntry
+      summary: 局部更新；类型不可改，修改金额与分类须与关联退款保持一致
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LedgerPatch'
+      responses:
+        '200':
+          description: 已更新；修改原支出分类时其关联退款进入 affected；warnings 可能含 MERGED_WITH_NEWER_VERSION
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WriteResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '410':
+          $ref: '#/components/responses/Gone'
+        '412':
+          $ref: '#/components/responses/PreconditionFailed'
+        '422':
+          description: 校验失败（VALIDATION_FAILED）、币种与旅行不符（CURRENCY_MISMATCH）、退款超额（REFUND_AMOUNT_EXCEEDED）或引用无效（INVALID_REFERENCE）
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '428':
+          $ref: '#/components/responses/VersionRequired'
+    delete:
+      tags:
+        - finance
+      operationId: deleteLedgerEntry
+      summary: 软删除；删除原支出时同事务解除其关联退款并进入 affected（warnings 含 REFUNDS_UNLINKED），最后一条账目删除后解锁旅行币种
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '200':
+          description: 已删除；data 为带 deleted_at 的账目
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WriteResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '410':
+          $ref: '#/components/responses/Gone'
+        '412':
+          $ref: '#/components/responses/PreconditionFailed'
+        '428':
+          $ref: '#/components/responses/VersionRequired'
+  /trips/{trip_id}/statistics:
+    parameters:
+      - name: trip_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags:
+        - finance
+      operationId: getTripStatistics
+      summary: 旅行开支统计：总额、分类汇总与占比、每日明细摘要及总预算对比
+      description: |
+        在同一个只读一致性事务中读取各项聚合。日期与分类筛选只影响 filtered_totals、by_category 的筛选金额与 daily；
+        trip_budget 始终基于整趟旅行。无日期筛选时统计全部关联账目，不自动套用旅行起止日期。
+      parameters:
+        - name: date_from
+          in: query
+          required: false
+          schema:
+            type: string
+            pattern: ^\d{4}-\d{2}-\d{2}$
+        - name: date_to
+          in: query
+          required: false
+          description: 须不早于 date_from
+          schema:
+            type: string
+            pattern: ^\d{4}-\d{2}-\d{2}$
+        - name: category_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: daily_limit
+          in: query
+          required: false
+          description: 每日明细的页大小
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 31
+        - name: daily_cursor
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 统计结果
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TripStatisticsResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '410':
+          $ref: '#/components/responses/Gone'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
 components:
   securitySchemes:
     bearerAuth:
@@ -1551,6 +1826,13 @@ components:
       description: 支持清单内的 ISO 4217 三字母大写代码；清单见 Metadata.currencies
       pattern: ^[A-Z]{3}$
       example: CNY
+    SignedMoney:
+      type: string
+      description: |
+        可带负号的十进制字符串，仅用于统计里的净额、剩余预算等派生金额；格式其余同 Money。
+        净额 = 支出 − 退款，独立退款可使退款超过支出而为负。
+      pattern: ^-?[0-9]{1,14}(\.[0-9]{1,4})?$
+      example: '-12.50'
     Version:
       type: string
       description: 资源版本，正整数十进制字符串
@@ -3136,6 +3418,339 @@ components:
           maxLength: 4000
         completed:
           type: boolean
+    LedgerKind:
+      type: string
+      description: 账目类型；金额一律为正数，方向由类型决定。创建后不可改
+      enum:
+        - expense
+        - refund
+    LedgerEntry:
+      type: object
+      description: |
+        账目（支出或退款）的规范资源（接口设计 3.5）；同一结构也是同步日志与快照中的表示。
+        currency_code 由旅行派生，只读；attachment_asset_ids 是票据图片资产 ID，不含临时下载地址。
+      x-go-type: finance.LedgerResource
+      x-go-type-import:
+        path: tripfolio/server/internal/modules/finance
+      required:
+        - id
+        - trip_id
+        - kind
+        - amount
+        - currency_code
+        - category_id
+        - occurred_on
+        - notes
+        - refunded_entry_id
+        - attachment_asset_ids
+        - version
+        - created_at
+        - updated_at
+        - deleted_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        trip_id:
+          type: string
+          format: uuid
+        kind:
+          $ref: '#/components/schemas/LedgerKind'
+        amount:
+          $ref: '#/components/schemas/Money'
+        currency_code:
+          $ref: '#/components/schemas/CurrencyCode'
+        category_id:
+          type: string
+          format: uuid
+        occurred_on:
+          $ref: '#/components/schemas/Date'
+        notes:
+          type: string
+          maxLength: 4000
+        refunded_entry_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: 退款关联的原支出；独立退款与支出为 null
+        attachment_asset_ids:
+          type: array
+          maxItems: 10
+          items:
+            type: string
+            format: uuid
+        version:
+          $ref: '#/components/schemas/Version'
+        created_at:
+          $ref: '#/components/schemas/Instant'
+        updated_at:
+          $ref: '#/components/schemas/Instant'
+        deleted_at:
+          type: string
+          format: date-time
+          nullable: true
+    LedgerEntryResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: '#/components/schemas/LedgerEntry'
+    LedgerPage:
+      type: object
+      description: Page<LedgerEntry>；按 occurred_on、id 均降序
+      required:
+        - items
+        - next_cursor
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/LedgerEntry'
+        next_cursor:
+          type: string
+          nullable: true
+    LedgerCreate:
+      type: object
+      description: |
+        创建支出或退款。currency_code 可省略，提供时必须等于旅行币种（否则 422 CURRENCY_MISMATCH）；
+        occurred_on 默认旅行时区的今天。退款可通过 refunded_entry_id 关联同旅行的有效支出，
+        分类须与原支出一致，关联退款合计不得超过原支出金额（422 REFUND_AMOUNT_EXCEEDED）。
+      required:
+        - id
+        - kind
+        - amount
+        - category_id
+      properties:
+        id:
+          type: string
+          format: uuid
+        kind:
+          $ref: '#/components/schemas/LedgerKind'
+        amount:
+          $ref: '#/components/schemas/Money'
+        currency_code:
+          $ref: '#/components/schemas/CurrencyCode'
+        category_id:
+          type: string
+          format: uuid
+        occurred_on:
+          $ref: '#/components/schemas/Date'
+        notes:
+          type: string
+          maxLength: 4000
+        refunded_entry_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: 仅 kind=refund 可填写
+        attachment_asset_ids:
+          type: array
+          maxItems: 10
+          description: 同旅行、未删除的图片资产；顺序即显示顺序
+          items:
+            type: string
+            format: uuid
+    LedgerPatch:
+      type: object
+      description: |
+        局部更新：缺省字段保持原值；refunded_entry_id 显式 null 表示解除关联；attachment_asset_ids 出现时整体替换。
+        kind 不可改。修改原支出的金额须仍能覆盖其关联退款；修改原支出的分类会同事务更新其关联退款。
+      properties:
+        amount:
+          $ref: '#/components/schemas/Money'
+        currency_code:
+          $ref: '#/components/schemas/CurrencyCode'
+        category_id:
+          type: string
+          format: uuid
+        occurred_on:
+          $ref: '#/components/schemas/Date'
+        notes:
+          type: string
+          maxLength: 4000
+        refunded_entry_id:
+          type: string
+          format: uuid
+          nullable: true
+        attachment_asset_ids:
+          type: array
+          maxItems: 10
+          items:
+            type: string
+            format: uuid
+    StatisticsScope:
+      type: object
+      description: 实际采用的筛选范围；未筛选的项为 null
+      required:
+        - date_from
+        - date_to
+        - category_id
+      properties:
+        date_from:
+          type: string
+          nullable: true
+          pattern: ^\d{4}-\d{2}-\d{2}$
+        date_to:
+          type: string
+          nullable: true
+          pattern: ^\d{4}-\d{2}-\d{2}$
+        category_id:
+          type: string
+          format: uuid
+          nullable: true
+    StatisticsTotals:
+      type: object
+      description: 筛选范围内的支出、退款、净额与账目条数；净额 = 支出 − 退款，可能为负
+      required:
+        - expense_amount
+        - refund_amount
+        - net_amount
+        - entry_count
+      properties:
+        expense_amount:
+          $ref: '#/components/schemas/Money'
+        refund_amount:
+          $ref: '#/components/schemas/Money'
+        net_amount:
+          $ref: '#/components/schemas/SignedMoney'
+        entry_count:
+          type: integer
+          format: int64
+          minimum: 0
+    TripBudget:
+      type: object
+      description: 整趟旅行的预算对比；不受日期与分类筛选影响。无总预算时 remaining_amount 与 overspent_amount 为 null
+      required:
+        - budget_amount
+        - trip_net_amount
+        - remaining_amount
+        - overspent_amount
+      properties:
+        budget_amount:
+          type: string
+          nullable: true
+          pattern: ^[0-9]{1,14}(\.[0-9]{1,4})?$
+          description: 旅行的 budget_amount；未设置为 null
+        trip_net_amount:
+          $ref: '#/components/schemas/SignedMoney'
+        remaining_amount:
+          type: string
+          nullable: true
+          pattern: ^-?[0-9]{1,14}(\.[0-9]{1,4})?$
+          description: 总预算 − 整趟净支出；可能为负，不改为零
+        overspent_amount:
+          type: string
+          nullable: true
+          pattern: ^[0-9]{1,14}(\.[0-9]{1,4})?$
+          description: max(整趟净支出 − 总预算, 0)
+    CategoryTotals:
+      type: object
+      description: 单个分类在筛选范围内的汇总；share 仅供展示，不参与金额结算
+      required:
+        - category_id
+        - name
+        - icon
+        - expense_amount
+        - refund_amount
+        - net_amount
+        - share
+        - trip_category_net_amount
+      properties:
+        category_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        icon:
+          type: string
+          nullable: true
+        expense_amount:
+          $ref: '#/components/schemas/Money'
+        refund_amount:
+          $ref: '#/components/schemas/Money'
+        net_amount:
+          $ref: '#/components/schemas/SignedMoney'
+        share:
+          type: number
+          format: double
+          nullable: true
+          minimum: 0
+          maximum: 1
+          description: 分类净额占筛选后总净额的比例；ratio_available=false 时为 null
+        trip_category_net_amount:
+          $ref: '#/components/schemas/SignedMoney'
+    DailyTotals:
+      type: object
+      required:
+        - date
+        - expense_amount
+        - refund_amount
+        - net_amount
+      properties:
+        date:
+          $ref: '#/components/schemas/Date'
+        expense_amount:
+          $ref: '#/components/schemas/Money'
+        refund_amount:
+          $ref: '#/components/schemas/Money'
+        net_amount:
+          $ref: '#/components/schemas/SignedMoney'
+    DailyTotalsPage:
+      type: object
+      description: Page<DailyTotals>；按日期降序，只含有账目的日期
+      required:
+        - items
+        - next_cursor
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/DailyTotals'
+        next_cursor:
+          type: string
+          nullable: true
+    TripStatistics:
+      type: object
+      description: |
+        旅行开支统计（接口设计 3.8）。日期与分类筛选只影响 filtered_totals、by_category 的筛选金额与 daily；
+        trip_budget 始终基于整趟旅行的累计净支出。by_category 包含每个当前有效分类以及仍被有效账目引用的已删除分类。
+      x-go-type: finance.Statistics
+      x-go-type-import:
+        path: tripfolio/server/internal/modules/finance
+      required:
+        - scope
+        - currency_code
+        - filtered_totals
+        - trip_budget
+        - by_category
+        - ratio_available
+        - daily
+      properties:
+        scope:
+          $ref: '#/components/schemas/StatisticsScope'
+        currency_code:
+          $ref: '#/components/schemas/CurrencyCode'
+        filtered_totals:
+          $ref: '#/components/schemas/StatisticsTotals'
+        trip_budget:
+          $ref: '#/components/schemas/TripBudget'
+        by_category:
+          type: array
+          items:
+            $ref: '#/components/schemas/CategoryTotals'
+        ratio_available:
+          type: boolean
+          description: 仅筛选后总净额 > 0 且各分类净额 >= 0 时为 true；否则各 share 为 null
+        daily:
+          $ref: '#/components/schemas/DailyTotalsPage'
+    TripStatisticsResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: '#/components/schemas/TripStatistics'
   responses:
     BadRequest:
       description: 请求无法解析、含未知字段或游标无效（MALFORMED_REQUEST、INVALID_CURSOR）

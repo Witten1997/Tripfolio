@@ -96,6 +96,12 @@ paths:
     $ref: ./paths/todos.yaml#/collection
   /trips/{trip_id}/todos/{todo_id}:
     $ref: ./paths/todos.yaml#/item
+  /trips/{trip_id}/ledger-entries:
+    $ref: ./paths/ledger-entries.yaml#/collection
+  /trips/{trip_id}/ledger-entries/{entry_id}:
+    $ref: ./paths/ledger-entries.yaml#/item
+  /trips/{trip_id}/statistics:
+    $ref: ./paths/statistics.yaml#/statistics
 components:
   securitySchemes:
     bearerAuth:
@@ -119,6 +125,8 @@ components:
       $ref: ./schemas/common.yaml#/Money
     CurrencyCode:
       $ref: ./schemas/common.yaml#/CurrencyCode
+    SignedMoney:
+      $ref: ./schemas/common.yaml#/SignedMoney
     Version:
       $ref: ./schemas/write.yaml#/Version
     Instant:
@@ -275,6 +283,34 @@ components:
       $ref: ./schemas/todo.yaml#/TodoCreate
     TodoPatch:
       $ref: ./schemas/todo.yaml#/TodoPatch
+    LedgerKind:
+      $ref: ./schemas/ledger.yaml#/LedgerKind
+    LedgerEntry:
+      $ref: ./schemas/ledger.yaml#/LedgerEntry
+    LedgerEntryResponse:
+      $ref: ./schemas/ledger.yaml#/LedgerEntryResponse
+    LedgerPage:
+      $ref: ./schemas/ledger.yaml#/LedgerPage
+    LedgerCreate:
+      $ref: ./schemas/ledger.yaml#/LedgerCreate
+    LedgerPatch:
+      $ref: ./schemas/ledger.yaml#/LedgerPatch
+    StatisticsScope:
+      $ref: ./schemas/statistics.yaml#/StatisticsScope
+    StatisticsTotals:
+      $ref: ./schemas/statistics.yaml#/StatisticsTotals
+    TripBudget:
+      $ref: ./schemas/statistics.yaml#/TripBudget
+    CategoryTotals:
+      $ref: ./schemas/statistics.yaml#/CategoryTotals
+    DailyTotals:
+      $ref: ./schemas/statistics.yaml#/DailyTotals
+    DailyTotalsPage:
+      $ref: ./schemas/statistics.yaml#/DailyTotalsPage
+    TripStatistics:
+      $ref: ./schemas/statistics.yaml#/TripStatistics
+    TripStatisticsResponse:
+      $ref: ./schemas/statistics.yaml#/TripStatisticsResponse
   responses:
     BadRequest:
       description: 请求无法解析、含未知字段或游标无效（MALFORMED_REQUEST、INVALID_CURSOR）

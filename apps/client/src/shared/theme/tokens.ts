@@ -176,3 +176,43 @@ export function isBluePurple(color: Rgba): boolean {
   const { hue, saturation } = hueSaturation(color)
   return saturation > 0.1 && hue >= 190 && hue <= 310
 }
+
+/** 图表色板（--tf-chart-*）用固定顺序分配、不循环，相邻色需可区分。 */
+export const CHART_TOKENS: readonly TokenName[] = [
+  'chart-1',
+  'chart-2',
+  'chart-3',
+  'chart-4',
+  'chart-5',
+  'chart-6',
+]
+
+/** dataviz 校验器的正常视力硬门槛：相邻分类色 OKLab ΔE 需 ≥ 15。 */
+export const CHART_ADJACENT_DELTA_MIN = 15
+
+function srgbToLinear(value: number): number {
+  const s = value / 255
+  return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4
+}
+
+/** sRGB → OKLab（Björn Ottosson），与 dataviz 校验器同一套系数。 */
+export function oklab(color: Rgba): [number, number, number] {
+  const r = srgbToLinear(color.r)
+  const g = srgbToLinear(color.g)
+  const b = srgbToLinear(color.b)
+  const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b)
+  const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b)
+  const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b)
+  return [
+    0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s,
+    1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s,
+    0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s,
+  ]
+}
+
+/** OKLab 欧氏距离 ×100（正常视力 ΔE）。 */
+export function deltaEOk(a: Rgba, b: Rgba): number {
+  const [l1, a1, b1] = oklab(a)
+  const [l2, a2, b2] = oklab(b)
+  return 100 * Math.hypot(l1 - l2, a1 - a2, b1 - b2)
+}

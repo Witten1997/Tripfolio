@@ -52,6 +52,7 @@ export function versionHeaders(operationId: string, version: string) {
 
 const warningLabels: Record<string, string> = {
   MERGED_WITH_NEWER_VERSION: '已保留其他设备的修改，并合并本次改动。',
+  REFUNDS_UNLINKED: '关联到这笔支出的退款已解除关联并保留为独立退款。',
   ITINERARY_OUTSIDE_TRIP_DATES: '已有行程超出新的旅行日期；记录已保留，请检查并调整安排。',
   TIMEZONE_INTERPRETATION_CHANGED: '旅行时区已更改；已有行程的当地时间会按新时区解释，请检查安排。',
 }
