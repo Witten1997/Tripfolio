@@ -23,6 +23,8 @@ export interface AmapMap {
   setZoomAndCenter(zoom: number, center: LngLatPair, immediately?: boolean): void
   getCenter(): { getLat(): number; getLng(): number }
   getZoom(): number
+  /** 容器像素转经纬度；SDK 未提供时组件退回按地图中心缩放。 */
+  containerToLngLat?(pixel: unknown): { getLat(): number; getLng(): number } | null
 }
 export interface AmapNamespace {
   Map: new (container: HTMLElement, options: Record<string, unknown>) => AmapMap
@@ -86,6 +88,23 @@ export function loadAMap(): Promise<AmapNamespace> {
 
 export function lngLat(point: GeoCoordinate): LngLatPair {
   return [point.longitude, point.latitude]
+}
+
+/**
+ * 滚轮以指针为锚点缩放时，缩放后地图中心在「缩放前容器像素坐标」中的位置。
+ * 记容器中心 O、指针 P、缩放倍数 S＝2^Δzoom，中心需沿 O→P 移动 (P−O)×(1−1/S)，
+ * 这样指针下的地理位置在缩放前后落在同一像素；Δzoom 为 0 时结果即容器中心。
+ */
+export function cursorZoomCenter(
+  cursor: { x: number; y: number },
+  size: { width: number; height: number },
+  zoomDelta: number,
+): { x: number; y: number } {
+  const ratio = 1 - 2 ** -zoomDelta
+  return {
+    x: size.width / 2 + (cursor.x - size.width / 2) * ratio,
+    y: size.height / 2 + (cursor.y - size.height / 2) * ratio,
+  }
 }
 export function roundedCoordinate(latitude: number, longitude: number): GeoCoordinate {
   return {

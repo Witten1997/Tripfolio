@@ -3,7 +3,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import AmapView from '@/desktop/components/AmapView.vue'
-import { amapServiceHost, loadAMap, type AmapNamespace } from '@/shared/geo/amap'
+import { amapServiceHost, cursorZoomCenter, loadAMap, type AmapNamespace } from '@/shared/geo/amap'
 
 vi.mock('@/shared/geo/amap', async (original) => ({
   ...(await original<typeof import('@/shared/geo/amap')>()),
@@ -14,6 +14,9 @@ const created: Array<Record<string, unknown>> = []
 const mapOptions: Array<Record<string, unknown>> = []
 const destroy = vi.fn()
 const fitView = vi.fn()
+/** 组件交给 SDK 做像素→经纬度换算的容器像素点。 */
+const pixels: Array<{ x: number; y: number }> = []
+const geoOfPixel = vi.fn(() => ({ getLat: () => 40, getLng: () => 117 }))
 let mapZoom = 12
 const zoomAndCenter = vi.fn((zoom: number) => {
   mapZoom = zoom
@@ -30,6 +33,7 @@ class MapFake {
   setZoomAndCenter = zoomAndCenter
   getCenter = () => ({ getLat: () => 39, getLng: () => 116 })
   getZoom = () => mapZoom
+  containerToLngLat = geoOfPixel
   destroy = destroy
 }
 class OverlayFake {
@@ -38,18 +42,28 @@ class OverlayFake {
   }
   setMap = vi.fn()
 }
+class PixelFake {
+  constructor(
+    public x: number,
+    public y: number,
+  ) {
+    pixels.push({ x, y })
+  }
+}
 const sdk: AmapNamespace = {
   Map: MapFake,
   Marker: OverlayFake,
   Polyline: OverlayFake,
-  Pixel: class {},
+  Pixel: PixelFake,
 }
 
 beforeEach(() => {
   created.length = 0
   mapOptions.length = 0
+  pixels.length = 0
   destroy.mockClear()
   fitView.mockClear()
+  geoOfPixel.mockClear()
   mapZoom = 12
   zoomAndCenter.mockClear()
   vi.mocked(loadAMap).mockReset().mockResolvedValue(sdk)
@@ -178,6 +192,8 @@ describe('地图实例与安全边界', () => {
     canvas.dispatchEvent(wheel)
     expect(wheel.defaultPrevented).toBe(true)
     expect(zoomAndCenter).toHaveBeenLastCalledWith(13, [116, 39], true)
+    // jsdom 里容器没有布局尺寸，退回按地图中心缩放。
+    expect(geoOfPixel).not.toHaveBeenCalled()
     expect(receiveWheel).toHaveBeenCalledTimes(2)
     expect(view.findAll('.amap-controls button')).toHaveLength(1)
     view.unmount()
@@ -207,5 +223,72 @@ describe('地图实例与安全边界', () => {
     wheel(0)
     expect(zoomAndCenter).not.toHaveBeenCalled()
     view.unmount()
+  })
+
+  it('滚轮以指针为锚点换算新中心，指针下的位置保持不动', async () => {
+    const box = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+      left: 0,
+      top: 0,
+      width: 800,
+      height: 600,
+      right: 800,
+      bottom: 600,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    } as DOMRect)
+    try {
+      const view = mount(AmapView, { global: { plugins: [createPinia()] } })
+      await flushPromises()
+      pixels.length = 0
+      const canvas = view.find('.amap-canvas').element
+      // 容器中心 (400, 300)，指针在 (700, 300)：放大一级后中心应向指针移动一半，落在 (550, 300)。
+      canvas.dispatchEvent(
+        new WheelEvent('wheel', {
+          bubbles: true,
+          cancelable: true,
+          deltaY: -120,
+          clientX: 700,
+          clientY: 300,
+        }),
+      )
+      expect(pixels).toEqual([{ x: 550, y: 300 }])
+      expect(zoomAndCenter).toHaveBeenLastCalledWith(13, [117, 40], true)
+      view.unmount()
+    } finally {
+      box.mockRestore()
+    }
+  })
+
+  it('已到缩放边界时不再重设视角，滚轮仍不带动页面滚动', async () => {
+    const view = mount(AmapView, { global: { plugins: [createPinia()] } })
+    await flushPromises()
+    mapZoom = 20
+    const wheel = new WheelEvent('wheel', {
+      bubbles: true,
+      cancelable: true,
+      deltaY: -120,
+      clientX: 700,
+      clientY: 300,
+    })
+    view.find('.amap-canvas').element.dispatchEvent(wheel)
+    expect(wheel.defaultPrevented).toBe(true)
+    expect(zoomAndCenter).not.toHaveBeenCalled()
+    view.unmount()
+  })
+})
+
+describe('滚轮锚点换算', () => {
+  const size = { width: 800, height: 600 }
+
+  it('指针在中心或缩放倍数不变时，中心保持不动', () => {
+    expect(cursorZoomCenter({ x: 400, y: 300 }, size, 1)).toEqual({ x: 400, y: 300 })
+    expect(cursorZoomCenter({ x: 700, y: 100 }, size, 0)).toEqual({ x: 400, y: 300 })
+  })
+
+  it('放大一级中心向指针移动一半，缩小一级反向等距移动', () => {
+    expect(cursorZoomCenter({ x: 700, y: 300 }, size, 1)).toEqual({ x: 550, y: 300 })
+    expect(cursorZoomCenter({ x: 700, y: 300 }, size, -1)).toEqual({ x: 100, y: 300 })
+    expect(cursorZoomCenter({ x: 700, y: 300 }, size, 0.1).x).toBeCloseTo(420.09, 1)
   })
 })

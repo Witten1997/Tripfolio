@@ -4,6 +4,7 @@ import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import type { GeoCoordinate } from '@/shared/api/geo'
 import {
+  cursorZoomCenter,
   lngLat,
   loadAMap,
   roundedCoordinate,
@@ -11,6 +12,7 @@ import {
   type AmapMap,
   type AmapNamespace,
   type AmapOverlay,
+  type LngLatPair,
 } from '@/shared/geo/amap'
 import type { MapPath, MapPoint } from '@/shared/geo/itineraryRoute'
 import { useThemeStore } from '@/shared/stores/theme'
@@ -53,6 +55,21 @@ function focus(point: GeoCoordinate) {
   map?.setZoomAndCenter(16, lngLat(point), true)
 }
 
+/** 以指针位置为锚点：把指针下的经纬度留在原像素；容器无布局或 SDK 不支持换算时退回地图中心。 */
+function anchoredCenter(event: WheelEvent, zoomDelta: number): LngLatPair {
+  const current = map?.getCenter()
+  const fallback: LngLatPair = current ? [current.getLng(), current.getLat()] : [116.4074, 39.9042]
+  const box = container.value?.getBoundingClientRect()
+  if (!map || !sdk || !box?.width || !box?.height || !map.containerToLngLat) return fallback
+  const anchor = cursorZoomCenter(
+    { x: event.clientX - box.left, y: event.clientY - box.top },
+    { width: box.width, height: box.height },
+    zoomDelta,
+  )
+  const point = map.containerToLngLat(new sdk.Pixel(anchor.x, anchor.y))
+  return point ? [point.getLng(), point.getLat()] : fallback
+}
+
 function containWheel(event: WheelEvent) {
   if (!map || loading.value || error.value) return
   if (event.cancelable) event.preventDefault()
@@ -66,9 +83,10 @@ function containWheel(event: WheelEvent) {
         ? container.value?.clientHeight || 600
         : 1
   const delta = Math.max(-1, Math.min(1, (-event.deltaY * unit) / 120))
-  const zoom = Math.max(2, Math.min(20, map.getZoom() + delta))
-  const center = map.getCenter()
-  map.setZoomAndCenter(zoom, [center.getLng(), center.getLat()], true)
+  const current = map.getZoom()
+  const zoom = Math.max(2, Math.min(20, current + delta))
+  if (zoom === current) return
+  map.setZoomAndCenter(zoom, anchoredCenter(event, zoom - current), true)
 }
 
 function draw() {
