@@ -207,7 +207,7 @@ export type paths = {
         put?: never;
         /**
          * 申请注册或找回密码的邮箱验证码
-         * @description 统一响应，不暴露账号是否存在；每邮箱 60 秒一次、每小时 5 次，并按 IP 限流
+         * @description 统一响应，不暴露账号是否存在；每邮箱 60 秒一次、每小时 5 次，并按 IP 限流；邮件服务未启用时返回 503 DEPENDENCY_UNAVAILABLE
          */
         post: operations["requestEmailChallenge"];
         delete?: never;
@@ -2647,6 +2647,7 @@ export interface operations {
             };
             422: components["responses"]["ValidationFailed"];
             429: components["responses"]["RateLimited"];
+            503: components["responses"]["DependencyUnavailable"];
         };
     };
     login: {

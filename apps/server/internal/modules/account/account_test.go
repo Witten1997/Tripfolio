@@ -120,6 +120,22 @@ func TestRegisterLoginAndAuthenticate(t *testing.T) {
 	}
 }
 
+func TestLoginStillWorksWithMailDisabled(t *testing.T) {
+	f := newFixture(t)
+	registered := f.register(t, "user@example.com")
+	identity := account.NewIdentityService(account.IdentityDeps{
+		Store: f.store, Sessions: f.sessions, Hasher: security.NewPasswordHasher(2),
+		Limiter: ratelimit.New(), Clock: f.clock, Policy: account.DefaultPolicy(),
+	})
+	login, err := identity.Login(context.Background(), "user@example.com", "correct horse battery", webClient(), "127.0.0.1")
+	if err != nil {
+		t.Fatalf("邮件禁用不应影响已有账号登录: %v", err)
+	}
+	if login.Account.ID != registered.Account.ID || login.Tokens.AccessToken == "" {
+		t.Fatal("登录应返回已有账号与有效令牌")
+	}
+}
+
 func TestRegisterRejectsWrongCodeAndDuplicate(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()

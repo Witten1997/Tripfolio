@@ -7440,6 +7440,25 @@ func (response RequestEmailChallenge429ApplicationProblemPlusJSONResponse) Visit
 	return err
 }
 
+type RequestEmailChallenge503ApplicationProblemPlusJSONResponse struct {
+	DependencyUnavailableApplicationProblemPlusJSONResponse
+}
+
+func (response RequestEmailChallenge503ApplicationProblemPlusJSONResponse) VisitRequestEmailChallengeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type LoginRequestObject struct {
 	Body *LoginJSONRequestBody
 }

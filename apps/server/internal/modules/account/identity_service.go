@@ -47,7 +47,7 @@ type IdentityDeps struct {
 	Sessions       *SessionService
 	Hasher         *security.PasswordHasher
 	Keyring        *security.Keyring
-	Mailer         mail.Mailer
+	Mailer         mail.Mailer // nil 表示邮件未启用，验证码申请返回依赖不可用。
 	Limiter        Limiter
 	Clock          clock.Clock
 	Policy         Policy
@@ -109,6 +109,9 @@ func (s *IdentityService) RequestEmailChallenge(ctx context.Context, purpose Pur
 	email, key, err := NormalizeEmail(rawEmail)
 	if err != nil {
 		return ChallengeResult{}, apperr.Validation(apperr.Field("email", "INVALID", err.Error()))
+	}
+	if s.mailer == nil {
+		return ChallengeResult{}, apperr.Dependency(errors.New("邮件服务未启用"))
 	}
 	now := s.clock.Now()
 	if ok, wait := s.limiter.Allow("challenge-ip:"+clientIP, 20, time.Hour, now); !ok {

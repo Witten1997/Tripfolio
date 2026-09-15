@@ -14,7 +14,7 @@ import (
 // Prefix 是全部环境变量的公共前缀。
 const Prefix = "TRIPFOLIO_"
 
-// MailConfig 是邮件投递配置；Driver 为 log 或 smtp。
+// MailConfig 是邮件投递配置；Driver 为 disabled、log 或 smtp。
 type MailConfig struct {
 	Driver       string
 	SMTPHost     string
@@ -225,6 +225,8 @@ func Load(getenv func(string) string) (Config, error) {
 		FromName:     get("MAIL_FROM_NAME", "Tripfolio"),
 	}
 	switch cfg.Mail.Driver {
+	case "disabled":
+		// 邮件可选；未启用时验证码接口返回依赖不可用。
 	case "log":
 		if cfg.Env == "prod" {
 			errs = append(errs, fmt.Errorf("%sMAIL_DRIVER 在生产环境不能是 log", Prefix))
@@ -244,7 +246,7 @@ func Load(getenv func(string) string) (Config, error) {
 			cfg.Mail.ImplicitTLS = b
 		}
 	default:
-		errs = append(errs, fmt.Errorf("%sMAIL_DRIVER 必须是 log 或 smtp", Prefix))
+		errs = append(errs, fmt.Errorf("%sMAIL_DRIVER 必须是 disabled、log 或 smtp", Prefix))
 	}
 
 	cfg.ObjectStore = ObjectStoreConfig{
@@ -262,11 +264,7 @@ func Load(getenv func(string) string) (Config, error) {
 	} else {
 		cfg.ObjectStore.UsePathStyle = b
 	}
-	// 生产必须配齐：文件功能不可降级。开发允许缺省，相关接口返回依赖不可用。
-	if cfg.Env == "prod" && !cfg.ObjectStore.Configured() {
-		errs = append(errs, fmt.Errorf("%sOBJECTSTORE_ENDPOINT、%sOBJECTSTORE_BUCKET、%sOBJECTSTORE_ACCESS_KEY_ID 与 %sOBJECTSTORE_SECRET_ACCESS_KEY 在生产环境必填",
-			Prefix, Prefix, Prefix, Prefix))
-	}
+	// 所有环境都允许不接对象存储；未配齐时不创建客户端，文件授权接口返回依赖不可用。
 
 	cfg.Geo = GeoConfig{AmapKey: get("AMAP_WEB_SERVICE_KEY", "")}
 	if n, err := strconv.Atoi(get("GEO_PER_ACCOUNT_PER_MINUTE", "60")); err != nil || n < 1 {
