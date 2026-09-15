@@ -13,6 +13,7 @@ import (
 	"tripfolio/server/internal/modules/metadata"
 	"tripfolio/server/internal/modules/travel/itinerary"
 	"tripfolio/server/internal/modules/travel/packing"
+	"tripfolio/server/internal/modules/travel/share"
 	"tripfolio/server/internal/modules/travel/todo"
 	"tripfolio/server/internal/modules/travel/trip"
 	"tripfolio/server/internal/transport/httpapi/generated"
@@ -36,6 +37,7 @@ type Handler struct {
 	itinerary   *itinerary.Service
 	packing     *packing.Service
 	todos       *todo.Service
+	shares      *share.Service
 	cookies     CookieSettings
 	corsOrigins []string
 }

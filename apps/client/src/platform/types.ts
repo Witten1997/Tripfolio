@@ -28,7 +28,13 @@ export interface NetworkStatus {
   onChange(listener: (online: boolean) => void): () => void
 }
 
+/** 系统剪贴板写入。网页与 Capacitor WebView（https://localhost 为安全上下文）都能用 navigator.clipboard。 */
+export interface ClipboardWriter {
+  writeText(text: string): Promise<void>
+}
+
 export interface Platform {
+  clipboard: ClipboardWriter
   kind: PlatformKind
   isNative: boolean
   secureStorage: SecureStorage

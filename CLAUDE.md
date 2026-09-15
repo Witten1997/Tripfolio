@@ -40,10 +40,10 @@ pnpm typecheck && pnpm test && pnpm build && pnpm format:check
 
 ## 文档索引
 
-- 需求：`docs/requirements/2026-09-10-P0核心需求.md`（v0.3）
+- 需求：`docs/requirements/2026-09-10-P0核心需求.md`（v0.4）
 - 技术选型：`docs/requirements/2026-09-10-技术选型与架构建议.md`（v0.4）
-- 接口：`docs/api/2026-09-11-P0接口设计.md`（v0.3，含 2026-09-14 算路补充共 89 个接口）
-- 数据库：`docs/database/2026-09-11-P0数据库表结构设计.md`（v0.3，23 张表）
+- 接口：`docs/api/2026-09-11-P0接口设计.md`（v0.4，含 2026-09-14 算路补充与 2026-09-15 分享共 96 个接口）
+- 数据库：`docs/database/2026-09-11-P0数据库表结构设计.md`（v0.4，24 张表）
 - 总览与同步规则：`docs/architecture/2026-09-11-P0接口与数据设计总览.md`
 - 评审与决策记录：`docs/reviews/2026-09-12-P0设计评审.md`
 - 实施计划：`docs/superpowers/plans/`。**当前进行中：`docs/superpowers/plans/2026-09-12-web-p0.md`，接手任何工作前先读文件顶部“接手须知”与文末“进度日志”，任务状态用 `[ ]`/`[~]`/`[x]` 标记，开始前改 `[~]`，完成后改 `[x]` 并追加日志。**

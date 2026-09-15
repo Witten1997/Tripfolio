@@ -452,6 +452,57 @@ export type paths = {
         patch?: never;
         trace?: never;
     };
+    "/public/itinerary-items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 访客读取分享旅行的行程骨架，键集分页 */
+        get: operations["listSharedItineraryItems"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/public/routes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 服务端按行程顺序计算全部相邻路段；访客不能指定坐标 */
+        get: operations["getSharedRoutes"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/public/trip": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 访客读取分享旅行的基本信息；每次调用计一次访问 */
+        get: operations["getSharedTrip"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/recycle-bin/trips": {
         parameters: {
             query?: never;
@@ -761,6 +812,46 @@ export type paths = {
         put?: never;
         /** 一个事务批量创建最多 100 件物品；同分类同名与请求内重复项跳过 */
         post: operations["createPackingItems"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/trips/{trip_id}/share": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        /** 读取旅行的分享链接；未开启返回 404 SHARE_NOT_FOUND */
+        get: operations["getTripShare"];
+        /** 开启分享；已开启时原样返回。分享不进入同步体系，不带幂等键与 If-Match */
+        put: operations["enableTripShare"];
+        post?: never;
+        /** 关闭分享，旧链接立即失效；未开启也返回 204 */
+        delete: operations["disableTripShare"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/trips/{trip_id}/share/rotate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 重新生成分享令牌，旧链接立即失效；未开启返回 404 SHARE_NOT_FOUND */
+        post: operations["rotateTripShare"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1638,6 +1729,64 @@ export type components = {
              */
             type: string;
         };
+        /** @description 访客可见的行程骨架（接口设计 3.11）；刻意不含备注、实际情况、预计费用与状态 */
+        PublicItineraryItem: {
+            address: string;
+            /** Format: uuid */
+            id: string;
+            kind: components["schemas"]["ItineraryKind"];
+            /** Format: double */
+            latitude: number | null;
+            /** Format: double */
+            longitude: number | null;
+            place_name: string;
+            /** Format: int32 */
+            planned_duration_minutes: number | null;
+            planned_end_local: string | null;
+            planned_start_local: string | null;
+            scheduled_on: components["schemas"]["Date"];
+            /** Format: int32 */
+            sort_order: number;
+            title: string;
+        };
+        /** @description Page<PublicItineraryItem>；顺序与主人列表相同，游标绑定分享 */
+        PublicItineraryPage: {
+            items: components["schemas"]["PublicItineraryItem"][];
+            next_cursor: string | null;
+        };
+        /** @description 一段成功算出的相邻路段 */
+        PublicLeg: {
+            /** Format: int64 */
+            distance_meters: number;
+            /** Format: int64 */
+            duration_seconds: number;
+            /** Format: uuid */
+            from_item_id: string;
+            path: components["schemas"]["GeoCoordinate"][];
+            /** Format: uuid */
+            to_item_id: string;
+        };
+        /** @description 整趟旅行的路线结果；只含成功路段，失败与无坐标数量另行给出 */
+        PublicRoutes: {
+            failed_leg_count: number;
+            legs: components["schemas"]["PublicLeg"][];
+            mode: components["schemas"]["GeoTravelMode"];
+            unlocated_item_count: number;
+        };
+        PublicRoutesResponse: {
+            data: components["schemas"]["PublicRoutes"];
+        };
+        /** @description 访客可见的旅行信息（接口设计 3.11）；字段固定，不复用 Trip */
+        PublicTrip: {
+            destination: string;
+            end_date: components["schemas"]["Date"];
+            name: string;
+            start_date: components["schemas"]["Date"];
+            timezone: string;
+        };
+        PublicTripResponse: {
+            data: components["schemas"]["PublicTrip"];
+        };
         /** @description 永久清理回收站中的旅行；需要 If-Match、幂等键与本会话 5 分钟内的密码复验 */
         PurgeTripRequest: {
             /** @description 必须为 true，表示用户已确认不可恢复 */
@@ -1874,6 +2023,37 @@ export type components = {
         };
         TripResponse: {
             data: components["schemas"]["Trip"];
+        };
+        /** @description 主人可见的分享记录（接口设计 3.11）；url 由服务端按站点根地址拼出，客户端不参与拼接 */
+        TripShare: {
+            created_at: components["schemas"]["Instant"];
+            /** Format: uuid */
+            id: string;
+            /**
+             * Format: date-time
+             * @description 最近一次访客读取旅行信息的时间
+             */
+            last_viewed_at: string | null;
+            /**
+             * Format: date-time
+             * @description 最近一次重新生成的时间
+             */
+            rotated_at: string | null;
+            /** @description 22 位 base64url 分享令牌 */
+            token: string;
+            /**
+             * Format: uri
+             * @description 完整分享地址，形如 https://站点/s/<token>
+             */
+            url: string;
+            /**
+             * Format: int64
+             * @description 访客读取旅行信息的次数
+             */
+            view_count: number;
+        };
+        TripShareResponse: {
+            data: components["schemas"]["TripShare"];
         };
         /**
          * @description 旅行开支统计（接口设计 3.8）。日期与分类筛选只影响 filtered_totals、by_category 的筛选金额与 daily；
@@ -2895,6 +3075,92 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
         };
     };
+    listSharedItineraryItems: {
+        parameters: {
+            query?: {
+                cursor?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 一页行程骨架，按 scheduled_on、sort_order、id 升序 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicItineraryPage"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            410: components["responses"]["Gone"];
+            422: components["responses"]["ValidationFailed"];
+            429: components["responses"]["RateLimited"];
+        };
+    };
+    getSharedRoutes: {
+        parameters: {
+            query: {
+                mode: components["schemas"]["GeoTravelMode"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功路段、失败路段数与无坐标项目数；按分享、出行方式与行程指纹缓存 5 分钟 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicRoutesResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            410: components["responses"]["Gone"];
+            422: components["responses"]["ValidationFailed"];
+            429: components["responses"]["RateLimited"];
+            503: components["responses"]["DependencyUnavailable"];
+        };
+    };
+    getSharedTrip: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 公开旅行信息 */
+            200: {
+                headers: {
+                    /** @description 固定为 noindex, nofollow */
+                    "X-Robots-Tag"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicTripResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            410: components["responses"]["Gone"];
+            429: components["responses"]["RateLimited"];
+        };
+    };
     listTrashedTrips: {
         parameters: {
             query?: {
@@ -3831,6 +4097,104 @@ export interface operations {
             409: components["responses"]["Conflict"];
             410: components["responses"]["Gone"];
             422: components["responses"]["ValidationFailed"];
+        };
+    };
+    getTripShare: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 当前分享记录 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TripShareResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            410: components["responses"]["Gone"];
+        };
+    };
+    enableTripShare: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 分享记录（新建或已有） */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TripShareResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            410: components["responses"]["Gone"];
+        };
+    };
+    disableTripShare: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已关闭 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            410: components["responses"]["Gone"];
+        };
+    };
+    rotateTripShare: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 新令牌的分享记录 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TripShareResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            410: components["responses"]["Gone"];
         };
     };
     getTripStatistics: {

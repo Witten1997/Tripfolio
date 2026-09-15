@@ -43,6 +43,7 @@ Caddy 需要环境变量 `AMAP_JSCODE`（高德 JS API 安全密钥）。生产�
 
 - 前端构建环境：`VITE_AMAP_JS_KEY`；网页同源代理无需设 `VITE_AMAP_SERVICE_HOST`，Capacitor 则必须设 HTTPS 代理完整路径。
 - API 运行环境：`TRIPFOLIO_AMAP_WEB_SERVICE_KEY`，用于已认证的 `/api/v1/geo/places`、`reverse-geocode`、`routes`。
+- API 运行环境：`TRIPFOLIO_WEB_BASE_URL`，网页站点根地址，服务端用它拼出旅行分享链接；生产必须是正式域名的 https 地址。
 - Caddy 运行环境：`AMAP_JSCODE`，由 `/_AMapService` 代理追加。样式、矢量图、REST 三类请求分别转发到高德官方固定域名。
 
 Compose 已透传 Web 服务 Key、账号／全局配额和缓存／超时变量到 API，安全密钥只传给 Caddy。Compose 默认不会读取 `apps/server/.env` 或 `apps/client/.env.local`；在本地使用已配置文件时，从仓库根显式指定：

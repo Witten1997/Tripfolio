@@ -3,20 +3,14 @@ import type { components } from '@tripfolio/contracts/openapi/v1'
 import { api, registerRefreshHandler } from '@/shared/api/client'
 import { deviceId, useSessionStore } from '@/shared/stores/session'
 
-export type Problem = components['schemas']['Problem']
+import { ApiError, problemMessage, type Problem } from './problem'
+export { ApiError, problemMessage }
+export type { Problem }
 type ClientInfo = components['schemas']['ClientInfo']
 
 /** 网页壳固定为 web 客户端；Capacitor 壳在接入安卓时改为 android 并走正文 refresh_token。 */
 function webClient(): ClientInfo {
   return { kind: 'web', device_id: deviceId(), device_name: navigator.userAgent.slice(0, 120) }
-}
-
-/** 把 problem+json 转成可直接展示的文案；字段错误优先。 */
-export function problemMessage(problem: Problem | undefined, fallback = '请求失败'): string {
-  if (!problem) return fallback
-  const field = problem.errors?.[0]
-  if (field?.message) return field.message
-  return problem.detail || problem.title || fallback
 }
 
 /** 从非 HttpOnly 的 CSRF Cookie 读取值（页面刷新后内存为空时使用）。 */
@@ -143,14 +137,3 @@ export async function logout() {
 }
 
 /** 业务错误：携带 problem+json，页面用 message 展示、用 problem.code 分支。 */
-export class ApiError extends Error {
-  readonly problem: Problem | undefined
-  constructor(problem: Problem | undefined, fallback = '请求失败，请稍后再试') {
-    super(problemMessage(problem, fallback))
-    this.name = 'ApiError'
-    this.problem = problem
-  }
-  get code(): string | undefined {
-    return this.problem?.code
-  }
-}

@@ -59,7 +59,7 @@ func newAPIFixture(t *testing.T) *apiFixture {
 	url := testDatabaseURL(t)
 	ctx := context.Background()
 	cfg := config.Config{
-		DatabaseURL: url, DBMaxConns: 4, CORSOrigins: []string{"http://localhost:5173"},
+		DatabaseURL: url, DBMaxConns: 4, WebBaseURL: "http://localhost:5173", CORSOrigins: []string{"http://localhost:5173"},
 		PasswordHashConcurrency: 2, CookieSecure: false, Mail: config.MailConfig{Driver: "log"},
 	}
 	// 设置了对象存储端点时接入真实 MinIO，资产用例据此决定是否跳过。
@@ -83,7 +83,7 @@ func newAPIFixture(t *testing.T) *apiFixture {
 		CORSOrigins: cfg.CORSOrigins, Cookies: httpapi.CookieSettings{Secure: false},
 		Identity: services.Identity, Sessions: services.Sessions, Profile: services.Profile, Categories: services.Categories,
 		Trips: services.Trips, Itinerary: services.Itinerary, Packing: services.Packing, Todos: services.Todos,
-		Ledger: services.Ledger, Statistics: services.Statistics, Assets: services.Assets,
+		Ledger: services.Ledger, Statistics: services.Statistics, Assets: services.Assets, Shares: services.Shares, Geo: services.Geo,
 	})
 	srv := httptest.NewServer(router)
 	t.Cleanup(srv.Close)

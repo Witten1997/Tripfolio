@@ -7,15 +7,20 @@ export interface MapPoint extends GeoCoordinate {
   number: number
 }
 
-export interface Waypoint extends MapPoint {
-  item: ItineraryItem
+export type RoutableItem = Pick<
+  ItineraryItem,
+  'id' | 'scheduled_on' | 'sort_order' | 'title' | 'place_name' | 'latitude' | 'longitude'
+>
+
+export interface Waypoint<T extends RoutableItem = ItineraryItem> extends MapPoint {
+  item: T
   sourceIndex: number
 }
 
-export interface RouteLeg {
+export interface RouteLeg<T extends RoutableItem = ItineraryItem> {
   id: string
-  from: Waypoint
-  to: Waypoint
+  from: Waypoint<T>
+  to: Waypoint<T>
   missingBetween: number
   crossDay: boolean
 }
@@ -40,7 +45,7 @@ export function isCoordinate(value: {
   )
 }
 
-export function sortedItinerary(items: ItineraryItem[]): ItineraryItem[] {
+export function sortedItinerary<T extends RoutableItem>(items: T[]): T[] {
   return [...items].sort(
     (a, b) =>
       a.scheduled_on.localeCompare(b.scheduled_on) ||
@@ -49,7 +54,7 @@ export function sortedItinerary(items: ItineraryItem[]): ItineraryItem[] {
   )
 }
 
-export function itineraryWaypoints(items: ItineraryItem[]): Waypoint[] {
+export function itineraryWaypoints<T extends RoutableItem>(items: T[]): Waypoint<T>[] {
   return sortedItinerary(items).flatMap((item, sourceIndex) =>
     isCoordinate(item)
       ? [
@@ -67,7 +72,7 @@ export function itineraryWaypoints(items: ItineraryItem[]): Waypoint[] {
   )
 }
 
-export function itineraryLegs(points: Waypoint[]): RouteLeg[] {
+export function itineraryLegs<T extends RoutableItem>(points: Waypoint<T>[]): RouteLeg<T>[] {
   return points.slice(1).map((to, index) => {
     const from = points[index]!
     return {
@@ -104,7 +109,10 @@ export function formatDuration(seconds: number): string {
 }
 
 /** 高德可能把 POI 中心吸附到道路。端点接续用虚线，不能冒充实际道路。 */
-export function routeMapPaths(leg: RouteLeg, route?: GeoRoute): MapPath[] {
+export function routeMapPaths<T extends RoutableItem>(
+  leg: RouteLeg<T>,
+  route?: GeoRoute | Pick<GeoRoute, 'path'>,
+): MapPath[] {
   if (!route) return [{ id: leg.id, points: [leg.from, leg.to], kind: 'illustrative' }]
   const paths: MapPath[] = [{ id: leg.id, points: route.path, kind: 'road' }]
   const start = route.path[0]

@@ -188,15 +188,58 @@ func TestProdDefaultsToVirtualHostAddressing(t *testing.T) {
 		"TRIPFOLIO_OBJECTSTORE_ACCESS_KEY_ID":     "ak",
 		"TRIPFOLIO_OBJECTSTORE_SECRET_ACCESS_KEY": "sk",
 		"TRIPFOLIO_AMAP_WEB_SERVICE_KEY":          "amap-key",
+		"TRIPFOLIO_WEB_BASE_URL":                  "https://trip.example.com",
 	}))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	// OSS 用虚拟主机寻址，路径寻址会拼出错误的 URL。
+	// OSS 用虚拟主机寻址，路径寻址会拼出���误的 URL。
 	if cfg.ObjectStore.UsePathStyle {
 		t.Error("生产环境应默认使用虚拟主机寻址")
 	}
 	if !cfg.Geo.Configured() {
 		t.Error("配置了 key 后应认为高德已配置")
+	}
+}
+
+func TestWebBaseURLDefaultsInDevAndRequiresHTTPSInProd(t *testing.T) {
+	cfg, err := config.Load(envFrom(map[string]string{"TRIPFOLIO_DATABASE_URL": "postgres://u:p@localhost:5432/db"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.WebBaseURL != "http://localhost:5173" {
+		t.Errorf("WebBaseURL = %q, want 开发缺省 http://localhost:5173", cfg.WebBaseURL)
+	}
+
+	cfg, err = config.Load(envFrom(map[string]string{
+		"TRIPFOLIO_DATABASE_URL": "postgres://u:p@localhost:5432/db",
+		"TRIPFOLIO_WEB_BASE_URL": "https://trip.example.com/",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.WebBaseURL != "https://trip.example.com" {
+		t.Errorf("WebBaseURL = %q, want 去掉尾部斜杠", cfg.WebBaseURL)
+	}
+
+	_, err = config.Load(envFrom(map[string]string{
+		"TRIPFOLIO_DATABASE_URL": "postgres://u:p@localhost:5432/db",
+		"TRIPFOLIO_WEB_BASE_URL": "trip.example.com",
+	}))
+	if err == nil || !strings.Contains(err.Error(), "WEB_BASE_URL") {
+		t.Errorf("缺少协议应报错: %v", err)
+	}
+
+	_, err = config.Load(envFrom(map[string]string{
+		"TRIPFOLIO_ENV":            "prod",
+		"TRIPFOLIO_DATABASE_URL":   "postgres://u:p@localhost:5432/db",
+		"TRIPFOLIO_KEYRING":        "k1=" + strings.Repeat("A", 44),
+		"TRIPFOLIO_MAIL_DRIVER":    "smtp",
+		"TRIPFOLIO_MAIL_SMTP_HOST": "smtpdm.aliyun.com",
+		"TRIPFOLIO_MAIL_FROM":      "no-reply@example.com",
+		"TRIPFOLIO_WEB_BASE_URL":   "http://trip.example.com",
+	}))
+	if err == nil || !strings.Contains(err.Error(), "WEB_BASE_URL") {
+		t.Errorf("生产环境非 https 分享地址应报错: %v", err)
 	}
 }

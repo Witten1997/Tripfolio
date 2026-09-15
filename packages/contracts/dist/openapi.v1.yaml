@@ -39,6 +39,8 @@ tags:
     description: 私有文件资产的上传授权、确认与下载授权
   - name: geo
     description: 高德地点搜索、选点与交通路线
+  - name: public
+    description: 访客凭分享令牌读取的只读接口
 paths:
   /geo/reverse-geocode:
     get:
@@ -783,6 +785,198 @@ paths:
           $ref: '#/components/responses/PreconditionFailed'
         '428':
           $ref: '#/components/responses/VersionRequired'
+  /trips/{trip_id}/share:
+    parameters:
+      - name: trip_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags:
+        - travel
+      operationId: getTripShare
+      summary: 读取旅行的分享链接；未开启返回 404 SHARE_NOT_FOUND
+      responses:
+        '200':
+          description: 当前分享记录
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TripShareResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '410':
+          $ref: '#/components/responses/Gone'
+    put:
+      tags:
+        - travel
+      operationId: enableTripShare
+      summary: 开启分享；已开启时原样返回。分享不进入同步体系，不带幂等键与 If-Match
+      responses:
+        '200':
+          description: 分享记录（新建或已有）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TripShareResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '410':
+          $ref: '#/components/responses/Gone'
+    delete:
+      tags:
+        - travel
+      operationId: disableTripShare
+      summary: 关闭分享，旧链接立即失效；未开启也返回 204
+      responses:
+        '204':
+          description: 已关闭
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '410':
+          $ref: '#/components/responses/Gone'
+  /trips/{trip_id}/share/rotate:
+    parameters:
+      - name: trip_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      tags:
+        - travel
+      operationId: rotateTripShare
+      summary: 重新生成分享令牌，旧链接立即失效；未开启返回 404 SHARE_NOT_FOUND
+      responses:
+        '200':
+          description: 新令牌的分享记录
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TripShareResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '410':
+          $ref: '#/components/responses/Gone'
+  /public/trip:
+    get:
+      tags:
+        - public
+      operationId: getSharedTrip
+      summary: 访客读取分享旅行的基本信息；每次调用计一次访问
+      security:
+        - shareAuth: []
+      responses:
+        '200':
+          description: 公开旅行信息
+          headers:
+            X-Robots-Tag:
+              schema:
+                type: string
+              description: 固定为 noindex, nofollow
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicTripResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '410':
+          $ref: '#/components/responses/Gone'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /public/itinerary-items:
+    get:
+      tags:
+        - public
+      operationId: listSharedItineraryItems
+      summary: 访客读取分享旅行的行程骨架，键集分页
+      security:
+        - shareAuth: []
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 一页行程骨架，按 scheduled_on、sort_order、id 升序
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicItineraryPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '410':
+          $ref: '#/components/responses/Gone'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /public/routes:
+    get:
+      tags:
+        - public
+      operationId: getSharedRoutes
+      summary: 服务端按行程顺序计算全部相邻路段；访客不能指定坐标
+      security:
+        - shareAuth: []
+      parameters:
+        - name: mode
+          in: query
+          required: true
+          schema:
+            $ref: '#/components/schemas/GeoTravelMode'
+      responses:
+        '200':
+          description: 成功路段、失败路段数与无坐标项目数；按分享、出行方式与行程指纹缓存 5 分钟
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicRoutesResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '410':
+          $ref: '#/components/responses/Gone'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/DependencyUnavailable'
   /trips/{trip_id}/archive:
     parameters:
       - name: trip_id
@@ -2179,6 +2373,11 @@ components:
       scheme: bearer
       bearerFormat: JWT
       description: 15 分钟有效的访问令牌；刷新与会话规则见接口设计 3.1
+    shareAuth:
+      type: apiKey
+      in: header
+      name: Authorization
+      description: 访客分享令牌，格式 `Share <token>`；令牌不出现在 URL 与日志中，见接口设计 2.11
   parameters:
     IdempotencyKey:
       name: Idempotency-Key
@@ -4729,6 +4928,221 @@ components:
         next_cursor:
           type: string
           nullable: true
+    TripShare:
+      type: object
+      description: 主人可见的分享记录（接口设计 3.11）；url 由服务端按站点根地址拼出，客户端不参与拼接
+      x-go-type: share.Resource
+      x-go-type-import:
+        path: tripfolio/server/internal/modules/travel/share
+      required:
+        - id
+        - token
+        - url
+        - created_at
+        - rotated_at
+        - last_viewed_at
+        - view_count
+      properties:
+        id:
+          type: string
+          format: uuid
+        token:
+          type: string
+          description: 22 位 base64url 分享令牌
+          pattern: ^[A-Za-z0-9_-]{22}$
+        url:
+          type: string
+          format: uri
+          description: 完整分享地址，形如 https://站点/s/<token>
+        created_at:
+          $ref: '#/components/schemas/Instant'
+        rotated_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: 最近一次重新生成的时间
+        last_viewed_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: 最近一次访客读取旅行信息的时间
+        view_count:
+          type: integer
+          format: int64
+          minimum: 0
+          description: 访客读取旅行信息的次数
+    TripShareResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: '#/components/schemas/TripShare'
+    PublicTrip:
+      type: object
+      description: 访客可见的旅行信息（接口设计 3.11）；字段固定，不复用 Trip
+      x-go-type: share.PublicTrip
+      x-go-type-import:
+        path: tripfolio/server/internal/modules/travel/share
+      required:
+        - name
+        - destination
+        - start_date
+        - end_date
+        - timezone
+      properties:
+        name:
+          type: string
+        destination:
+          type: string
+        start_date:
+          $ref: '#/components/schemas/Date'
+        end_date:
+          $ref: '#/components/schemas/Date'
+        timezone:
+          type: string
+    PublicTripResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: '#/components/schemas/PublicTrip'
+    PublicItineraryItem:
+      type: object
+      description: 访客可见的行程骨架（接口设计 3.11）；刻意不含备注、实际情况、预计费用与状态
+      x-go-type: share.PublicItineraryItem
+      x-go-type-import:
+        path: tripfolio/server/internal/modules/travel/share
+      required:
+        - id
+        - scheduled_on
+        - sort_order
+        - title
+        - kind
+        - place_name
+        - address
+        - latitude
+        - longitude
+        - planned_start_local
+        - planned_end_local
+        - planned_duration_minutes
+      properties:
+        id:
+          type: string
+          format: uuid
+        scheduled_on:
+          $ref: '#/components/schemas/Date'
+        sort_order:
+          type: integer
+          format: int32
+          minimum: 0
+        title:
+          type: string
+        kind:
+          $ref: '#/components/schemas/ItineraryKind'
+        place_name:
+          type: string
+        address:
+          type: string
+        latitude:
+          type: number
+          format: double
+          nullable: true
+        longitude:
+          type: number
+          format: double
+          nullable: true
+        planned_start_local:
+          type: string
+          nullable: true
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$
+        planned_end_local:
+          type: string
+          nullable: true
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$
+        planned_duration_minutes:
+          type: integer
+          format: int32
+          nullable: true
+          minimum: 1
+    PublicItineraryPage:
+      type: object
+      description: Page<PublicItineraryItem>；顺序与主人列表相同，游标绑定分享
+      required:
+        - items
+        - next_cursor
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/PublicItineraryItem'
+        next_cursor:
+          type: string
+          nullable: true
+    PublicLeg:
+      type: object
+      description: 一段成功算出的相邻路段
+      x-go-type: share.PublicLeg
+      x-go-type-import:
+        path: tripfolio/server/internal/modules/travel/share
+      required:
+        - from_item_id
+        - to_item_id
+        - distance_meters
+        - duration_seconds
+        - path
+      properties:
+        from_item_id:
+          type: string
+          format: uuid
+        to_item_id:
+          type: string
+          format: uuid
+        distance_meters:
+          type: integer
+          format: int64
+          minimum: 0
+        duration_seconds:
+          type: integer
+          format: int64
+          minimum: 0
+        path:
+          type: array
+          minItems: 2
+          items:
+            $ref: '#/components/schemas/GeoCoordinate'
+    PublicRoutes:
+      type: object
+      description: 整趟旅行的路线结果；只含成功路段，失败与无坐标数量另行给出
+      x-go-type: share.PublicRoutes
+      x-go-type-import:
+        path: tripfolio/server/internal/modules/travel/share
+      required:
+        - mode
+        - legs
+        - failed_leg_count
+        - unlocated_item_count
+      properties:
+        mode:
+          $ref: '#/components/schemas/GeoTravelMode'
+        legs:
+          type: array
+          items:
+            $ref: '#/components/schemas/PublicLeg'
+        failed_leg_count:
+          type: integer
+          minimum: 0
+        unlocated_item_count:
+          type: integer
+          minimum: 0
+    PublicRoutesResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: '#/components/schemas/PublicRoutes'
   responses:
     BadRequest:
       description: 请求无法解析、含未知字段或游标无效（MALFORMED_REQUEST、INVALID_CURSOR）

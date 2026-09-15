@@ -1,6 +1,7 @@
 import type { Component } from 'vue'
 import type { RouteRecordRaw } from 'vue-router'
 
+import { SHARE_PATH_PREFIX } from '@/share/path'
 import type { Shell } from '@/shell/pickShell'
 
 type Loader = () => Promise<{ default: Component }>
@@ -15,6 +16,8 @@ declare module 'vue-router' {
   interface RouteMeta {
     /** 不要求登录；已登录访问 authOnly 的公开页（登录、注册）会跳到旅行列表。 */
     public?: boolean
+    /** 访客分享页不挂载账号壳。 */
+    share?: boolean
     /** 仅未登录时有意义的页面（登录、注册、找回密码）。 */
     guestOnly?: boolean
   }
@@ -127,6 +130,12 @@ export function buildRoutes(shell: Shell): RouteRecordRaw[] {
     { path: '/account', name: 'account', component: pick(pages.account) },
     { path: '/recycle-bin', name: 'recycle-bin', component: pick(pages.recycleBin) },
     { path: '/themes', name: 'themes', component: pick(pages.themes), meta: { public: true } },
+    {
+      path: `${SHARE_PATH_PREFIX}:token`,
+      name: 'share',
+      component: () => import('@/share/SharePage.vue'),
+      meta: { public: true, share: true },
+    },
     ...(shell === 'mobile' ? mobileOnlyRoutes : []),
     { path: '/:pathMatch(.*)*', redirect: { name: 'trips' } },
   ]

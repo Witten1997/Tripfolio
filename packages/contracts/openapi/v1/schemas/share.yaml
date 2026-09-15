@@ -1,0 +1,199 @@
+TripShare:
+  type: object
+  description: 主人可见的分享记录（接口设计 3.11）；url 由服务端按站点根地址拼出，客户端不参与拼接
+  x-go-type: share.Resource
+  x-go-type-import:
+    path: tripfolio/server/internal/modules/travel/share
+  required: [id, token, url, created_at, rotated_at, last_viewed_at, view_count]
+  properties:
+    id:
+      type: string
+      format: uuid
+    token:
+      type: string
+      description: 22 位 base64url 分享令牌
+      pattern: '^[A-Za-z0-9_-]{22}$'
+    url:
+      type: string
+      format: uri
+      description: 完整分享地址，形如 https://站点/s/<token>
+    created_at:
+      $ref: ./write.yaml#/Instant
+    rotated_at:
+      type: string
+      format: date-time
+      nullable: true
+      description: 最近一次重新生成的时间
+    last_viewed_at:
+      type: string
+      format: date-time
+      nullable: true
+      description: 最近一次访客读取旅行信息的时间
+    view_count:
+      type: integer
+      format: int64
+      minimum: 0
+      description: 访客读取旅行信息的次数
+
+TripShareResponse:
+  type: object
+  required: [data]
+  properties:
+    data:
+      $ref: '#/TripShare'
+
+PublicTrip:
+  type: object
+  description: 访客可见的旅行信息（接口设计 3.11）；字段固定，不复用 Trip
+  x-go-type: share.PublicTrip
+  x-go-type-import:
+    path: tripfolio/server/internal/modules/travel/share
+  required: [name, destination, start_date, end_date, timezone]
+  properties:
+    name:
+      type: string
+    destination:
+      type: string
+    start_date:
+      $ref: ./write.yaml#/Date
+    end_date:
+      $ref: ./write.yaml#/Date
+    timezone:
+      type: string
+
+PublicTripResponse:
+  type: object
+  required: [data]
+  properties:
+    data:
+      $ref: '#/PublicTrip'
+
+PublicItineraryItem:
+  type: object
+  description: 访客可见的行程骨架（接口设计 3.11）；刻意不含备注、实际情况、预计费用与状态
+  x-go-type: share.PublicItineraryItem
+  x-go-type-import:
+    path: tripfolio/server/internal/modules/travel/share
+  required:
+    [
+      id,
+      scheduled_on,
+      sort_order,
+      title,
+      kind,
+      place_name,
+      address,
+      latitude,
+      longitude,
+      planned_start_local,
+      planned_end_local,
+      planned_duration_minutes,
+    ]
+  properties:
+    id:
+      type: string
+      format: uuid
+    scheduled_on:
+      $ref: ./write.yaml#/Date
+    sort_order:
+      type: integer
+      format: int32
+      minimum: 0
+    title:
+      type: string
+    kind:
+      $ref: ./itinerary.yaml#/ItineraryKind
+    place_name:
+      type: string
+    address:
+      type: string
+    latitude:
+      type: number
+      format: double
+      nullable: true
+    longitude:
+      type: number
+      format: double
+      nullable: true
+    planned_start_local:
+      type: string
+      nullable: true
+      pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$'
+    planned_end_local:
+      type: string
+      nullable: true
+      pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$'
+    planned_duration_minutes:
+      type: integer
+      format: int32
+      nullable: true
+      minimum: 1
+
+PublicItineraryPage:
+  type: object
+  description: Page<PublicItineraryItem>；顺序与主人列表相同，游标绑定分享
+  required: [items, next_cursor]
+  properties:
+    items:
+      type: array
+      items:
+        $ref: '#/PublicItineraryItem'
+    next_cursor:
+      type: string
+      nullable: true
+
+PublicLeg:
+  type: object
+  description: 一段成功算出的相邻路段
+  x-go-type: share.PublicLeg
+  x-go-type-import:
+    path: tripfolio/server/internal/modules/travel/share
+  required: [from_item_id, to_item_id, distance_meters, duration_seconds, path]
+  properties:
+    from_item_id:
+      type: string
+      format: uuid
+    to_item_id:
+      type: string
+      format: uuid
+    distance_meters:
+      type: integer
+      format: int64
+      minimum: 0
+    duration_seconds:
+      type: integer
+      format: int64
+      minimum: 0
+    path:
+      type: array
+      minItems: 2
+      items:
+        $ref: ./geo.yaml#/GeoCoordinate
+
+PublicRoutes:
+  type: object
+  description: 整趟旅行的路线结果；只含成功路段，失败与无坐标数量另行给出
+  x-go-type: share.PublicRoutes
+  x-go-type-import:
+    path: tripfolio/server/internal/modules/travel/share
+  required: [mode, legs, failed_leg_count, unlocated_item_count]
+  properties:
+    mode:
+      $ref: ./geo.yaml#/GeoTravelMode
+    legs:
+      type: array
+      items:
+        $ref: '#/PublicLeg'
+    failed_leg_count:
+      type: integer
+      minimum: 0
+    unlocated_item_count:
+      type: integer
+      minimum: 0
+
+PublicRoutesResponse:
+  type: object
+  required: [data]
+  properties:
+    data:
+      $ref: '#/PublicRoutes'

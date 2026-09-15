@@ -1,11 +1,17 @@
 import type { ItineraryItem } from '@/shared/api/itinerary'
 
-export interface TripDay {
+export interface DayItem {
+  id: string
+  scheduled_on: string
+  sort_order: number
+}
+
+export interface TripDay<T extends DayItem = ItineraryItem> {
   date: string
   title: string
   /** 不在旅行起止日期范围内（旅行改期后遗留的项目）。 */
   outside: boolean
-  items: ItineraryItem[]
+  items: T[]
 }
 
 const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
@@ -24,8 +30,11 @@ function addDays(date: string, n: number): string {
 }
 
 /** 旅行起止之间的每一天（含两端）。 */
-export function tripDays(start: string, end: string): TripDay[] {
-  const days: TripDay[] = []
+export function tripDays<T extends DayItem = ItineraryItem>(
+  start: string,
+  end: string,
+): TripDay<T>[] {
+  const days: TripDay<T>[] = []
   for (let date = start; date <= end; date = addDays(date, 1)) {
     days.push({ date, title: dayTitle(date), outside: false, items: [] })
     if (days.length > 400) break
@@ -33,14 +42,18 @@ export function tripDays(start: string, end: string): TripDay[] {
   return days
 }
 
-function compareItems(a: ItineraryItem, b: ItineraryItem) {
+function compareItems(a: DayItem, b: DayItem) {
   return a.sort_order - b.sort_order || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
 }
 
 /** 按旅行日期铺满每一天；日期外的项目按其日期插入额外的天并标记 outside。服务端不存天实体。 */
-export function groupByDay(start: string, end: string, items: ItineraryItem[]): TripDay[] {
-  const byDate = new Map<string, TripDay>()
-  for (const day of tripDays(start, end)) byDate.set(day.date, day)
+export function groupByDay<T extends DayItem>(
+  start: string,
+  end: string,
+  items: T[],
+): TripDay<T>[] {
+  const byDate = new Map<string, TripDay<T>>()
+  for (const day of tripDays<T>(start, end)) byDate.set(day.date, day)
   for (const item of items) {
     let day = byDate.get(item.scheduled_on)
     if (!day) {

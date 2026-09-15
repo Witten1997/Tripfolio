@@ -1,0 +1,107 @@
+trip:
+  get:
+    tags: [public]
+    operationId: getSharedTrip
+    summary: 访客读取分享旅行的基本信息；每次调用计一次访问
+    security:
+      - shareAuth: []
+    responses:
+      '200':
+        description: 公开旅行信息
+        headers:
+          X-Robots-Tag:
+            schema:
+              type: string
+            description: 固定为 noindex, nofollow
+        content:
+          application/json:
+            schema:
+              $ref: ../openapi.yaml#/components/schemas/PublicTripResponse
+      '401':
+        $ref: ../openapi.yaml#/components/responses/Unauthorized
+      '403':
+        $ref: ../openapi.yaml#/components/responses/Forbidden
+      '404':
+        $ref: ../openapi.yaml#/components/responses/NotFound
+      '410':
+        $ref: ../openapi.yaml#/components/responses/Gone
+      '429':
+        $ref: ../openapi.yaml#/components/responses/RateLimited
+
+itinerary-items:
+  get:
+    tags: [public]
+    operationId: listSharedItineraryItems
+    summary: 访客读取分享旅行的行程骨架，键集分页
+    security:
+      - shareAuth: []
+    parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 50
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+    responses:
+      '200':
+        description: 一页行程骨架，按 scheduled_on、sort_order、id 升序
+        content:
+          application/json:
+            schema:
+              $ref: ../openapi.yaml#/components/schemas/PublicItineraryPage
+      '400':
+        $ref: ../openapi.yaml#/components/responses/BadRequest
+      '401':
+        $ref: ../openapi.yaml#/components/responses/Unauthorized
+      '403':
+        $ref: ../openapi.yaml#/components/responses/Forbidden
+      '404':
+        $ref: ../openapi.yaml#/components/responses/NotFound
+      '410':
+        $ref: ../openapi.yaml#/components/responses/Gone
+      '422':
+        $ref: ../openapi.yaml#/components/responses/ValidationFailed
+      '429':
+        $ref: ../openapi.yaml#/components/responses/RateLimited
+
+routes:
+  get:
+    tags: [public]
+    operationId: getSharedRoutes
+    summary: 服务端按行程顺序计算全部相邻路段；访客不能指定坐标
+    security:
+      - shareAuth: []
+    parameters:
+      - name: mode
+        in: query
+        required: true
+        schema:
+          $ref: ../openapi.yaml#/components/schemas/GeoTravelMode
+    responses:
+      '200':
+        description: 成功路段、失败路段数与无坐标项目数；按分享、出行方式与行程指纹缓存 5 分钟
+        content:
+          application/json:
+            schema:
+              $ref: ../openapi.yaml#/components/schemas/PublicRoutesResponse
+      '401':
+        $ref: ../openapi.yaml#/components/responses/Unauthorized
+      '403':
+        $ref: ../openapi.yaml#/components/responses/Forbidden
+      '404':
+        $ref: ../openapi.yaml#/components/responses/NotFound
+      '410':
+        $ref: ../openapi.yaml#/components/responses/Gone
+      '422':
+        $ref: ../openapi.yaml#/components/responses/ValidationFailed
+      '429':
+        $ref: ../openapi.yaml#/components/responses/RateLimited
+      '503':
+        $ref: ../openapi.yaml#/components/responses/DependencyUnavailable

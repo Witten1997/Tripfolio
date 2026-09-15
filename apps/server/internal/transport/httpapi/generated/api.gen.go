@@ -20,6 +20,7 @@ import (
 	"tripfolio/server/internal/modules/geo"
 	"tripfolio/server/internal/modules/travel/itinerary"
 	"tripfolio/server/internal/modules/travel/packing"
+	"tripfolio/server/internal/modules/travel/share"
 	"tripfolio/server/internal/modules/travel/todo"
 	"tripfolio/server/internal/modules/travel/trip"
 
@@ -1262,6 +1263,36 @@ type Problem struct {
 	Type string `json:"type"`
 }
 
+// PublicItineraryItem 访客可见的行程骨架（接口设计 3.11）；刻意不含备注、实际情况、预计费用与状态
+type PublicItineraryItem = share.PublicItineraryItem
+
+// PublicItineraryPage Page<PublicItineraryItem>；顺序与主人列表相同，游标绑定分享
+type PublicItineraryPage struct {
+	Items      []PublicItineraryItem     `json:"items"`
+	NextCursor nullable.Nullable[string] `json:"next_cursor"`
+}
+
+// PublicLeg 一段成功算出的相邻路段
+type PublicLeg = share.PublicLeg
+
+// PublicRoutes 整趟旅行的路线结果；只含成功路段，失败与无坐标数量另行给出
+type PublicRoutes = share.PublicRoutes
+
+// PublicRoutesResponse defines model for PublicRoutesResponse.
+type PublicRoutesResponse struct {
+	// Data 整趟旅行的路线结果；只含成功路段，失败与无坐标数量另行给出
+	Data PublicRoutes `json:"data"`
+}
+
+// PublicTrip 访客可见的旅行信息（接口设计 3.11）；字段固定，不复用 Trip
+type PublicTrip = share.PublicTrip
+
+// PublicTripResponse defines model for PublicTripResponse.
+type PublicTripResponse struct {
+	// Data 访客可见的旅行信息（接口设计 3.11）；字段固定，不复用 Trip
+	Data PublicTrip `json:"data"`
+}
+
 // PurgeTripRequest 永久清理回收站中的旅行；需要 If-Match、幂等键与本会话 5 分钟内的密码复验
 type PurgeTripRequest struct {
 	// Confirm 必须为 true，表示用户已确认不可恢复
@@ -1494,6 +1525,15 @@ type TripResponse struct {
 	Data Trip `json:"data"`
 }
 
+// TripShare 主人可见的分享记录（接口设计 3.11）；url 由服务端按站点根地址拼出，客户端不参与拼接
+type TripShare = share.Resource
+
+// TripShareResponse defines model for TripShareResponse.
+type TripShareResponse struct {
+	// Data 主人可见的分享记录（接口设计 3.11）；url 由服务端按站点根地址拼出，客户端不参与拼接
+	Data TripShare `json:"data"`
+}
+
 // TripStatistics 旅行开支统计（接口设计 3.8）。日期与分类筛选只影响 filtered_totals、by_category 的筛选金额与 daily；
 // trip_budget 始终基于整趟旅行的累计净支出。by_category 包含每个当前有效分类以及仍被有效账目引用的已删除分类。
 type TripStatistics = finance.Statistics
@@ -1688,6 +1728,17 @@ type CalculateRouteParams struct {
 	DestinationLatitude  float64       `form:"destination_latitude" json:"destination_latitude"`
 	DestinationLongitude float64       `form:"destination_longitude" json:"destination_longitude"`
 	Mode                 GeoTravelMode `form:"mode" json:"mode"`
+}
+
+// ListSharedItineraryItemsParams defines parameters for ListSharedItineraryItems.
+type ListSharedItineraryItemsParams struct {
+	Limit  *int    `form:"limit,omitempty" json:"limit,omitempty"`
+	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// GetSharedRoutesParams defines parameters for GetSharedRoutes.
+type GetSharedRoutesParams struct {
+	Mode GeoTravelMode `form:"mode" json:"mode"`
 }
 
 // ListTrashedTripsParams defines parameters for ListTrashedTrips.
@@ -2119,6 +2170,15 @@ type ServerInterface interface {
 	// ListPackingLibrary 内置物品库的版本、分类与物品；随程序发布，不落库
 	// (GET /packing-library)
 	ListPackingLibrary(w http.ResponseWriter, r *http.Request)
+	// ListSharedItineraryItems 访客读取分享旅行的行程骨架，键集分页
+	// (GET /public/itinerary-items)
+	ListSharedItineraryItems(w http.ResponseWriter, r *http.Request, params ListSharedItineraryItemsParams)
+	// GetSharedRoutes 服务端按行程顺序计算全部相邻路段；访客不能指定坐标
+	// (GET /public/routes)
+	GetSharedRoutes(w http.ResponseWriter, r *http.Request, params GetSharedRoutesParams)
+	// GetSharedTrip 访客读取分享旅行的基本信息；每次调用计一次访问
+	// (GET /public/trip)
+	GetSharedTrip(w http.ResponseWriter, r *http.Request)
 	// ListTrashedTrips 回收站旅行；按删除时间倒序，返回恢复截止时间与永久清理状态
 	// (GET /recycle-bin/trips)
 	ListTrashedTrips(w http.ResponseWriter, r *http.Request, params ListTrashedTripsParams)
@@ -2203,6 +2263,18 @@ type ServerInterface interface {
 	// UpdatePackingItem 局部更新；内容编辑与状态变化使用同一业务规则
 	// (PATCH /trips/{trip_id}/packing-items/{item_id})
 	UpdatePackingItem(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, itemId openapi_types.UUID, params UpdatePackingItemParams)
+	// DisableTripShare 关闭分享，旧链接立即失效；未开启也返回 204
+	// (DELETE /trips/{trip_id}/share)
+	DisableTripShare(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID)
+	// GetTripShare 读取旅行的分享链接；未开启返回 404 SHARE_NOT_FOUND
+	// (GET /trips/{trip_id}/share)
+	GetTripShare(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID)
+	// EnableTripShare 开启分享；已开启时原样返回。分享不进入同步体系，不带幂等键与 If-Match
+	// (PUT /trips/{trip_id}/share)
+	EnableTripShare(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID)
+	// RotateTripShare 重新生成分享令牌，旧链接立即失效；未开启返回 404 SHARE_NOT_FOUND
+	// (POST /trips/{trip_id}/share/rotate)
+	RotateTripShare(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID)
 	// GetTripStatistics 旅行开支统计：总额、分类汇总与占比、每日明细摘要及总预算对比
 	// (GET /trips/{trip_id}/statistics)
 	GetTripStatistics(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, params GetTripStatisticsParams)
@@ -2395,6 +2467,24 @@ func (_ Unimplemented) ListPackingLibrary(w http.ResponseWriter, r *http.Request
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// ListSharedItineraryItems 访客读取分享旅行的行程骨架，键集分页
+// (GET /public/itinerary-items)
+func (_ Unimplemented) ListSharedItineraryItems(w http.ResponseWriter, r *http.Request, params ListSharedItineraryItemsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetSharedRoutes 服务端按行程顺序计算全部相邻路段；访客不能指定坐标
+// (GET /public/routes)
+func (_ Unimplemented) GetSharedRoutes(w http.ResponseWriter, r *http.Request, params GetSharedRoutesParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetSharedTrip 访客读取分享旅行的基本信息；每次调用计一次访问
+// (GET /public/trip)
+func (_ Unimplemented) GetSharedTrip(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // ListTrashedTrips 回收站旅行；按删除时间倒序，返回恢复截止时间与永久清理状态
 // (GET /recycle-bin/trips)
 func (_ Unimplemented) ListTrashedTrips(w http.ResponseWriter, r *http.Request, params ListTrashedTripsParams) {
@@ -2560,6 +2650,30 @@ func (_ Unimplemented) GetPackingItem(w http.ResponseWriter, r *http.Request, tr
 // UpdatePackingItem 局部更新；内容编辑与状态变化使用同一业务规则
 // (PATCH /trips/{trip_id}/packing-items/{item_id})
 func (_ Unimplemented) UpdatePackingItem(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, itemId openapi_types.UUID, params UpdatePackingItemParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// DisableTripShare 关闭分享，旧链接立即失效；未开启也返回 204
+// (DELETE /trips/{trip_id}/share)
+func (_ Unimplemented) DisableTripShare(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetTripShare 读取旅行的分享链接；未开启返回 404 SHARE_NOT_FOUND
+// (GET /trips/{trip_id}/share)
+func (_ Unimplemented) GetTripShare(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// EnableTripShare 开启分享；已开启时原样返回。分享不进入同步体系，不带幂等键与 If-Match
+// (PUT /trips/{trip_id}/share)
+func (_ Unimplemented) EnableTripShare(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// RotateTripShare 重新生成分享令牌，旧链接立即失效；未开启返回 404 SHARE_NOT_FOUND
+// (POST /trips/{trip_id}/share/rotate)
+func (_ Unimplemented) RotateTripShare(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -3539,6 +3653,99 @@ func (siw *ServerInterfaceWrapper) ListPackingLibrary(w http.ResponseWriter, r *
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListPackingLibrary(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListSharedItineraryItems operation middleware
+func (siw *ServerInterfaceWrapper) ListSharedItineraryItems(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListSharedItineraryItemsParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListSharedItineraryItems(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetSharedRoutes operation middleware
+func (siw *ServerInterfaceWrapper) GetSharedRoutes(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetSharedRoutesParams
+
+	// ------------- Required query parameter "mode" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "mode", r.URL.Query(), &params.Mode, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "mode"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "mode", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetSharedRoutes(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetSharedTrip operation middleware
+func (siw *ServerInterfaceWrapper) GetSharedTrip(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetSharedTrip(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -5397,6 +5604,110 @@ func (siw *ServerInterfaceWrapper) UpdatePackingItem(w http.ResponseWriter, r *h
 	handler.ServeHTTP(w, r)
 }
 
+// DisableTripShare operation middleware
+func (siw *ServerInterfaceWrapper) DisableTripShare(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "trip_id" -------------
+	var tripId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "trip_id", chi.URLParam(r, "trip_id"), &tripId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "trip_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DisableTripShare(w, r, tripId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetTripShare operation middleware
+func (siw *ServerInterfaceWrapper) GetTripShare(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "trip_id" -------------
+	var tripId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "trip_id", chi.URLParam(r, "trip_id"), &tripId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "trip_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetTripShare(w, r, tripId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// EnableTripShare operation middleware
+func (siw *ServerInterfaceWrapper) EnableTripShare(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "trip_id" -------------
+	var tripId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "trip_id", chi.URLParam(r, "trip_id"), &tripId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "trip_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.EnableTripShare(w, r, tripId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RotateTripShare operation middleware
+func (siw *ServerInterfaceWrapper) RotateTripShare(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "trip_id" -------------
+	var tripId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "trip_id", chi.URLParam(r, "trip_id"), &tripId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "trip_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RotateTripShare(w, r, tripId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetTripStatistics operation middleware
 func (siw *ServerInterfaceWrapper) GetTripStatistics(w http.ResponseWriter, r *http.Request) {
 
@@ -6002,6 +6313,27 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Patch(options.BaseURL+"/trips/{trip_id}", wrapper.UpdateTrip)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/trips/{trip_id}/share", wrapper.DisableTripShare)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/trips/{trip_id}/share", wrapper.GetTripShare)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/trips/{trip_id}/share", wrapper.EnableTripShare)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/trips/{trip_id}/share/rotate", wrapper.RotateTripShare)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/public/trip", wrapper.GetSharedTrip)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/public/itinerary-items", wrapper.ListSharedItineraryItems)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/public/routes", wrapper.GetSharedRoutes)
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/trips/{trip_id}/archive", wrapper.SetTripArchived)
@@ -8253,6 +8585,397 @@ func (response ListPackingLibrary401ApplicationProblemPlusJSONResponse) VisitLis
 	}
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListSharedItineraryItemsRequestObject struct {
+	Params ListSharedItineraryItemsParams
+}
+
+type ListSharedItineraryItemsResponseObject interface {
+	VisitListSharedItineraryItemsResponse(w http.ResponseWriter) error
+}
+
+type ListSharedItineraryItems200JSONResponse PublicItineraryPage
+
+func (response ListSharedItineraryItems200JSONResponse) VisitListSharedItineraryItemsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListSharedItineraryItems400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response ListSharedItineraryItems400ApplicationProblemPlusJSONResponse) VisitListSharedItineraryItemsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListSharedItineraryItems401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response ListSharedItineraryItems401ApplicationProblemPlusJSONResponse) VisitListSharedItineraryItemsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListSharedItineraryItems403ApplicationProblemPlusJSONResponse struct {
+	ForbiddenApplicationProblemPlusJSONResponse
+}
+
+func (response ListSharedItineraryItems403ApplicationProblemPlusJSONResponse) VisitListSharedItineraryItemsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListSharedItineraryItems404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response ListSharedItineraryItems404ApplicationProblemPlusJSONResponse) VisitListSharedItineraryItemsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListSharedItineraryItems410ApplicationProblemPlusJSONResponse struct {
+	GoneApplicationProblemPlusJSONResponse
+}
+
+func (response ListSharedItineraryItems410ApplicationProblemPlusJSONResponse) VisitListSharedItineraryItemsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(410)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListSharedItineraryItems422ApplicationProblemPlusJSONResponse struct {
+	ValidationFailedApplicationProblemPlusJSONResponse
+}
+
+func (response ListSharedItineraryItems422ApplicationProblemPlusJSONResponse) VisitListSharedItineraryItemsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListSharedItineraryItems429ApplicationProblemPlusJSONResponse struct {
+	RateLimitedApplicationProblemPlusJSONResponse
+}
+
+func (response ListSharedItineraryItems429ApplicationProblemPlusJSONResponse) VisitListSharedItineraryItemsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSharedRoutesRequestObject struct {
+	Params GetSharedRoutesParams
+}
+
+type GetSharedRoutesResponseObject interface {
+	VisitGetSharedRoutesResponse(w http.ResponseWriter) error
+}
+
+type GetSharedRoutes200JSONResponse PublicRoutesResponse
+
+func (response GetSharedRoutes200JSONResponse) VisitGetSharedRoutesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSharedRoutes401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response GetSharedRoutes401ApplicationProblemPlusJSONResponse) VisitGetSharedRoutesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSharedRoutes403ApplicationProblemPlusJSONResponse struct {
+	ForbiddenApplicationProblemPlusJSONResponse
+}
+
+func (response GetSharedRoutes403ApplicationProblemPlusJSONResponse) VisitGetSharedRoutesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSharedRoutes404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response GetSharedRoutes404ApplicationProblemPlusJSONResponse) VisitGetSharedRoutesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSharedRoutes410ApplicationProblemPlusJSONResponse struct {
+	GoneApplicationProblemPlusJSONResponse
+}
+
+func (response GetSharedRoutes410ApplicationProblemPlusJSONResponse) VisitGetSharedRoutesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(410)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSharedRoutes422ApplicationProblemPlusJSONResponse struct {
+	ValidationFailedApplicationProblemPlusJSONResponse
+}
+
+func (response GetSharedRoutes422ApplicationProblemPlusJSONResponse) VisitGetSharedRoutesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSharedRoutes429ApplicationProblemPlusJSONResponse struct {
+	RateLimitedApplicationProblemPlusJSONResponse
+}
+
+func (response GetSharedRoutes429ApplicationProblemPlusJSONResponse) VisitGetSharedRoutesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSharedRoutes503ApplicationProblemPlusJSONResponse struct {
+	DependencyUnavailableApplicationProblemPlusJSONResponse
+}
+
+func (response GetSharedRoutes503ApplicationProblemPlusJSONResponse) VisitGetSharedRoutesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSharedTripRequestObject struct {
+}
+
+type GetSharedTripResponseObject interface {
+	VisitGetSharedTripResponse(w http.ResponseWriter) error
+}
+
+type GetSharedTrip200ResponseHeaders struct {
+	XRobotsTag *string
+}
+
+type GetSharedTrip200JSONResponse struct {
+	Body    PublicTripResponse
+	Headers GetSharedTrip200ResponseHeaders
+}
+
+func (response GetSharedTrip200JSONResponse) VisitGetSharedTripResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.XRobotsTag != nil {
+		w.Header().Set("X-Robots-Tag", fmt.Sprint(*response.Headers.XRobotsTag))
+	}
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSharedTrip401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response GetSharedTrip401ApplicationProblemPlusJSONResponse) VisitGetSharedTripResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSharedTrip403ApplicationProblemPlusJSONResponse struct {
+	ForbiddenApplicationProblemPlusJSONResponse
+}
+
+func (response GetSharedTrip403ApplicationProblemPlusJSONResponse) VisitGetSharedTripResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSharedTrip404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response GetSharedTrip404ApplicationProblemPlusJSONResponse) VisitGetSharedTripResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSharedTrip410ApplicationProblemPlusJSONResponse struct {
+	GoneApplicationProblemPlusJSONResponse
+}
+
+func (response GetSharedTrip410ApplicationProblemPlusJSONResponse) VisitGetSharedTripResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(410)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSharedTrip429ApplicationProblemPlusJSONResponse struct {
+	RateLimitedApplicationProblemPlusJSONResponse
+}
+
+func (response GetSharedTrip429ApplicationProblemPlusJSONResponse) VisitGetSharedTripResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(429)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -11056,6 +11779,280 @@ func (response UpdatePackingItem428ApplicationProblemPlusJSONResponse) VisitUpda
 	return err
 }
 
+type DisableTripShareRequestObject struct {
+	TripId openapi_types.UUID `json:"trip_id"`
+}
+
+type DisableTripShareResponseObject interface {
+	VisitDisableTripShareResponse(w http.ResponseWriter) error
+}
+
+type DisableTripShare204Response struct {
+}
+
+func (response DisableTripShare204Response) VisitDisableTripShareResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DisableTripShare401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response DisableTripShare401ApplicationProblemPlusJSONResponse) VisitDisableTripShareResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DisableTripShare404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response DisableTripShare404ApplicationProblemPlusJSONResponse) VisitDisableTripShareResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DisableTripShare410ApplicationProblemPlusJSONResponse struct {
+	GoneApplicationProblemPlusJSONResponse
+}
+
+func (response DisableTripShare410ApplicationProblemPlusJSONResponse) VisitDisableTripShareResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(410)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetTripShareRequestObject struct {
+	TripId openapi_types.UUID `json:"trip_id"`
+}
+
+type GetTripShareResponseObject interface {
+	VisitGetTripShareResponse(w http.ResponseWriter) error
+}
+
+type GetTripShare200JSONResponse TripShareResponse
+
+func (response GetTripShare200JSONResponse) VisitGetTripShareResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetTripShare401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response GetTripShare401ApplicationProblemPlusJSONResponse) VisitGetTripShareResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetTripShare404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response GetTripShare404ApplicationProblemPlusJSONResponse) VisitGetTripShareResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetTripShare410ApplicationProblemPlusJSONResponse struct {
+	GoneApplicationProblemPlusJSONResponse
+}
+
+func (response GetTripShare410ApplicationProblemPlusJSONResponse) VisitGetTripShareResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(410)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type EnableTripShareRequestObject struct {
+	TripId openapi_types.UUID `json:"trip_id"`
+}
+
+type EnableTripShareResponseObject interface {
+	VisitEnableTripShareResponse(w http.ResponseWriter) error
+}
+
+type EnableTripShare200JSONResponse TripShareResponse
+
+func (response EnableTripShare200JSONResponse) VisitEnableTripShareResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type EnableTripShare401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response EnableTripShare401ApplicationProblemPlusJSONResponse) VisitEnableTripShareResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type EnableTripShare404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response EnableTripShare404ApplicationProblemPlusJSONResponse) VisitEnableTripShareResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type EnableTripShare410ApplicationProblemPlusJSONResponse struct {
+	GoneApplicationProblemPlusJSONResponse
+}
+
+func (response EnableTripShare410ApplicationProblemPlusJSONResponse) VisitEnableTripShareResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(410)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RotateTripShareRequestObject struct {
+	TripId openapi_types.UUID `json:"trip_id"`
+}
+
+type RotateTripShareResponseObject interface {
+	VisitRotateTripShareResponse(w http.ResponseWriter) error
+}
+
+type RotateTripShare200JSONResponse TripShareResponse
+
+func (response RotateTripShare200JSONResponse) VisitRotateTripShareResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RotateTripShare401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response RotateTripShare401ApplicationProblemPlusJSONResponse) VisitRotateTripShareResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RotateTripShare404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response RotateTripShare404ApplicationProblemPlusJSONResponse) VisitRotateTripShareResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RotateTripShare410ApplicationProblemPlusJSONResponse struct {
+	GoneApplicationProblemPlusJSONResponse
+}
+
+func (response RotateTripShare410ApplicationProblemPlusJSONResponse) VisitRotateTripShareResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(410)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetTripStatisticsRequestObject struct {
 	TripId openapi_types.UUID `json:"trip_id"`
 	Params GetTripStatisticsParams
@@ -11758,6 +12755,15 @@ type StrictServerInterface interface {
 	// ListPackingLibrary 内置物品库的版本、分类与物品；随程序发布，不落库
 	// (GET /packing-library)
 	ListPackingLibrary(ctx context.Context, request ListPackingLibraryRequestObject) (ListPackingLibraryResponseObject, error)
+	// ListSharedItineraryItems 访客读取分享旅行的行程骨架，键集分页
+	// (GET /public/itinerary-items)
+	ListSharedItineraryItems(ctx context.Context, request ListSharedItineraryItemsRequestObject) (ListSharedItineraryItemsResponseObject, error)
+	// GetSharedRoutes 服务端按行程顺序计算全部相邻路段；访客不能指定坐标
+	// (GET /public/routes)
+	GetSharedRoutes(ctx context.Context, request GetSharedRoutesRequestObject) (GetSharedRoutesResponseObject, error)
+	// GetSharedTrip 访客读取分享旅行的基本信息；每次调用计一次访问
+	// (GET /public/trip)
+	GetSharedTrip(ctx context.Context, request GetSharedTripRequestObject) (GetSharedTripResponseObject, error)
 	// ListTrashedTrips 回收站旅行；按删除时间倒序，返回恢复截止时间与永久清理状态
 	// (GET /recycle-bin/trips)
 	ListTrashedTrips(ctx context.Context, request ListTrashedTripsRequestObject) (ListTrashedTripsResponseObject, error)
@@ -11842,6 +12848,18 @@ type StrictServerInterface interface {
 	// UpdatePackingItem 局部更新；内容编辑与状态变化使用同一业务规则
 	// (PATCH /trips/{trip_id}/packing-items/{item_id})
 	UpdatePackingItem(ctx context.Context, request UpdatePackingItemRequestObject) (UpdatePackingItemResponseObject, error)
+	// DisableTripShare 关闭分享，旧链接立即失效；未开启也返回 204
+	// (DELETE /trips/{trip_id}/share)
+	DisableTripShare(ctx context.Context, request DisableTripShareRequestObject) (DisableTripShareResponseObject, error)
+	// GetTripShare 读取旅行的分享链接；未开启返回 404 SHARE_NOT_FOUND
+	// (GET /trips/{trip_id}/share)
+	GetTripShare(ctx context.Context, request GetTripShareRequestObject) (GetTripShareResponseObject, error)
+	// EnableTripShare 开启分享；已开启时原样返回。分享不进入同步体系，不带幂等键与 If-Match
+	// (PUT /trips/{trip_id}/share)
+	EnableTripShare(ctx context.Context, request EnableTripShareRequestObject) (EnableTripShareResponseObject, error)
+	// RotateTripShare 重新生成分享令牌，旧链接立即失效；未开启返回 404 SHARE_NOT_FOUND
+	// (POST /trips/{trip_id}/share/rotate)
+	RotateTripShare(ctx context.Context, request RotateTripShareRequestObject) (RotateTripShareResponseObject, error)
 	// GetTripStatistics 旅行开支统计：总额、分类汇总与占比、每日明细摘要及总预算对比
 	// (GET /trips/{trip_id}/statistics)
 	GetTripStatistics(ctx context.Context, request GetTripStatisticsRequestObject) (GetTripStatisticsResponseObject, error)
@@ -12700,6 +13718,82 @@ func (sh *strictHandler) ListPackingLibrary(w http.ResponseWriter, r *http.Reque
 	}
 }
 
+// ListSharedItineraryItems operation middleware
+func (sh *strictHandler) ListSharedItineraryItems(w http.ResponseWriter, r *http.Request, params ListSharedItineraryItemsParams) {
+	var request ListSharedItineraryItemsRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListSharedItineraryItems(ctx, request.(ListSharedItineraryItemsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListSharedItineraryItems")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListSharedItineraryItemsResponseObject); ok {
+		if err := validResponse.VisitListSharedItineraryItemsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetSharedRoutes operation middleware
+func (sh *strictHandler) GetSharedRoutes(w http.ResponseWriter, r *http.Request, params GetSharedRoutesParams) {
+	var request GetSharedRoutesRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetSharedRoutes(ctx, request.(GetSharedRoutesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetSharedRoutes")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetSharedRoutesResponseObject); ok {
+		if err := validResponse.VisitGetSharedRoutesResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetSharedTrip operation middleware
+func (sh *strictHandler) GetSharedTrip(w http.ResponseWriter, r *http.Request) {
+	var request GetSharedTripRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetSharedTrip(ctx, request.(GetSharedTripRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetSharedTrip")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetSharedTripResponseObject); ok {
+		if err := validResponse.VisitGetSharedTripResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // ListTrashedTrips operation middleware
 func (sh *strictHandler) ListTrashedTrips(w http.ResponseWriter, r *http.Request, params ListTrashedTripsParams) {
 	var request ListTrashedTripsRequestObject
@@ -13534,6 +14628,110 @@ func (sh *strictHandler) UpdatePackingItem(w http.ResponseWriter, r *http.Reques
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(UpdatePackingItemResponseObject); ok {
 		if err := validResponse.VisitUpdatePackingItemResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DisableTripShare operation middleware
+func (sh *strictHandler) DisableTripShare(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID) {
+	var request DisableTripShareRequestObject
+
+	request.TripId = tripId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DisableTripShare(ctx, request.(DisableTripShareRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DisableTripShare")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DisableTripShareResponseObject); ok {
+		if err := validResponse.VisitDisableTripShareResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetTripShare operation middleware
+func (sh *strictHandler) GetTripShare(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID) {
+	var request GetTripShareRequestObject
+
+	request.TripId = tripId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetTripShare(ctx, request.(GetTripShareRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetTripShare")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetTripShareResponseObject); ok {
+		if err := validResponse.VisitGetTripShareResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// EnableTripShare operation middleware
+func (sh *strictHandler) EnableTripShare(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID) {
+	var request EnableTripShareRequestObject
+
+	request.TripId = tripId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.EnableTripShare(ctx, request.(EnableTripShareRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "EnableTripShare")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(EnableTripShareResponseObject); ok {
+		if err := validResponse.VisitEnableTripShareResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RotateTripShare operation middleware
+func (sh *strictHandler) RotateTripShare(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID) {
+	var request RotateTripShareRequestObject
+
+	request.TripId = tripId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RotateTripShare(ctx, request.(RotateTripShareRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RotateTripShare")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RotateTripShareResponseObject); ok {
+		if err := validResponse.VisitRotateTripShareResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

@@ -31,6 +31,7 @@ type Querier interface {
 	DeleteExpiredChallenges(ctx context.Context, expiresAt time.Time) (int64, error)
 	// 票据引用：整体替换。
 	DeleteLedgerAttachments(ctx context.Context, arg DeleteLedgerAttachmentsParams) error
+	DeleteTripShare(ctx context.Context, arg DeleteTripShareParams) (int64, error)
 	ExpenseCategoryActive(ctx context.Context, arg ExpenseCategoryActiveParams) (bool, error)
 	ExpenseCategoryIDExists(ctx context.Context, id uuid.UUID) (bool, error)
 	GetAccountByEmailKey(ctx context.Context, emailKey string) (Account, error)
@@ -69,6 +70,8 @@ type Querier interface {
 	// 每日行程项目（数据库设计表 5）。时间由应用时钟传入；currency_code 不存列，由适配器按旅行币种派生。
 	GetTripContentInfo(ctx context.Context, arg GetTripContentInfoParams) (GetTripContentInfoRow, error)
 	GetTripForUpdate(ctx context.Context, arg GetTripForUpdateParams) (Trip, error)
+	// 旅行分享（数据库设计 v0.4 表 24）。解析查询联出主人账号状态与旅行删除标记，访客侧一次查询完成全部前置判断。
+	GetTripShareByTrip(ctx context.Context, arg GetTripShareByTripParams) (TripShare, error)
 	IncrementChallengeAttempts(ctx context.Context, id uuid.UUID) error
 	InsertAsset(ctx context.Context, arg InsertAssetParams) (Asset, error)
 	// 账号级账单分类。
@@ -82,6 +85,7 @@ type Querier interface {
 	InsertTodoItem(ctx context.Context, arg InsertTodoItemParams) (TodoItem, error)
 	InsertTrip(ctx context.Context, arg InsertTripParams) (Trip, error)
 	InsertTripDeletionJob(ctx context.Context, arg InsertTripDeletionJobParams) (DeletionJob, error)
+	InsertTripShare(ctx context.Context, arg InsertTripShareParams) (TripShare, error)
 	// 邮箱验证码挑战。
 	InvalidateChallenges(ctx context.Context, arg InvalidateChallengesParams) error
 	ItineraryItemIDExists(ctx context.Context, arg ItineraryItemIDExistsParams) (*bool, error)
@@ -129,16 +133,19 @@ type Querier interface {
 	MaxItinerarySortOrder(ctx context.Context, arg MaxItinerarySortOrderParams) (MaxItinerarySortOrderRow, error)
 	PackingItemIDExists(ctx context.Context, arg PackingItemIDExistsParams) (*bool, error)
 	PackingNameTaken(ctx context.Context, arg PackingNameTakenParams) (bool, error)
+	RecordTripShareView(ctx context.Context, arg RecordTripShareViewParams) error
 	ReissueSessionWithinGrace(ctx context.Context, arg ReissueSessionWithinGraceParams) error
 	// 续签：只延长当前尝试的截止时间，暂存键与序号不变。
 	RenewAssetAttempt(ctx context.Context, arg RenewAssetAttemptParams) (Asset, error)
 	RepositionItineraryItem(ctx context.Context, arg RepositionItineraryItemParams) (ItineraryItem, error)
 	RequestTripPurge(ctx context.Context, arg RequestTripPurgeParams) (Trip, error)
+	ResolveTripShareToken(ctx context.Context, token string) (ResolveTripShareTokenRow, error)
 	RestoreTrip(ctx context.Context, arg RestoreTripParams) (Trip, error)
 	RevokeAccountSessions(ctx context.Context, arg RevokeAccountSessionsParams) error
 	RevokeOtherAccountSessions(ctx context.Context, arg RevokeOtherAccountSessionsParams) error
 	RevokeSession(ctx context.Context, arg RevokeSessionParams) error
 	RotateSession(ctx context.Context, arg RotateSessionParams) error
+	RotateTripShare(ctx context.Context, arg RotateTripShareParams) (TripShare, error)
 	SetAccountStatus(ctx context.Context, arg SetAccountStatusParams) error
 	SetAssetThumbnail(ctx context.Context, arg SetAssetThumbnailParams) (Asset, error)
 	SetChallengeDelivery(ctx context.Context, arg SetChallengeDeliveryParams) error

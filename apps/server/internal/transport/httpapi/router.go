@@ -1,9 +1,12 @@
 package httpapi
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"strings"
+	"tripfolio/server/internal/foundation/apperr"
+	"tripfolio/server/internal/modules/travel/share"
 
 	"github.com/go-chi/chi/v5"
 
@@ -35,6 +38,8 @@ type Deps struct {
 	Itinerary   *itinerary.Service
 	Packing     *packing.Service
 	Todos       *todo.Service
+	// Shares 未装配时，缺少分享头返回 401，有分享头返回 503。
+	Shares *share.Service
 	// 任一服务为 nil 时对应接口返回 503 DEPENDENCY_UNAVAILABLE。
 	Ledger     *finance.LedgerService
 	Statistics *finance.StatisticsService
@@ -52,7 +57,15 @@ var publicPaths = map[string]struct{}{
 	"/auth/password-reset":   {},
 }
 
+// isSharePath 是访客分享路径：不要求账号身份，由 middleware.Share 校验分享令牌。
+func isSharePath(r *http.Request) bool {
+	return strings.HasPrefix(strings.TrimPrefix(r.URL.Path, "/api/v1"), "/public/")
+}
+
 func isPublic(r *http.Request) bool {
+	if isSharePath(r) {
+		return true
+	}
 	path := strings.TrimPrefix(r.URL.Path, "/api/v1")
 	_, ok := publicPaths[path]
 	return ok
@@ -82,7 +95,7 @@ func NewRouter(d Deps) http.Handler {
 		logger: d.Logger, metadata: d.Metadata, identity: d.Identity, sessions: d.Sessions, profile: d.Profile,
 		categories: d.Categories, trips: d.Trips, itinerary: d.Itinerary, packing: d.Packing, todos: d.Todos,
 		ledger: d.Ledger, statistics: d.Statistics, assets: d.Assets, geo: d.Geo,
-		cookies: d.Cookies, corsOrigins: d.CORSOrigins,
+		cookies: d.Cookies, corsOrigins: d.CORSOrigins, shares: d.Shares,
 	}
 	strict := generated.NewStrictHandlerWithOptions(handler, nil, generated.StrictHTTPServerOptions{
 		RequestErrorHandlerFunc:  requestError,
@@ -94,6 +107,13 @@ func NewRouter(d Deps) http.Handler {
 	if d.Sessions != nil {
 		api.Use(middleware.Auth(d.Sessions, middleware.AuthPolicy{Public: isPublic, AllowWhileDeleting: allowWhileDeleting}))
 	}
+	if d.Shares != nil {
+		api.Use(middleware.Share(d.Shares, isSharePath))
+	} else {
+		// 未装配分享服务时访客路径一律 401，避免生成路由把请求放到占位处理器。
+		api.Use(middleware.Share(unavailableResolver{}, isSharePath))
+	}
+
 	api.NotFound(notFound)
 	api.MethodNotAllowed(methodNotAllowed)
 	generated.HandlerWithOptions(strict, generated.ChiServerOptions{
@@ -102,4 +122,11 @@ func NewRouter(d Deps) http.Handler {
 	})
 	r.Mount("/api/v1", api)
 	return r
+}
+
+// unavailableResolver 在分享服务未装配时拒绝所有访客请求。
+type unavailableResolver struct{}
+
+func (unavailableResolver) Resolve(context.Context, string, string) (share.Viewer, error) {
+	return share.Viewer{}, apperr.New(http.StatusServiceUnavailable, "DEPENDENCY_UNAVAILABLE", "分享服务未启用")
 }

@@ -71,6 +71,8 @@ type Config struct {
 	ShutdownTimeout time.Duration
 	// CORSOrigins 是允许的浏览器来源：网页域与 Capacitor 来源。
 	CORSOrigins []string
+	// WebBaseURL 是网页站点根地址（无尾部斜杠），用于拼接分享链接等需要回到网页的完整地址。
+	WebBaseURL string
 	// WorkerMaxJobs 是 worker 默认队列的最大并发。
 	WorkerMaxJobs int
 	// Keyring 是签名与派生密钥配置："kid=base64,..."，第一个为当前密钥。
@@ -138,6 +140,14 @@ func Load(getenv func(string) string) (Config, error) {
 		if !strings.HasPrefix(origin, "http://") && !strings.HasPrefix(origin, "https://") {
 			errs = append(errs, fmt.Errorf("%sCORS_ORIGINS 中的 %q 必须以 http:// 或 https:// 开头", Prefix, origin))
 		}
+	}
+
+	cfg.WebBaseURL = strings.TrimRight(get("WEB_BASE_URL", "http://localhost:5173"), "/")
+	switch {
+	case !strings.HasPrefix(cfg.WebBaseURL, "http://") && !strings.HasPrefix(cfg.WebBaseURL, "https://"):
+		errs = append(errs, fmt.Errorf("%sWEB_BASE_URL 必须以 http:// 或 https:// 开头", Prefix))
+	case cfg.Env == "prod" && !strings.HasPrefix(cfg.WebBaseURL, "https://"):
+		errs = append(errs, fmt.Errorf("%sWEB_BASE_URL 在生产环境必须是 https 地址", Prefix))
 	}
 
 	if n, err := strconv.Atoi(get("WORKER_MAX_JOBS", "20")); err != nil || n < 1 {

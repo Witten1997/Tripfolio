@@ -12,13 +12,7 @@ export type ItineraryKind = components['schemas']['ItineraryKind']
 export type ItineraryStatus = components['schemas']['ItineraryStatus']
 export type ItineraryQuery = NonNullable<operations['listItineraryItems']['parameters']['query']>
 
-export const itineraryKindLabels: Record<ItineraryKind, string> = {
-  attraction: '景点',
-  transport: '交通',
-  lodging: '住宿',
-  dining: '餐饮',
-  other: '其他',
-}
+export { itineraryKindLabels } from '@/shared/travel/itineraryKinds'
 
 export const itineraryStatusLabels: Record<ItineraryStatus, string> = {
   pending: '未完成',

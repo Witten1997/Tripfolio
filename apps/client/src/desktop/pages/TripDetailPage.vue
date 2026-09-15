@@ -5,6 +5,7 @@ import { useRoute } from 'vue-router'
 
 import IconAction from '@/desktop/components/IconAction.vue'
 import TripEditorDialog from '@/desktop/components/TripEditorDialog.vue'
+import TripShareDialog from '@/desktop/components/TripShareDialog.vue'
 import type { Trip } from '@/shared/api/trips'
 import { writeWarnings, type WriteOutcome } from '@/shared/api/writes'
 import { useMetadataStore } from '@/shared/stores/metadata'
@@ -17,6 +18,7 @@ const tripId = String(route.params.tripId)
 const context = provideTripContext(tripId)
 const { trip, loading, error, errorCode } = context
 const editor = ref<InstanceType<typeof TripEditorDialog>>()
+const shareDialog = ref<InstanceType<typeof TripShareDialog>>()
 const feedback = ref<string[]>([])
 const feedbackType = ref<'success' | 'warning'>('success')
 
@@ -84,6 +86,7 @@ onMounted(() => {
         </div>
         <div class="detail-actions tf-actions">
           <IconAction icon="refresh" label="刷新旅行" :loading="loading" @click="context.reload" />
+          <IconAction icon="share" label="分享旅行" @click="shareDialog?.open()" />
           <IconAction icon="edit" label="编辑旅行" type="primary" @click="editor?.open(trip)" />
         </div>
       </header>
@@ -107,6 +110,7 @@ onMounted(() => {
       <RouterView />
     </template>
     <TripEditorDialog ref="editor" @saved="saved" />
+    <TripShareDialog ref="shareDialog" :trip-id="tripId" />
   </div>
 </template>
 

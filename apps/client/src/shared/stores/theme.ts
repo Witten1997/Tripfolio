@@ -23,10 +23,10 @@ export const useThemeStore = defineStore('theme', () => {
     current.value = id
   }
 
-  async function restore() {
+  async function restore({ defaultOnly = false }: { defaultOnly?: boolean } = {}) {
     let saved: string | null = null
     try {
-      saved = await platform.preferences.get(THEME_PREFERENCE_KEY)
+      if (!defaultOnly) saved = await platform.preferences.get(THEME_PREFERENCE_KEY)
     } catch {
       saved = null
     }

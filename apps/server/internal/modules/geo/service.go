@@ -49,7 +49,13 @@ func (s *Service) Search(ctx context.Context, a actor.Actor, q, city string, lat
 	return places, mapError(err)
 }
 
+// Route 以账号 ID 作限流键算路。
 func (s *Service) Route(ctx context.Context, a actor.Actor, origin, destination Coordinate, mode Mode) (Route, error) {
+	return s.RouteAs(ctx, a.AccountID.String(), origin, destination, mode)
+}
+
+// RouteAs 以调用方指定的限流键算路，供分享访客等非账号身份使用；校验与错误映射与 Route 相同。
+func (s *Service) RouteAs(ctx context.Context, limitKey string, origin, destination Coordinate, mode Mode) (Route, error) {
 	if !origin.Valid() {
 		return Route{}, invalid("origin_latitude", "起点经纬度无效")
 	}
@@ -62,7 +68,7 @@ func (s *Service) Route(ctx context.Context, a actor.Actor, origin, destination 
 	if s.provider == nil {
 		return Route{}, unavailable()
 	}
-	route, err := s.provider.CalculateRoute(ctx, a.AccountID.String(), origin, destination, mode)
+	route, err := s.provider.CalculateRoute(ctx, limitKey, origin, destination, mode)
 	return route, mapError(err)
 }
 

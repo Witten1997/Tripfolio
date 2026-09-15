@@ -5,6 +5,7 @@ import { capacitorNetwork } from './capacitor/network'
 import { capacitorPreferences } from './capacitor/preferences'
 import { capacitorSecureStorage } from './capacitor/secureStorage'
 import type { Platform, PlatformKind } from './types'
+import { webClipboard } from './web/clipboard'
 import { webNetwork } from './web/network'
 import { webPreferences } from './web/preferences'
 import { webSecureStorage } from './web/secureStorage'
@@ -23,6 +24,7 @@ function createPlatform(): Platform {
   const isNative = kind !== 'web'
   return {
     kind,
+    clipboard: webClipboard,
     isNative,
     secureStorage: isNative ? capacitorSecureStorage : webSecureStorage,
     network: isNative ? capacitorNetwork : webNetwork,

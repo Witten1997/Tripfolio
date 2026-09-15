@@ -12,6 +12,7 @@ import (
 	"tripfolio/server/internal/foundation/actor"
 	"tripfolio/server/internal/foundation/apperr"
 	"tripfolio/server/internal/foundation/types"
+	"tripfolio/server/internal/modules/travel/share"
 	"tripfolio/server/internal/transport/httpapi/middleware"
 	"tripfolio/server/internal/transport/httpapi/problem"
 )
@@ -108,4 +109,13 @@ func parseVersionField(raw string) (int64, error) {
 		return 0, apperr.Validation(apperr.Field("base_version", "INVALID", "版本必须是不带前导零的正整数"))
 	}
 	return int64(v), nil
+}
+
+// mustViewer 取访客身份；缺失说明分享中间件未挂载或路径配置有误，按未认证处理。
+func mustViewer(ctx context.Context) (share.Viewer, error) {
+	v, ok := share.ViewerFromContext(ctx)
+	if !ok {
+		return share.Viewer{}, apperr.Unauthorized("AUTH_REQUIRED", "缺少分享令牌")
+	}
+	return v, nil
 }

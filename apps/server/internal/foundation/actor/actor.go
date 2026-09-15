@@ -48,3 +48,8 @@ func FromContext(ctx context.Context) (Actor, bool) {
 	a, ok := ctx.Value(ctxKey{}).(Actor)
 	return a, ok
 }
+
+// Without 返回移除了 Actor 的上下文；分享访客路径用它保证公开处理器读不到任何账号身份。
+func Without(ctx context.Context) context.Context {
+	return context.WithValue(ctx, ctxKey{}, nil)
+}

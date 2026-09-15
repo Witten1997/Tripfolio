@@ -26,3 +26,9 @@ describe('buildRoutes', () => {
     expect(detail?.redirect).toEqual({ name: 'trip-itinerary' })
   })
 })
+
+it.each(['desktop', 'mobile'] as const)('%s 壳提供不要求登录的访客分享页', (shell) => {
+  const route = buildRoutes(shell).find((r) => r.name === 'share')
+  expect(route?.path).toBe('/s/:token')
+  expect(route?.meta).toEqual({ public: true, share: true })
+})

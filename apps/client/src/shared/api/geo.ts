@@ -6,14 +6,9 @@ import { api } from '@/shared/api/client'
 export type GeoPlace = components['schemas']['GeoPlace']
 export type GeoCoordinate = components['schemas']['GeoCoordinate']
 export type GeoRoute = components['schemas']['GeoRoute']
-export type TravelMode = components['schemas']['GeoTravelMode']
+import type { TravelMode } from '@/shared/geo/travelModes'
+export { travelModeLabels, type TravelMode } from '@/shared/geo/travelModes'
 export type PlaceQuery = operations['searchPlaces']['parameters']['query']
-
-export const travelModeLabels: Record<TravelMode, string> = {
-  driving: '驾车',
-  walking: '步行',
-  cycling: '骑行',
-}
 
 /** 503 只有带 Retry-After 才自动重试，避免对凭证错误／耗尽配额重复算路。 */
 export class GeoRouteError extends ApiError {

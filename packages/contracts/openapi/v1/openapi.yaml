@@ -37,6 +37,8 @@ tags:
     description: 私有文件资产的上传授权、确认与下载授权
   - name: geo
     description: 高德地点搜索、选点与交通路线
+  - name: public
+    description: 访客凭分享令牌读取的只读接口
 security:
   - bearerAuth: []
 paths:
@@ -78,6 +80,16 @@ paths:
     $ref: ./paths/trips.yaml#/collection
   /trips/{trip_id}:
     $ref: ./paths/trips.yaml#/item
+  /trips/{trip_id}/share:
+    $ref: ./paths/shares.yaml#/share
+  /trips/{trip_id}/share/rotate:
+    $ref: ./paths/shares.yaml#/share-rotate
+  /public/trip:
+    $ref: ./paths/public.yaml#/trip
+  /public/itinerary-items:
+    $ref: ./paths/public.yaml#/itinerary-items
+  /public/routes:
+    $ref: ./paths/public.yaml#/routes
   /trips/{trip_id}/archive:
     $ref: ./paths/trips.yaml#/archive
   /recycle-bin/trips:
@@ -133,6 +145,11 @@ components:
       scheme: bearer
       bearerFormat: JWT
       description: 15 分钟有效的访问令牌；刷新与会话规则见接口设计 3.1
+    shareAuth:
+      type: apiKey
+      in: header
+      name: Authorization
+      description: 访客分享令牌，格式 `Share <token>`；令牌不出现在 URL 与日志中，见接口设计 2.11
   parameters:
     IdempotencyKey:
       $ref: ./schemas/write.yaml#/IdempotencyKey
@@ -389,6 +406,24 @@ components:
       $ref: ./schemas/asset.yaml#/DownloadAuthorizationBatchResponse
     AssetPage:
       $ref: ./schemas/asset.yaml#/AssetPage
+    TripShare:
+      $ref: ./schemas/share.yaml#/TripShare
+    TripShareResponse:
+      $ref: ./schemas/share.yaml#/TripShareResponse
+    PublicTrip:
+      $ref: ./schemas/share.yaml#/PublicTrip
+    PublicTripResponse:
+      $ref: ./schemas/share.yaml#/PublicTripResponse
+    PublicItineraryItem:
+      $ref: ./schemas/share.yaml#/PublicItineraryItem
+    PublicItineraryPage:
+      $ref: ./schemas/share.yaml#/PublicItineraryPage
+    PublicLeg:
+      $ref: ./schemas/share.yaml#/PublicLeg
+    PublicRoutes:
+      $ref: ./schemas/share.yaml#/PublicRoutes
+    PublicRoutesResponse:
+      $ref: ./schemas/share.yaml#/PublicRoutesResponse
   responses:
     BadRequest:
       description: 请求无法解析、含未知字段或游标无效（MALFORMED_REQUEST、INVALID_CURSOR）

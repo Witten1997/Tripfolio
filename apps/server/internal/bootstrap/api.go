@@ -31,6 +31,7 @@ import (
 	"tripfolio/server/internal/modules/metadata"
 	"tripfolio/server/internal/modules/travel/itinerary"
 	"tripfolio/server/internal/modules/travel/packing"
+	"tripfolio/server/internal/modules/travel/share"
 	"tripfolio/server/internal/modules/travel/todo"
 	"tripfolio/server/internal/modules/travel/trip"
 	"tripfolio/server/internal/transport/httpapi"
@@ -46,6 +47,7 @@ type Services struct {
 	Itinerary  *itinerary.Service
 	Packing    *packing.Service
 	Todos      *todo.Service
+	Shares     *share.Service
 	Ledger     *finance.LedgerService
 	Statistics *finance.StatisticsService
 	// Assets 始终装配；对象存储未配置时其授权类用例返回 503，读取类用例照常工作。
@@ -103,6 +105,11 @@ func BuildServices(pool *pgxpool.Pool, cfg config.Config, logger *slog.Logger, m
 		geoSvc = geoservice.NewService(places)
 	}
 
+	shares := share.NewService(share.Deps{
+		Store: travelpg.NewShareStore(pool), Trips: travelpg.NewTripReader(pool), Itinerary: travelpg.NewItineraryReader(pool),
+		Routes: geoSvc, Limiter: ratelimit.New(), Cursors: cursors, Clock: clk, WebBaseURL: cfg.WebBaseURL,
+	})
+
 	// 对象键推导、授权与 worker 读写都由同一个 S3Store 经 AssetsStore 适配提供；
 	// 未配置时保持接口为 nil（不能把 nil 指针赋给接口），服务按 503 降级、校验任务被推迟。
 	limits := uploadLimits(metadata.Current().UploadLimits)
@@ -126,7 +133,7 @@ func BuildServices(pool *pgxpool.Pool, cfg config.Config, logger *slog.Logger, m
 	return Services{
 		Identity: identity, Sessions: sessions, Profile: profile, Categories: categories,
 		Trips: trips, Itinerary: itineraries, Packing: packings, Todos: todos, Ledger: ledger, Statistics: statistics,
-		Assets: assetSvc, AssetVerifier: verifier, ObjectStore: objects, Geo: geoSvc,
+		Assets: assetSvc, AssetVerifier: verifier, ObjectStore: objects, Geo: geoSvc, Shares: shares,
 	}, nil
 }
 
@@ -231,7 +238,7 @@ func RunAPI(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		Cookies:  httpapi.CookieSettings{Secure: cfg.CookieSecure},
 		Identity: services.Identity, Sessions: services.Sessions, Profile: services.Profile, Categories: services.Categories,
 		Trips: services.Trips, Itinerary: services.Itinerary, Packing: services.Packing, Todos: services.Todos,
-		Ledger: services.Ledger, Statistics: services.Statistics, Assets: services.Assets, Geo: services.Geo,
+		Ledger: services.Ledger, Statistics: services.Statistics, Assets: services.Assets, Geo: services.Geo, Shares: services.Shares,
 	})
 	srv := httpapi.NewServer(cfg.HTTPAddr, router)
 	logger.Info("api 启动", "env", cfg.Env, "addr", cfg.HTTPAddr, "cors_origins", cfg.CORSOrigins, "cookie_secure", cfg.CookieSecure, "mail_driver", cfg.Mail.Driver)

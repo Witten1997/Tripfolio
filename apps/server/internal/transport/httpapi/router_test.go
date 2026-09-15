@@ -119,3 +119,18 @@ func TestUnknownRouteAndMethodUseProblemJSON(t *testing.T) {
 		}
 	}
 }
+
+func TestSharePathsDoNotRequireBearerButRequireShareToken(t *testing.T) {
+	r := newTestRouter(t, nil)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/public/trip", nil)
+	req.Header.Set("Authorization", "Share t000000000000000000001")
+	r.ServeHTTP(rec, req)
+	// 未装配 Sessions 与 Shares 的测试路由：不因缺 Bearer 返回 401 AUTH_REQUIRED，而是被分享中间件按未启用拒绝。
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if rec.Header().Get("X-Robots-Tag") != "noindex, nofollow" {
+		t.Fatalf("X-Robots-Tag = %q", rec.Header().Get("X-Robots-Tag"))
+	}
+}

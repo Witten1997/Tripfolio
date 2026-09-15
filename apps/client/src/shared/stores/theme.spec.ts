@@ -23,6 +23,14 @@ beforeEach(() => {
 })
 
 describe('useThemeStore', () => {
+  it('访客只用默认主题且不改写主人的偏好', async () => {
+    store.set(THEME_PREFERENCE_KEY, 'glass')
+    const theme = useThemeStore()
+    await theme.restore({ defaultOnly: true })
+    expect(theme.current).toBe('organic')
+    expect(document.documentElement.dataset.theme).toBe('organic')
+    expect(store.get(THEME_PREFERENCE_KEY)).toBe('glass')
+  })
   it('没有持久化值时恢复为默认主题', async () => {
     const theme = useThemeStore()
     await theme.restore()

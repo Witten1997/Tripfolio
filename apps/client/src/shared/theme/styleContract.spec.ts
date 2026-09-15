@@ -4,7 +4,7 @@ import baseStyles from '@/styles/base.css?raw'
 import elementStyles from '@/styles/bridge/element-plus.css?raw'
 
 /** 页面、壳与组件的样式只能引用 --tf-* 令牌；违反时在这里失败，而不是在视觉审查时才发现。 */
-const files = import.meta.glob<string>('../../{desktop,mobile}/**/*.{vue,css}', {
+const files = import.meta.glob<string>('../../{desktop,mobile,share}/**/*.{vue,css}', {
   query: '?raw',
   import: 'default',
   eager: true,

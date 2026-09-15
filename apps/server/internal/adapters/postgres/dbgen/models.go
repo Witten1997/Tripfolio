@@ -374,3 +374,14 @@ type Trip struct {
 	PurgeAfterAt     *time.Time
 	PurgeRequestedAt *time.Time
 }
+
+type TripShare struct {
+	ID           uuid.UUID
+	AccountID    uuid.UUID
+	TripID       uuid.UUID
+	Token        string
+	CreatedAt    time.Time
+	RotatedAt    *time.Time
+	LastViewedAt *time.Time
+	ViewCount    int64
+}

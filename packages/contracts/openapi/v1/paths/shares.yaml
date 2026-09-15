@@ -1,0 +1,81 @@
+share:
+  parameters:
+    - name: trip_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  get:
+    tags: [travel]
+    operationId: getTripShare
+    summary: 读取旅行的分享链接；未开启返回 404 SHARE_NOT_FOUND
+    responses:
+      '200':
+        description: 当前分享记录
+        content:
+          application/json:
+            schema:
+              $ref: ../openapi.yaml#/components/schemas/TripShareResponse
+      '401':
+        $ref: ../openapi.yaml#/components/responses/Unauthorized
+      '404':
+        $ref: ../openapi.yaml#/components/responses/NotFound
+      '410':
+        $ref: ../openapi.yaml#/components/responses/Gone
+  put:
+    tags: [travel]
+    operationId: enableTripShare
+    summary: 开启分享；已开启时原样返回。分享不进入同步体系，不带幂等键与 If-Match
+    responses:
+      '200':
+        description: 分享记录（新建或已有）
+        content:
+          application/json:
+            schema:
+              $ref: ../openapi.yaml#/components/schemas/TripShareResponse
+      '401':
+        $ref: ../openapi.yaml#/components/responses/Unauthorized
+      '404':
+        $ref: ../openapi.yaml#/components/responses/NotFound
+      '410':
+        $ref: ../openapi.yaml#/components/responses/Gone
+  delete:
+    tags: [travel]
+    operationId: disableTripShare
+    summary: 关闭分享，旧链接立即失效；未开启也返回 204
+    responses:
+      '204':
+        description: 已关闭
+      '401':
+        $ref: ../openapi.yaml#/components/responses/Unauthorized
+      '404':
+        $ref: ../openapi.yaml#/components/responses/NotFound
+      '410':
+        $ref: ../openapi.yaml#/components/responses/Gone
+
+share-rotate:
+  parameters:
+    - name: trip_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  post:
+    tags: [travel]
+    operationId: rotateTripShare
+    summary: 重新生成分享令牌，旧链接立即失效；未开启返回 404 SHARE_NOT_FOUND
+    responses:
+      '200':
+        description: 新令牌的分享记录
+        content:
+          application/json:
+            schema:
+              $ref: ../openapi.yaml#/components/schemas/TripShareResponse
+      '401':
+        $ref: ../openapi.yaml#/components/responses/Unauthorized
+      '404':
+        $ref: ../openapi.yaml#/components/responses/NotFound
+      '410':
+        $ref: ../openapi.yaml#/components/responses/Gone

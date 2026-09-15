@@ -1,4 +1,6 @@
 import {
+  Copy,
+  Share2,
   ChevronDown,
   ChevronUp,
   Globe,
@@ -15,6 +17,8 @@ import {
 /** 按需导入 Lucide，尺寸、描边与颜色由 ActionIcon 统一提供。 */
 export const actionIcons = {
   home: House,
+  share: Share2,
+  copy: Copy,
   edit: Pencil,
   trash: Trash2,
   theme: Palette,
