@@ -77,7 +77,8 @@ type Config struct {
 	WorkerMaxJobs int
 	// Keyring 是签名与派生密钥配置："kid=base64,..."，第一个为当前密钥。
 	Keyring string
-	// CookieSecure 控制刷新 Cookie 是否带 Secure 与 __Host- 前缀；生产必须为 true。
+	// CookieSecure 控制刷新 Cookie 是否带 Secure 与 __Host- 前缀：跟随站点协议自动决定
+	// （https 在 prod 下默认开启，http 一律关闭），可用 TRIPFOLIO_COOKIE_SECURE 显式覆盖。
 	CookieSecure bool
 	// PasswordHashConcurrency 是 Argon2id 的并发上限。
 	PasswordHashConcurrency int
@@ -154,8 +155,7 @@ func Load(getenv func(string) string) (Config, error) {
 		}
 	}
 
-	// COOKIE_SECURE 的解析要早于站点地址校验：显式设为 false 等于声明「这套部署没有 TLS」，
-	// 允许 prod 用 http 起服务（仅告警），否则仍然按配置错误拦下。
+	// COOKIE_SECURE 只在显式设置时才覆盖下面的自动判定，非法值仍然是配置错误。
 	var cookieSecureSet, cookieSecureValue bool
 	if raw := get("COOKIE_SECURE", ""); raw != "" {
 		if b, err := strconv.ParseBool(raw); err != nil {
@@ -166,19 +166,32 @@ func Load(getenv func(string) string) (Config, error) {
 	}
 
 	cfg.WebBaseURL = strings.TrimRight(get("WEB_BASE_URL", "http://localhost:5173"), "/")
-	switch {
-	case !strings.HasPrefix(cfg.WebBaseURL, "http://") && !strings.HasPrefix(cfg.WebBaseURL, "https://"):
+	if !strings.HasPrefix(cfg.WebBaseURL, "http://") && !strings.HasPrefix(cfg.WebBaseURL, "https://") {
 		errs = append(errs, fmt.Errorf("%sWEB_BASE_URL 必须以 http:// 或 https:// 开头", Prefix))
-	case cfg.Env == "prod" && !strings.HasPrefix(cfg.WebBaseURL, "https://"):
-		if cookieSecureSet && !cookieSecureValue {
+	}
+
+	// 刷新 Cookie 的 Secure 与 __Host- 前缀跟随站点协议自动决定：https 用 Secure（prod 默认），
+	// http 一律关闭。纯 http 部署不再要求额外的开关——自托管里 http 很常见，把「没有 TLS」当成
+	// 配置错误只会把人挡在门外；需要强调的是取舍本身，所以只告警不报错。
+	// TRIPFOLIO_COOKIE_SECURE 仍可显式覆盖（例如前面已有 HTTPS 代理但地址暂时写成 http）。
+	insecureSite := strings.HasPrefix(cfg.WebBaseURL, "http://")
+	switch {
+	case cookieSecureSet:
+		cfg.CookieSecure = cookieSecureValue
+		if cfg.CookieSecure && insecureSite {
 			cfg.Warnings = append(cfg.Warnings,
-				"生产环境使用 http 站点地址，且已显式设置 TRIPFOLIO_COOKIE_SECURE=false："+
-					"分享链接是 http、刷新 Cookie 不再带 Secure，仅适合内网或个人自用；对外请在前面加一层 HTTPS 反向代理并改回 https")
-		} else {
-			errs = append(errs, fmt.Errorf(
-				"%sWEB_BASE_URL 在生产环境必须是 https 地址；确定是纯 http 部署时，显式设置 %sCOOKIE_SECURE=false 以确认这一取舍",
-				Prefix, Prefix))
+				"站点地址是 http 却显式设置了 TRIPFOLIO_COOKIE_SECURE=true：浏览器不会回传带 Secure 的 Cookie，"+
+					"登录会表现为「登录后又变回未登录」；请去掉该变量或把站点改成 https")
 		}
+	case insecureSite:
+		cfg.CookieSecure = false
+		if cfg.Env == "prod" {
+			cfg.Warnings = append(cfg.Warnings,
+				"站点地址是 http：分享链接为 http、刷新 Cookie 不以 Secure 传输，仅适合内网或个人自用；"+
+					"对外请在前面加一层 HTTPS 反向代理并把 TRIPFOLIO_WEB_BASE_URL 改成 https")
+		}
+	default:
+		cfg.CookieSecure = cfg.Env == "prod"
 	}
 
 	if n, err := strconv.Atoi(get("WORKER_MAX_JOBS", "20")); err != nil || n < 1 {
@@ -195,13 +208,6 @@ func Load(getenv func(string) string) (Config, error) {
 
 	if cfg.Keyring == "" && cfg.Env == "prod" {
 		errs = append(errs, fmt.Errorf("%sKEYRING 在生产环境必须设置", Prefix))
-	}
-
-	switch {
-	case cookieSecureSet:
-		cfg.CookieSecure = cookieSecureValue
-	default:
-		cfg.CookieSecure = cfg.Env == "prod"
 	}
 
 	// 非 prod 会放宽若干校验（邮件可用 log 驱动、高德缺失只告警），

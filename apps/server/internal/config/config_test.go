@@ -261,7 +261,7 @@ func TestProdDefaultsToVirtualHostAddressing(t *testing.T) {
 	}
 }
 
-func TestWebBaseURLDefaultsInDevAndRequiresHTTPSInProd(t *testing.T) {
+func TestWebBaseURLDefaultsInDevAndAcceptsPlainHTTPInProd(t *testing.T) {
 	cfg, err := config.Load(envFrom(map[string]string{"TRIPFOLIO_DATABASE_URL": "postgres://u:p@localhost:5432/db"}))
 	if err != nil {
 		t.Fatal(err)
@@ -289,53 +289,77 @@ func TestWebBaseURLDefaultsInDevAndRequiresHTTPSInProd(t *testing.T) {
 		t.Errorf("缺少协议应报错: %v", err)
 	}
 
-	_, err = config.Load(envFrom(map[string]string{
-		"TRIPFOLIO_ENV":            "prod",
-		"TRIPFOLIO_DATABASE_URL":   "postgres://u:p@localhost:5432/db",
-		"TRIPFOLIO_KEYRING":        "k1=" + strings.Repeat("A", 44),
-		"TRIPFOLIO_MAIL_DRIVER":    "smtp",
-		"TRIPFOLIO_MAIL_SMTP_HOST": "smtpdm.aliyun.com",
-		"TRIPFOLIO_MAIL_FROM":      "no-reply@example.com",
-		"TRIPFOLIO_WEB_BASE_URL":   "http://trip.example.com",
+	// 纯 http 部署是自托管的常见形态，不再要求额外的开关；代价（分享链接是 http、
+	// 刷新 Cookie 不带 Secure）通过启动告警说明。
+	prodHTTP, err := config.Load(envFrom(map[string]string{
+		"TRIPFOLIO_ENV":                  "prod",
+		"TRIPFOLIO_DATABASE_URL":         "postgres://u:p@localhost:5432/db",
+		"TRIPFOLIO_KEYRING":              "k1=" + strings.Repeat("A", 44),
+		"TRIPFOLIO_MAIL_DRIVER":          "disabled",
+		"TRIPFOLIO_WEB_BASE_URL":         "http://trip.example.com:61118",
+		"TRIPFOLIO_AMAP_WEB_SERVICE_KEY": "amap-key",
 	}))
-	if err == nil || !strings.Contains(err.Error(), "WEB_BASE_URL") {
-		t.Errorf("生产环境非 https 分享地址应报错: %v", err)
+	if err != nil {
+		t.Fatalf("prod 配 http 站点地址应可启动：%v", err)
+	}
+	if prodHTTP.CookieSecure {
+		t.Error("http 站点应自动关闭 Secure Cookie")
+	}
+	if !slices.ContainsFunc(prodHTTP.Warnings, func(w string) bool { return strings.Contains(w, "http") }) {
+		t.Errorf("应告警说明 http 部署的代价：%v", prodHTTP.Warnings)
 	}
 }
 
-// prod 要求 https 站点地址，是因为 Secure Cookie 在 http 下不会被浏览器回传、登录会静默失效。
-// 显式关闭 COOKIE_SECURE 等于部署方确认「这套部署没有 TLS」，此时放行但必须留下告警。
-func TestProdPlainHTTPNeedsExplicitCookieSecureOptOut(t *testing.T) {
+// 站点地址决定了刷新 Cookie 是否带 Secure：http 不会被浏览器回传，带 Secure 就会静默失效。
+// 纯 http 部署不再需要任何开关：Secure 跟随站点协议自动关闭，只留一条告警。
+// 反过来，站点是 http 却硬把 Secure 打开会得到明确提醒——浏览器不会回传这种 Cookie。
+func TestCookieSecureFollowsSiteScheme(t *testing.T) {
 	base := map[string]string{
-		"TRIPFOLIO_ENV":                           "prod",
-		"TRIPFOLIO_DATABASE_URL":                  "postgres://u:p@localhost:5432/db",
-		"TRIPFOLIO_KEYRING":                       "k1=" + strings.Repeat("A", 44),
-		"TRIPFOLIO_MAIL_DRIVER":                   "smtp",
-		"TRIPFOLIO_MAIL_SMTP_HOST":                "smtpdm.aliyun.com",
-		"TRIPFOLIO_MAIL_FROM":                     "no-reply@example.com",
-		"TRIPFOLIO_OBJECTSTORE_ENDPOINT":          "https://oss-cn-hangzhou.aliyuncs.com",
-		"TRIPFOLIO_OBJECTSTORE_BUCKET":            "tripfolio",
-		"TRIPFOLIO_OBJECTSTORE_ACCESS_KEY_ID":     "ak",
-		"TRIPFOLIO_OBJECTSTORE_SECRET_ACCESS_KEY": "sk",
-		"TRIPFOLIO_AMAP_WEB_SERVICE_KEY":          "amap-key",
-		"TRIPFOLIO_WEB_BASE_URL":                  "http://trip.example.com",
+		"TRIPFOLIO_ENV":                  "prod",
+		"TRIPFOLIO_DATABASE_URL":         "postgres://u:p@localhost:5432/db",
+		"TRIPFOLIO_KEYRING":              "k1=" + strings.Repeat("A", 44),
+		"TRIPFOLIO_MAIL_DRIVER":          "disabled",
+		"TRIPFOLIO_AMAP_WEB_SERVICE_KEY": "amap-key",
+		"TRIPFOLIO_WEB_BASE_URL":         "http://trip.example.com:61118",
 	}
 
-	_, err := config.Load(envFrom(base))
-	if err == nil || !strings.Contains(err.Error(), "COOKIE_SECURE=false") {
-		t.Fatalf("未显式确认时应报错并提示显式设置 COOKIE_SECURE=false: %v", err)
-	}
-
-	base["TRIPFOLIO_COOKIE_SECURE"] = "false"
+	// 默认（无 COOKIE_SECURE）：http 自动关闭并告警。
 	cfg, err := config.Load(envFrom(base))
 	if err != nil {
-		t.Fatalf("显式关闭 Secure Cookie 后应可启动: %v", err)
+		t.Fatalf("http 站点无需额外开关即可启动：%v", err)
 	}
 	if cfg.CookieSecure {
-		t.Error("CookieSecure 应为 false")
+		t.Error("http 站点应自动关闭 Secure Cookie")
 	}
 	if !slices.ContainsFunc(cfg.Warnings, func(w string) bool { return strings.Contains(w, "http") }) {
 		t.Errorf("缺少 http 部署告警: %v", cfg.Warnings)
+	}
+
+	// http 站点上强行打开 Secure：放行但必须提醒登录会失效。
+	base["TRIPFOLIO_COOKIE_SECURE"] = "true"
+	forced, err := config.Load(envFrom(base))
+	if err != nil {
+		t.Fatalf("显式设置 COOKIE_SECURE 仍应可启动：%v", err)
+	}
+	if !forced.CookieSecure {
+		t.Error("显式 COOKIE_SECURE=true 应生效")
+	}
+	if !slices.ContainsFunc(forced.Warnings, func(w string) bool { return strings.Contains(w, "Secure") }) {
+		t.Errorf("http + Secure 应告警登录会失效: %v", forced.Warnings)
+	}
+
+	// 站点是 https：prod 默认开启，且没有 http 相关告警。
+	delete(base, "TRIPFOLIO_COOKIE_SECURE")
+	base["TRIPFOLIO_WEB_BASE_URL"] = "https://trip.example.com"
+	secure, err := config.Load(envFrom(base))
+	if err != nil {
+		t.Fatalf("https 站点应可启动：%v", err)
+	}
+	if !secure.CookieSecure {
+		t.Error("https + prod 应默认开启 Secure Cookie")
+	}
+	if len(secure.Warnings) != 0 {
+		t.Errorf("规范的 https 配置不该有告警: %v", secure.Warnings)
 	}
 }
 

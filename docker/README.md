@@ -15,11 +15,11 @@
 ## 前置条件
 
 - Docker 与 Compose v2。
-- **已有的 PostgreSQL**：库已创建，账号能建表（启动时会自动迁移，需要 `CREATE TABLE`/`ALTER TABLE`/`CREATE INDEX`）。
+- **已有的 PostgreSQL 13 及以上**：库已创建，账号能建表（启动时会自动迁移，需要 `CREATE TABLE`/`ALTER TABLE`/`CREATE INDEX`）。开发与 CI 用 18；迁移与查询不使用 PostgreSQL 15+ 专有语法，自托管的 13/14 同样可跑（头像外键的删除语义由触发器实现，见数据库设计 v0.5）。
 - **阿里云 OSS 桶（可选）**：使用文件上传与下载时配置；配好 CORS（见下文），浏览器要能直接访问 OSS 域名。
 - **高德两套凭证**：Web 服务 Key（后端用）、JS API Key 与安全密钥（前端与代理用）。
 - **SMTP 账号（可选）**：用于注册与找回密码的验证码；生产环境不配置时禁用发信，已有账号仍可用密码登录。
-- HTTPS 可选：本编排不终结 TLS。没有 HTTPS 时保留 `prod` 并显式设置 `TRIPFOLIO_COOKIE_SECURE=false`（见下文）；对外服务可在前面放一层 Nginx/Caddy/云负载均衡。
+- HTTPS 可选：本编排不终结 TLS。直接以 http 访问**不需要任何额外配置**（Secure Cookie 跟随协议自动关闭，见下文）；对外服务可在前面放一层 Nginx/Caddy/云负载均衡。
 
 ## 首次部署
 
@@ -27,10 +27,11 @@
 cd docker
 cp .env.example .env
 
-# 生成签名主密钥，填进 TRIPFOLIO_KEYRING
+# 生成签名主密钥（用部署包的 install.sh 时会自动完成，手工部署才需要）
+# 正确写法是两个等号：TRIPFOLIO_KEYRING=k1=<下面命令的输出>
 openssl rand -base64 32
 
-${EDITOR:-vi} .env      # 站点地址、数据库连接串、签名密钥、高德凭证；OSS 与邮件可选
+${EDITOR:-vi} .env      # 站点地址、数据库连接串、高德凭证；OSS、邮件与签名密钥都可留空/可选
 docker compose up -d --build
 docker compose logs -f app
 ```
@@ -75,7 +76,7 @@ sudo ./install.sh         # 等价于 docker load -i tripfolio-*.tar + docker co
 配好 SSH 免密后，可以用 `scripts/docker-deploy-nas.sh` 把「构建 → 导出 → 上传 → 导入 → 重启」串起来：
 
 ```bash
-cp scripts/.deploy.env.example scripts/.deploy.env   # 填 NAS 地址、账号与部署目录（该文件不入库）
+cp scripts/.deploy.env.example scripts/.deploy.env.example   # 填 NAS 地址、账号与部署目录（该文件不入库）
 bash scripts/docker-deploy-nas.sh 2026.09.15
 ```
 
@@ -91,19 +92,19 @@ bash scripts/docker-deploy-nas.sh 2026.09.15
 
 ## 配置变量
 
-| 变量                             | 说明                                                                      |
-| -------------------------------- | ------------------------------------------------------------------------- |
-| `TRIPFOLIO_ENV`                  | 部署用 `prod`，本地开发用 `dev`；纯 http 部署须显式关闭 Secure Cookie     |
-| `TRIPFOLIO_DATABASE_URL`         | 已有 PostgreSQL 的连接串；宿主机上的库用 `host.docker.internal`           |
-| `TRIPFOLIO_KEYRING`              | `k1=<openssl rand -base64 32>`；丢失会让所有会话失效，多副本必须一致      |
-| `TRIPFOLIO_WEB_BASE_URL`         | 站点根地址，`prod` 必须是 https；用于拼分享链接                           |
-| `TRIPFOLIO_CORS_ORIGINS`         | 网页域 + `https://localhost`（安卓包来源）                                |
-| `TRIPFOLIO_MAIL_*`               | 可选；`prod` 下驱动留空默认 `disabled`，启用邮件设为 `smtp`，不允许 `log` |
-| `TRIPFOLIO_OBJECTSTORE_*`        | 可选；使用 OSS 时配齐端点、桶、AK/SK，`USE_PATH_STYLE=false`              |
-| `TRIPFOLIO_AMAP_WEB_SERVICE_KEY` | 后端高德 Web 服务 Key（`prod` 必填）                                      |
-| `TRIPFOLIO_AMAP_JSCODE`          | JS API 安全密钥，供 `/_AMapService` 代理使用                              |
-| `VITE_AMAP_JS_KEY`               | 前端 JS API Key，**编译期**注入；改了要重新 `docker compose build`        |
-| `TRIPFOLIO_COOKIE_SECURE`        | 可选：`prod` + http 部署时必须显式设为 `false`；有 HTTPS 时不要设置       |
+| 变量                             | 说明                                                                                                                                                                    |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `TRIPFOLIO_ENV`                  | 部署用 `prod`，本地开发用 `dev`                                                                                                                                         |
+| `TRIPFOLIO_DATABASE_URL`         | 已有 PostgreSQL 的连接串；宿主机上的库用 `host.docker.internal`                                                                                                         |
+| `TRIPFOLIO_KEYRING`              | 签名与派生密钥。用部署包 `install.sh` 时**留空即自动生成**；手工部署写 `k1=<openssl rand -base64 32>`。丢失会让所有会话、游标与验证码失效，多副本必须一致               |
+| `TRIPFOLIO_WEB_BASE_URL`         | 站点根地址（无尾部斜杠），http／https 都行；用于拼分享链接与判定 Cookie 的 `Secure`。**不能删**：删掉会退回默认 `http://localhost:5173`，分享出去的链接会指向 localhost |
+| `TRIPFOLIO_CORS_ORIGINS`         | 网页域 + `https://localhost`（安卓包来源）                                                                                                                              |
+| `TRIPFOLIO_MAIL_*`               | 可选；`prod` 下驱动留空默认 `disabled`，启用邮件设为 `smtp`，不允许 `log`                                                                                               |
+| `TRIPFOLIO_OBJECTSTORE_*`        | 可选；使用 OSS 时配齐端点、桶、AK/SK，`USE_PATH_STYLE=false`                                                                                                            |
+| `TRIPFOLIO_AMAP_WEB_SERVICE_KEY` | 后端高德 Web 服务 Key（`prod` 必填）                                                                                                                                    |
+| `TRIPFOLIO_AMAP_JSCODE`          | JS API 安全密钥，供 `/_AMapService` 代理使用                                                                                                                            |
+| `VITE_AMAP_JS_KEY`               | 前端 JS API Key，**编译期**注入；改了要重新 `docker compose build`                                                                                                      |
+| `TRIPFOLIO_COOKIE_SECURE`        | 一般不用配：Secure 跟随站点协议自动决定（https 开、http 关）。仅在特殊场景（如已有代理但地址写成 http）显式覆盖                                                         |
 
 `TRIPFOLIO_AUTO_MIGRATE`（默认 `true`）控制启动时是否自动迁移；设为 `false` 时启动会核对结构版本，落后就拒绝启动而不是带着旧结构运行。`TRIPFOLIO_STARTUP_DB_TIMEOUT`（默认 `60s`）是等待数据库可达的上限。
 
@@ -134,33 +135,34 @@ OSS 端点本身是公网地址，浏览器可以直传，不需要额外暴露�
 
 ## 没有 HTTPS 时
 
-本编排不提供证书。直接以 http 访问（内网 IP、个人服务器）时，推荐**保留 `prod` 并显式确认**：
+本编排不提供证书。直接以 http 访问（内网 IP、个人服务器）**不需要任何额外配置**，保留 `prod` 即可：
 
 ```ini
 TRIPFOLIO_ENV=prod
 TRIPFOLIO_WEB_BASE_URL=http://192.168.1.10:8080
 TRIPFOLIO_CORS_ORIGINS=http://192.168.1.10:8080,https://localhost
-TRIPFOLIO_COOKIE_SECURE=false      # 显式声明「这套部署没有 TLS」
 ```
 
-这样仍保留 prod 的严格校验（签名密钥与高德 Web 服务 key 必填，邮件可禁用，启用时不得用 log），启动时会打印一条风险告警：分享链接是 http、刷新 Cookie 不再带 `Secure`。如果不写这一行，启动会以配置错误拒绝——因为 `prod` 默认要求 https 且 Cookie 带 `Secure`，而浏览器在 http 下不会回传这种 Cookie，登录会表现为「登录后又变回未登录」。
+刷新 Cookie 的 `Secure` 与 `__Host-` 前缀会**跟随站点协议自动决定**：`https` 开启（prod 默认），`http` 自动关闭。启动日志里会打印一条告警说明代价：分享链接是 http、刷新 Cookie 不以 Secure 传输，仅适合内网或个人自用。其余 prod 严格校验（签名密钥与高德 Web 服务 key 必填、邮件启用时不得用 `log`）保持不变。
 
-另一种做法是把 `TRIPFOLIO_ENV` 设为 `dev`：它同样能跑 http，但会放宽若干校验（邮件允许 `log` 驱动、签名密钥缺失只告警、对象存储与高德 key 缺失也不阻塞），启动日志里会有对应提醒；适合本地或内网试跑，不建议用于对外服务。
+想让 `Secure` 强制开启（例如前面已经有 HTTPS 代理但地址暂时写成 http）可以显式设 `TRIPFOLIO_COOKIE_SECURE=true`；反过来，站点是 https 但只想在 http 下限时自测也可以设为 `false`。变量与站点协议冲突时启动日志会提醒——Secure Cookie 在 http 下不会被浏览器回传，登录会表现为「登录后又变回未登录」。
 
-需要 HTTPS 时在前面加一层反向代理（Nginx / Caddy / 云 LB），把 `/`、`/api/*`、`/health/*`、`/_AMapService/*` 转发到 `127.0.0.1:8080`，然后把 `TRIPFOLIO_WEB_BASE_URL` 改成 https 域名并去掉 `TRIPFOLIO_COOKIE_SECURE` 那一行。
+不推荐为了跑 http 而把 `TRIPFOLIO_ENV` 改成 `dev`：它同样能跑 http，但会放宽若干校验（邮件允许 `log` 驱动、签名密钥缺失只告警、对象存储与高德 key 缺失也不阻塞），只适合本地或内网试跑。
+
+需要 HTTPS 时在前面加一层反向代理（Nginx / Caddy / 云 LB），把 `/`、`/api/*`、`/health/*`、`/_AMapService/*` 转发到 `127.0.0.1:8080`，然后把 `TRIPFOLIO_WEB_BASE_URL` 改成 https 域名——`Secure` 会自动恢复。
 
 ## 启动失败排查
 
 启动失败时容器会打印一个中文排查块（阶段、原因、逐条建议），并按阶段返回退出码：
 
-| 退出码 | 阶段       | 常见原因与处理                                                                                                                                                                       |
-| ------ | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 2      | 读取配置   | 变量缺失或格式错误，报错会点名变量。`prod` 要求 https 站点地址（或显式 `TRIPFOLIO_COOKIE_SECURE=false`）、签名密钥与高德 key；邮件和对象存储可不配置，显式选择 smtp 时仍校验邮件配置 |
-| 3      | 连接数据库 | `host.docker.internal` 没写对、库没建、密码错、安全组不放行、外部库启动慢（调大 `TRIPFOLIO_STARTUP_DB_TIMEOUT`）；密码含 `@ : / ? #` 要按 URL 编码                                   |
-| 4      | 数据库迁移 | 账号没有建表权限、另一个进程正在迁移（会话锁）、某个迁移语句报错（日志里有版本号，对应 `db/migrations/` 下同名文件）                                                                 |
-| 5      | 装配与任务 | 对象存储或高德客户端创建失败、`TRIPFOLIO_KEYRING` 不是合法 base64                                                                                                                    |
-| 6      | HTTP 监听  | 端口被占用、`TRIPFOLIO_HTTP_ADDR` 与端口映射不一致                                                                                                                                   |
-| 1      | 其他       | 见原因行                                                                                                                                                                             |
+| 退出码 | 阶段       | 常见原因与处理                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ------ | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2      | 读取配置   | 变量缺失或格式错误，报错会点名变量。`prod` 要求签名密钥与高德 key；站点地址 http／https 都行（Secure Cookie 自动跟随协议）；邮件和对象存储可不配置，显式选择 smtp 时仍校验邮件配置                                                                                                                                                                                                                                |
+| 3      | 连接数据库 | `host.docker.internal` 没写对、库没建、密码错、安全组不放行、外部库启动慢（调大 `TRIPFOLIO_STARTUP_DB_TIMEOUT`）；密码含 `@ : / ? #` 要按 URL 编码                                                                                                                                                                                                                                                                |
+| 4      | 数据库迁移 | 账号没有建表权限、另一个进程正在迁移（会话锁）、某个迁移语句报错（日志里有版本号，对应 `db/migrations/` 下同名文件）。若报 `syntax error at or near "("`，先确认数据库版本 `SELECT version();` ≥ 13                                                                                                                                                                                                               |
+| 5      | 装配与任务 | ①装配：对象存储或高德客户端创建失败、`TRIPFOLIO_KEYRING` 不是合法 base64；②后台任务：报 `producer.StartWorkContext timed out after 10s` 时看失败块里的「现场信息」——数据库探测正常就说明是锁等待或瞬时抖动（已自动重试 3 次），用 `SELECT pid, state, now()-xact_start AS xact_age, left(query,80) FROM pg_stat_activity WHERE datname = current_database() ORDER BY xact_start NULLS LAST;` 找长时间未提交的事务 |
+| 6      | HTTP 监听  | 端口被占用、`TRIPFOLIO_HTTP_ADDR` 与端口映射不一致                                                                                                                                                                                                                                                                                                                                                                |
+| 1      | 其他       | 见原因行                                                                                                                                                                                                                                                                                                                                                                                                          |
 
 常用命令：
 
@@ -175,6 +177,7 @@ docker compose up -d --force-recreate                   # 改完 .env 后重建�
 几类具体症状：
 
 - **页面能开但接口 401／一直未登录**：多半是 `prod` + http 的组合，见上一节。
+- **点获取验证码报「请求来源不被允许」（403 `CSRF_FAILED`）**：`TRIPFOLIO_CORS_ORIGINS` 与浏览器实际来源不一致，最常见的是**漏了端口**（站点在 `https://example.com:61118`，列表却只写 `https://example.com`）。浏览器对 POST 一律带 `Origin`，即使同源；来源是「协议＋主机＋端口」的完整值。按实际访问地址补齐后 `docker compose up -d --force-recreate`。
 - **页面提示「前端产物没有嵌入这个二进制」**：镜像构建时前端阶段失败或用了旧镜像，重新 `docker compose build --no-cache`。
 - **地图空白、控制台报 `_AMapService` 失败**：`TRIPFOLIO_AMAP_JSCODE` 未配，或 `VITE_AMAP_JS_KEY` 没在构建期传入（改 Key 必须重新 build）。
 - **上传失败、浏览器报 CORS**：OSS 桶的 CORS 少了 `PUT`/`ETag`，或来源域名不匹配。

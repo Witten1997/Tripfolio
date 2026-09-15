@@ -51,8 +51,8 @@ docker compose up -d --build
 
 - 编排（`docker/docker-compose.yaml`）里只有一个 `app` 服务：PostgreSQL 与对象存储都用已有服务（生产对象存储用阿里云 OSS），不在编排里再起数据库或 MinIO。
 - 容器启动即自动迁移（`TRIPFOLIO_AUTO_MIGRATE`，默认 `true`）；需要单独跑迁移时用 `tripfolio migrate up|status|down`，容器健康检查用 `tripfolio healthcheck`。
-- 编排默认不终结 TLS：直接以 http 访问（内网 IP、个人服务器）时显式设置 `TRIPFOLIO_COOKIE_SECURE=false` 表示确认无 TLS（启动会打印风险告警），否则 `prod` 会因为要求 https 而拒绝启动；需要 HTTPS 时在前面放一层 Nginx / Caddy / 云负载均衡，转发 `/`、`/api/*`、`/health/*` 与 `/_AMapService/*` 到 8080 端口。
-- 生产环境（`TRIPFOLIO_ENV=prod`）要求 https 站点地址（纯 http 须显式设置 `TRIPFOLIO_COOKIE_SECURE=false`）、签名密钥与高德 Web 服务 Key；邮件和对象存储可不配置。邮件驱动留空时默认 `disabled`，验证码接口返回 503，已有账号仍可用密码登录；对象存储未配齐时文件授权接口返回 503。配置错误会打印中文排查块（退出码 2 配置、3 数据库、4 迁移、5 装配与任务、6 HTTP 监听）。
+- 编排默认不终结 TLS：直接以 http 访问（内网 IP、个人服务器、NAS 端口映射）就能用，站点地址填 `http://…` 即可，刷新 Cookie 的 `Secure` 会自动跟着协议关掉并打印一条风险告警（不用配 `TRIPFOLIO_COOKIE_SECURE`）；要 HTTPS 时在前面放一层 Nginx / Caddy / 云负载均衡，转发 `/`、`/api/*`、`/health/*` 与 `/_AMapService/*` 到 8080 端口。
+- 生产环境（`TRIPFOLIO_ENV=prod`）要求签名密钥与高德 Web 服务 Key，站点地址 http／https 都行；邮件和对象存储可不配置。邮件驱动留空时默认 `disabled`，验证码接口返回 503，已有账号仍可用密码登录；对象存储未配齐时文件授权接口返回 503。配置错误会打印中文排查块（退出码 2 配置、3 数据库、4 迁移、5 装配与任务、6 HTTP 监听）。
 - 前端是直传，对象存储端点必须是浏览器能直接访问的地址；OSS 桶要在控制台配置 CORS（允许 `PUT/GET/HEAD`、暴露 `ETag`）。
 - 部署到 NAS（群晖等）时不需要在 NAS 上编译：`bash scripts/docker-image.sh` 会构建镜像并导出 tar 与部署包，导入后按 `docker-compose.yaml` 启动。
 

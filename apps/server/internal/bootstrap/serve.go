@@ -95,7 +95,7 @@ func ReportStartupFailure(w io.Writer, err error) {
 func NewConfigError(err error) *StartupError {
 	return &StartupError{Phase: PhaseConfig, Cause: err, Hints: []string{
 		"按上面的报错逐个补齐环境变量，变量含义与示例见 apps/server/.env.example 与 docker/.env.example",
-		"生产环境（TRIPFOLIO_ENV=prod）要求 https 站点地址（纯 http 须显式设置 TRIPFOLIO_COOKIE_SECURE=false）、签名密钥与高德 Web 服务 key；邮件和对象存储可不配置",
+		"生产环境（TRIPFOLIO_ENV=prod）要求签名密钥与高德 Web 服务 key；站点地址 http／https 都行（http 会自动关闭 Secure Cookie 并给出告警），邮件与对象存储可不配置",
 		"不使用邮件时将 TRIPFOLIO_MAIL_DRIVER 留空或设为 disabled；显式使用 smtp 时须补齐邮件配置",
 		"容器部署时确认变量确实传进了容器：docker compose config 可以看到最终生效值（注意不要外传输出，含凭证）",
 	}}
