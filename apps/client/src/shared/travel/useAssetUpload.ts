@@ -1,4 +1,4 @@
-import { reactive, ref } from 'vue'
+﻿import { reactive, ref } from 'vue'
 
 import {
   assetFailureMessage,
@@ -13,6 +13,7 @@ import {
   type UploadAuthorization,
 } from '@/shared/api/assets'
 import { ApiError } from '@/shared/api/auth'
+import { randomId } from '@/shared/randomId'
 
 /** 一次上传的界面状态。progress 是 0–1；只有 uploading 阶段有意义。 */
 export type UploadPhase = 'idle' | 'preparing' | 'uploading' | 'processing' | 'ready' | 'failed'
@@ -87,7 +88,7 @@ export function useAssetUpload() {
     if (cancelled) return null
 
     state.phase = 'processing'
-    await confirmAssetUpload(assetId, authorization.upload_attempt, crypto.randomUUID())
+    await confirmAssetUpload(assetId, authorization.upload_attempt, randomId())
     return pollUntilSettled(assetId)
   }
 
@@ -142,7 +143,7 @@ export function useAssetUpload() {
     pending.value = { file: input.file, scope: input.scope, tripId: input.tripId }
     state.phase = 'preparing'
     try {
-      const assetId = crypto.randomUUID()
+      const assetId = randomId()
       const digest = await sha256Hex(input.file)
       const { authorization, asset } = await createAsset(
         {
@@ -154,7 +155,7 @@ export function useAssetUpload() {
           declared_media_type: input.file.type || 'application/octet-stream',
           ...(digest ? { client_sha256: digest } : {}),
         },
-        crypto.randomUUID(),
+        randomId(),
       )
       state.assetId = assetId
       state.asset = asset
@@ -179,7 +180,7 @@ export function useAssetUpload() {
     state.error = null
     state.phase = 'preparing'
     try {
-      const { authorization } = await authorizeAssetUpload(state.assetId, crypto.randomUUID())
+      const { authorization } = await authorizeAssetUpload(state.assetId, randomId())
       if (!authorization) {
         state.phase = 'failed'
         state.error = '这个文件已不能重新上传，请重新选择文件。'

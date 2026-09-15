@@ -3,6 +3,8 @@ import { computed, ref } from 'vue'
 
 import type { components } from '@tripfolio/contracts/openapi/v1'
 
+import { randomId } from '@/shared/randomId'
+
 export type Account = components['schemas']['Account']
 export type AuthResult = components['schemas']['AuthResult']
 
@@ -12,7 +14,7 @@ const DEVICE_ID_KEY = 'tripfolio.device_id'
 export function deviceId(): string {
   let id = window.localStorage.getItem(DEVICE_ID_KEY)
   if (!id) {
-    id = crypto.randomUUID()
+    id = randomId()
     window.localStorage.setItem(DEVICE_ID_KEY, id)
   }
   return id

@@ -1,6 +1,7 @@
 import type { components } from '@tripfolio/contracts/openapi/v1'
 
 import { ApiError } from '@/shared/api/auth'
+import { randomId } from '@/shared/randomId'
 
 export type WriteResult = components['schemas']['WriteResult']
 
@@ -36,7 +37,7 @@ export function createWriteIntent() {
     key(request: unknown): string {
       const signature = fingerprint(request)
       if (!previous || previous.signature !== signature) {
-        previous = { signature, id: crypto.randomUUID() }
+        previous = { signature, id: randomId() }
       }
       return previous.id
     },

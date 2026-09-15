@@ -10,6 +10,7 @@ import {
 
 import { ApiError } from '@/shared/api/auth'
 import { actionError, createWriteIntent, fieldErrors, type WriteOutcome } from '@/shared/api/writes'
+import { randomId } from '@/shared/randomId'
 import { DraftError } from '@/shared/travel/tripDraft'
 
 /** 一种旅行内容资源的编辑规格：草稿与校验、差异、读写；由各模块提供，编辑流程共用。 */
@@ -115,7 +116,7 @@ export function useItemEditor<
     errors.value = {}
     intent.reset()
     pendingCreate = null
-    createId = crypto.randomUUID()
+    createId = randomId()
     Object.assign(draft, spec.emptyDraft(), presets)
     initial.value = JSON.stringify(draft)
     if (item) await load()

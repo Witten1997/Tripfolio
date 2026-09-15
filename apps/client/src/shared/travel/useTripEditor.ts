@@ -10,6 +10,7 @@ import {
   type TripPatch,
 } from '@/shared/api/trips'
 import { actionError, createWriteIntent, fieldErrors } from '@/shared/api/writes'
+import { randomId } from '@/shared/randomId'
 import { useMetadataStore } from '@/shared/stores/metadata'
 import { useSessionStore } from '@/shared/stores/session'
 import {
@@ -80,7 +81,7 @@ export function useTripEditor() {
     errors.value = {}
     intent.reset()
     pendingCreate = null
-    createId = crypto.randomUUID()
+    createId = randomId()
     Object.assign(
       draft,
       emptyTripDraft(

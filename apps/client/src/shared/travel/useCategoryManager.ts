@@ -12,6 +12,7 @@ import {
   type ExpenseCategory,
 } from '@/shared/api/categories'
 import { actionError, createWriteIntent, fieldErrors, writeWarnings } from '@/shared/api/writes'
+import { randomId } from '@/shared/randomId'
 import { useMetadataStore } from '@/shared/stores/metadata'
 
 export const categoryIcons: Record<string, { label: string; symbol: string }> = {
@@ -100,7 +101,7 @@ export function useCategoryManager() {
         Math.min(2147483647, Math.max(-1, ...items.value.map((item) => item.sort_order)) + 1),
     })
     initial.value = JSON.stringify(draft)
-    createId = crypto.randomUUID()
+    createId = randomId()
     intent.reset()
     pendingCreate = null
   }

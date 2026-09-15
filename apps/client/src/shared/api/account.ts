@@ -2,6 +2,7 @@ import type { components } from '@tripfolio/contracts/openapi/v1'
 
 import { api } from '@/shared/api/client'
 import { ApiError, logout } from '@/shared/api/auth'
+import { randomId } from '@/shared/randomId'
 import { useSessionStore } from '@/shared/stores/session'
 
 export type Account = components['schemas']['Account']
@@ -19,7 +20,7 @@ export async function fetchAccount(): Promise<Account> {
 /** PATCH /account：以当前 version 作 If-Match 基线；返回更新后的资料并写入 store。 */
 export async function updateAccount(baseVersion: string, patch: AccountPatch): Promise<Account> {
   const { data, error } = await api.PATCH('/account', {
-    params: { header: { 'Idempotency-Key': crypto.randomUUID(), 'If-Match': `"${baseVersion}"` } },
+    params: { header: { 'Idempotency-Key': randomId(), 'If-Match': `"${baseVersion}"` } },
     body: patch,
   })
   if (error || !data) throw new ApiError(error)
