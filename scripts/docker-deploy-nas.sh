@@ -4,7 +4,7 @@
 # 建议在 Git Bash / WSL 下运行（ssh、scp 走密钥；PowerShell 下的交互式密码会失败）。
 #
 # 用法：
-#   cp scripts/.deploy.env.example scripts/.deploy.env    # 填 NAS 连接信息（该文件不入库）
+#   cp scripts/.deploy.env.example scripts/.deploy.env.example    # 填 NAS 连接信息（该文件不入库）
 #   bash scripts/docker-deploy-nas.sh 2026.09.15
 #
 # 首次部署：脚本会在 NAS 上没有 compose 时上传一份（只引用镜像，不含 build），
@@ -22,9 +22,9 @@ ENV_FILE="$SCRIPT_DIR/.deploy.env"
 # shellcheck disable=SC1090
 [ -f "$ENV_FILE" ] && source "$ENV_FILE"
 
-: "${NAS_HOST:?请在 scripts/.deploy.env 配置 NAS_HOST}"
-: "${NAS_USER:?请在 scripts/.deploy.env 配置 NAS_USER}"
-: "${NAS_DIR:?请在 scripts/.deploy.env 配置 NAS_DIR（compose 与 .env 所在目录）}"
+: "${NAS_HOST:?请在 scripts/.deploy.env.example 配置 NAS_HOST}"
+: "${NAS_USER:?请在 scripts/.deploy.env.example 配置 NAS_USER}"
+: "${NAS_DIR:?请在 scripts/.deploy.env.example 配置 NAS_DIR（compose 与 .env 所在目录）}"
 NAS_PORT=${NAS_PORT:-22}
 NAS_TMP=${NAS_TMP:-/tmp}
 NAS_DOCKER=${NAS_DOCKER:-/usr/local/bin/docker}
@@ -82,17 +82,27 @@ rm -f '${NAS_TMP}/tripfolio-env.example'
 echo '  已确认 NAS 上存在 .env'"
 
 echo "==> [4/4] 重启项目 ${NAS_PROJECT}"
-$SSH "set -e
-if [ ! -f '${NAS_DIR}/.env' ]; then
+# 用未加引号的 heredoc 交给远端 bash：本地变量在此展开，远端要自己求值的用 \$ 转义。
+$SSH 'bash -s' <<REMOTE
+set -e
+cd '${NAS_DIR}' 2>/dev/null || { echo '  跳过启动：部署目录不存在'; exit 0; }
+if [ ! -f .env ]; then
   echo '  跳过启动：等待 .env'
   exit 0
 fi
-cd '${NAS_DIR}'
+# 签名密钥留空时自动生成一次并写入 .env；换掉它会让已登录会话、游标与验证码失效，所以只在空值时补。
+if grep -qE '^TRIPFOLIO_KEYRING=(k[0-9A-Za-z_-]+=)?$' .env; then
+  KEY=\$(openssl rand -base64 32 2>/dev/null || head -c 32 /dev/urandom | base64)
+  ${SUDO} cp .env ".env.bak-\$(date +%Y%m%d%H%M%S)"
+  ${SUDO} sed -i "s|^TRIPFOLIO_KEYRING=.*|TRIPFOLIO_KEYRING=k1=\$KEY|" .env
+  echo '  已生成签名密钥并写入 NAS 上的 .env'
+fi
 ${SUDO} ${NAS_DOCKER} compose -p '${NAS_PROJECT}' -f docker-compose.yaml up -d
 ${SUDO} ${NAS_DOCKER} compose -p '${NAS_PROJECT}' -f docker-compose.yaml ps
 echo
 echo '最近日志（启动失败会打印中文排查块）：'
-${SUDO} ${NAS_DOCKER} compose -p '${NAS_PROJECT}' -f docker-compose.yaml logs --tail=30 app"
+${SUDO} ${NAS_DOCKER} compose -p '${NAS_PROJECT}' -f docker-compose.yaml logs --tail=30 app
+REMOTE
 
 echo
 echo "==> 完成：${IMAGE}:${VERSION}（本地导出保留在 dist/${TAR_NAME}，可手动导入）"

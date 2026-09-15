@@ -75,8 +75,8 @@ sed -E "s#^([[:space:]]*image:[[:space:]]*).*#\1${IMAGE}:${VERSION}#" \
 
 cat > "${BUNDLE_DIR}/install.sh" <<'INSTALL'
 #!/usr/bin/env bash
-# 在 NAS 上执行：导入镜像 → 准备 .env → 启动。
-# 首次运行前请先复制并填写 .env.example（数据库、OSS、签名密钥、高德凭证）。
+# 在 NAS 上执行：导入镜像 → 补签名密钥 → 启动。
+# 首次运行前请先复制并填写 .env.example（数据库、OSS、高德凭证；签名密钥留空即可）。
 set -euo pipefail
 cd "$(dirname -- "${BASH_SOURCE[0]}")"
 
@@ -85,8 +85,29 @@ TAR=$(ls tripfolio-*.tar | head -1)
 [ -n "$TAR" ] || { echo "找不到镜像 tar" >&2; exit 1; }
 
 if [ ! -f .env ]; then
-	echo "缺少 .env：先执行 cp .env.example .env 并填写数据库、OSS、签名密钥与高德凭证" >&2
+	echo "缺少 .env：先执行 cp .env.example .env 并填写数据库、OSS、高德凭证" >&2
 	exit 1
+fi
+
+# 签名密钥（keyring）用来签发访问令牌、分页游标与验证码摘要。留空时这里自动生成一次并写入 .env，
+# 之后一直复用：不要每次启动都换，否则所有已登录会话、游标与未使用的验证码都会失效。
+if grep -qE '^TRIPFOLIO_KEYRING=(k[0-9A-Za-z_-]+=)?$' .env; then
+	if command -v openssl > /dev/null 2>&1; then
+		KEY=$(openssl rand -base64 32)
+	elif [ -r /dev/urandom ]; then
+		KEY=$(head -c 32 /dev/urandom | base64)
+	else
+		echo "无法生成签名密钥：缺少 openssl 与 /dev/urandom" >&2
+		exit 1
+	fi
+	cp .env ".env.bak-$(date +%Y%m%d%H%M%S)"
+	if sed -i "s|^TRIPFOLIO_KEYRING=.*|TRIPFOLIO_KEYRING=k1=$KEY|" .env; then
+		chmod 600 .env 2>/dev/null || true
+		echo "==> 已生成签名密钥并写入 .env（TRIPFOLIO_KEYRING=k1=…），请连同数据库备份一起保存"
+	else
+		echo "写入签名密钥失败：请手工执行 openssl rand -base64 32 并把结果填成 TRIPFOLIO_KEYRING=k1=<输出>" >&2
+		exit 1
+	fi
 fi
 
 echo "==> 导入镜像 $TAR"
@@ -105,16 +126,18 @@ cat > "${BUNDLE_DIR}/README.md" <<'BUNDLE_README'
 # Tripfolio 离线部署包
 
 1. 把本目录（或 `tripfolio-nas-*.tar.gz` 解压后的目录）传到 NAS，例如 `/volume1/docker/tripfolio`。
-2. `cp .env.example .env`，填写：站点访问地址、已有 PostgreSQL 连接串、阿里云 OSS、签名密钥、
-   邮件 SMTP 与高德凭证。变量含义见文件内注释。
-3. `sudo ./install.sh`（等价于 `sudo docker load -i tripfolio-*.tar` +
-   `sudo docker compose -f docker-compose.yaml up -d`）。
+2. `cp .env.example .env`，填写：站点访问地址、已有 PostgreSQL 连接串、阿里云 OSS、
+   邮件 SMTP 与高德凭证。签名密钥（`TRIPFOLIO_KEYRING`）**留空即可**，`install.sh` 会自动生成并写入。
+3. `sudo ./install.sh`（等价于 `docker load -i tripfolio-*.tar` + 补签名密钥 +
+   `docker compose -f docker-compose.yaml up -d`）。
 4. 打开 `http://<NAS 地址>:${TRIPFOLIO_HTTP_PORT}/`，用 `/health/ready` 确认就绪。
 
 要点：
 
 - 容器启动时会**自动执行数据库迁移**，不需要单独的迁移步骤。
 - 数据库与对象存储都在本编排之外：PostgreSQL 用你已有的实例，文件存阿里云 OSS。
+- 签名密钥只生成一次并写在 `.env` 里：**请连同数据库备份一起保存**。换了它会让所有已登录会话、
+  分页游标与未使用的验证码失效（数据不受影响）。
 - 群晖等 NAS 若 `host.docker.internal` 不可用，把 `.env` 里的主机名换成 NAS 的局域网 IP。
 - 升级：把新版本的 tar 与 compose 传到同一目录，`sudo docker load -i 新 tar` 后
   `sudo docker compose -f docker-compose.yaml up -d`；回滚就是换回旧 tar 再 up。
@@ -131,4 +154,4 @@ echo "==> 完成（平台 ${PLATFORM}）"
 echo "    镜像文件：${TAR_PATH}（${SIZE}）"
 echo "    部署包：  ${BUNDLE_DIR}/"
 echo "    压缩包：  ${BUNDLE_TGZ}"
-echo "    NAS 上：解压部署包 → cp .env.example .env 填好 → sudo ./install.sh"
+echo "    NAS 上：解压部署包 → cp .env.example .env 填好 → sudo ./install.sh（签名密钥会自动生成）"

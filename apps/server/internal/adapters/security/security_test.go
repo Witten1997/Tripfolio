@@ -41,6 +41,33 @@ func TestKeyringParsing(t *testing.T) {
 	}
 }
 
+// 部署时最常见的两种写法错误都要给出能照着改的提示，而不是「0 字节」这种看不出问题的报错。
+func TestKeyringReportsMissingKIDPrefix(t *testing.T) {
+	secret := base64.StdEncoding.EncodeToString([]byte(strings.Repeat("s", 32))) // 44 字符，末尾是 "="
+
+	// 漏写 kid= 且带填充：末尾的 "=" 被当成分隔符，值成了空串。
+	_, err := security.ParseKeyring(secret)
+	if err == nil || !strings.Contains(err.Error(), "缺少 kid= 前缀") {
+		t.Fatalf("应提示缺少 kid= 前缀，得到 %v", err)
+	}
+	if !strings.Contains(err.Error(), "k1="+secret) {
+		t.Errorf("提示里应给出正确写法：%v", err)
+	}
+
+	// 漏写 kid= 且不带填充（raw base64）：整体没有分隔符。
+	raw := base64.RawStdEncoding.EncodeToString([]byte(strings.Repeat("s", 32)))
+	if _, err := security.ParseKeyring(raw); err == nil || !strings.Contains(err.Error(), "缺少 kid= 前缀") {
+		t.Fatalf("无填充的裸 base64 也应提示缺少 kid= 前缀，得到 %v", err)
+	}
+
+	// 正确写法照常通过，含填充与不含填充都接受。
+	for _, ok := range []string{"k1=" + secret, "k1=" + raw} {
+		if _, err := security.ParseKeyring(ok); err != nil {
+			t.Errorf("%q 应被接受：%v", ok, err)
+		}
+	}
+}
+
 func TestMACRoundTrip(t *testing.T) {
 	kr := testKeyring(t)
 	kid, mac, err := kr.MAC("challenge", []byte("id:123456"))

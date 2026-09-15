@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -76,6 +77,8 @@ func (c CookieSettings) readCSRFCookie(r *http.Request) string {
 }
 
 // checkOrigin 校验浏览器请求的来源：Origin 存在时必须在允许列表内（接口设计 3.1）。
+// 浏览器对 POST 一律带 Origin，即使同源；来源是「协议＋主机＋端口」的完整值，
+// 因此允许列表里少了端口（例如站点在 https://example.com:8443 而列表只写了 https://example.com）就会在这里被拒。
 func checkOrigin(r *http.Request, allowed []string) error {
 	if r == nil {
 		return nil
@@ -89,7 +92,9 @@ func checkOrigin(r *http.Request, allowed []string) error {
 			return nil
 		}
 	}
-	return apperr.Forbidden("CSRF_FAILED", "请求来源不被允许")
+	return apperr.Forbidden("CSRF_FAILED", fmt.Sprintf(
+		"请求来源不被允许：%s 不在允许列表内（TRIPFOLIO_CORS_ORIGINS）。来源包含端口，非默认端口要写全，例如 https://example.com:8443",
+		origin))
 }
 
 // withCookies 包装任意 Visit 响应，在写出前设置 Cookie。

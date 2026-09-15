@@ -21,7 +21,7 @@ type Keyring struct {
 	order   []string
 }
 
-// ParseKeyring 解析配置串。主密钥至少 32 字节。
+// ParseKeyring 解析配置串。格式 "kid=<base64 主密钥>，至少 32 字节"；多个用逗号分隔，第一个为当前签发密钥。
 func ParseKeyring(spec string) (*Keyring, error) {
 	kr := &Keyring{keys: map[string][]byte{}}
 	for _, part := range strings.Split(spec, ",") {
@@ -30,13 +30,29 @@ func ParseKeyring(spec string) (*Keyring, error) {
 			continue
 		}
 		kid, raw, ok := strings.Cut(part, "=")
-		if !ok || strings.TrimSpace(kid) == "" {
-			return nil, fmt.Errorf("密钥项 %q 必须是 kid=base64 形式", part)
+		if !ok {
+			// 常见错误：只填了 base64 密钥，没写 kid= 前缀。
+			if key, err := base64.RawStdEncoding.DecodeString(part); err == nil && len(key) >= 32 {
+				return nil, fmt.Errorf("密钥项缺少 kid= 前缀：%q 本身是 base64 密钥，请写成 k1=%s", part, part)
+			}
+			return nil, fmt.Errorf("密钥项 %q 必须是 kid=base64 形式，例如 k1=<openssl rand -base64 32 的输出>", part)
 		}
 		kid = strings.TrimSpace(kid)
-		key, err := base64.StdEncoding.DecodeString(strings.TrimSpace(raw))
+		if kid == "" {
+			return nil, fmt.Errorf("密钥项 %q 缺少密钥编号，正确写法是 k1=<base64>", part)
+		}
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			// 另一种常见错误：漏写 kid=，于是 base64 末尾的填充 "=" 被当成了分隔符，
+			// 整串 base64 变成了 kid、值成了空串。
+			if key, err := base64.RawStdEncoding.DecodeString(kid); err == nil && len(key) >= 32 {
+				return nil, fmt.Errorf("密钥项缺少 kid= 前缀：%q 是 base64 密钥，末尾的 \"=\" 被当成分隔符了，请写成 k1=%s=", kid, kid)
+			}
+			return nil, fmt.Errorf("密钥 %s 的值为空，格式应为 k1=<base64 至少 32 字节>", kid)
+		}
+		key, err := base64.StdEncoding.DecodeString(raw)
 		if err != nil {
-			key, err = base64.RawURLEncoding.DecodeString(strings.TrimSpace(raw))
+			key, err = base64.RawURLEncoding.DecodeString(raw)
 		}
 		if err != nil {
 			return nil, fmt.Errorf("密钥 %s 不是合法的 base64", kid)
