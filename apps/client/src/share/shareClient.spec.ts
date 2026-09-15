@@ -55,4 +55,29 @@ describe('createShareClient', () => {
     expect(error?.code).toBe(code)
     expect(fetch).toHaveBeenCalledTimes(1)
   })
+
+  it('构建时把 VITE_API_BASE_URL 传成空串，仍回退到同源 /api/v1', async () => {
+    // Node 里无法用相对地址构造 Request；按浏览器规则补全，模拟真实解析。
+    const NativeRequest = globalThis.Request
+    vi.stubGlobal(
+      'Request',
+      class extends NativeRequest {
+        constructor(input: RequestInfo | URL, init?: RequestInit) {
+          super(new URL(String(input), 'http://localhost:5173'), init)
+        }
+      },
+    )
+    vi.stubEnv('VITE_API_BASE_URL', '')
+    const fetch = vi.fn(async (request: Request) => {
+      expect(new URL(request.url).pathname).toBe('/api/v1/public/trip')
+      return problem(401, 'AUTH_REQUIRED')
+    })
+    try {
+      await createShareClient('t000000000000000000010', { fetch }).GET('/public/trip')
+      expect(fetch).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.unstubAllEnvs()
+      vi.unstubAllGlobals()
+    }
+  })
 })

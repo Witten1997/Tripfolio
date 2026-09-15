@@ -2,6 +2,7 @@ import createClient, { type Client, type Middleware } from 'openapi-fetch'
 
 import type { paths } from '@tripfolio/contracts/openapi/v1'
 
+import { resolveApiBaseUrl } from '@/shared/api/baseUrl'
 import { useSessionStore } from '@/shared/stores/session'
 
 export type ApiClient = Client<paths>
@@ -37,7 +38,8 @@ export function registerRefreshHandler(handler: () => Promise<boolean>) {
  */
 export function createApiClient(options: ApiClientOptions = {}): ApiClient {
   const client = createClient<paths>({
-    baseUrl: options.baseUrl ?? import.meta.env.VITE_API_BASE_URL ?? '/api/v1',
+    // 前缀解析见 resolveApiBaseUrl：空串（Docker 构建默认传空）必须回退到同源 /api/v1。
+    baseUrl: resolveApiBaseUrl(options.baseUrl, import.meta.env.VITE_API_BASE_URL),
     fetch: options.fetch,
   })
   const refresh = () => (options.refresh ?? refreshHandler ?? (async () => false))()

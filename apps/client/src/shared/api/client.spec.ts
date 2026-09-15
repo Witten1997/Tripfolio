@@ -1,5 +1,5 @@
 import { createPinia, setActivePinia } from 'pinia'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createApiClient } from './client'
 import { useSessionStore } from '@/shared/stores/session'
@@ -182,5 +182,60 @@ describe('api client 刷新重放', () => {
     expect(fetch).toHaveBeenCalledTimes(1)
     expect(session.accessToken).toBe('current')
     expect(session.isAuthenticated).toBe(true)
+  })
+})
+
+describe('接口前缀回退', () => {
+  /** Node 里无法用相对地址构造 Request；这里按浏览器规则补全，模拟真实解析。 */
+  function stubBrowserRequest() {
+    const NativeRequest = globalThis.Request
+    vi.stubGlobal(
+      'Request',
+      class extends NativeRequest {
+        constructor(input: RequestInfo | URL, init?: RequestInit) {
+          super(new URL(String(input), 'http://localhost:5173'), init)
+        }
+      },
+    )
+  }
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.unstubAllEnvs()
+    stubBrowserRequest()
+  })
+  afterEach(() => {
+    vi.unstubAllEnvs()
+    vi.unstubAllGlobals()
+  })
+
+  it('构建时把 VITE_API_BASE_URL 传成空串，仍回退到同源 /api/v1', async () => {
+    // Docker 构建默认传空串。曾用 ?? 兜底，空串会被接受，baseUrl 变成空、
+    // 请求落到 /metadata，被 SPA 回退返回 index.html，整站接口失效。
+    vi.stubEnv('VITE_API_BASE_URL', '')
+    const fetch = vi.fn(async (request: Request) => {
+      expect(new URL(request.url).pathname).toBe('/api/v1/metadata')
+      return jsonResponse(200, { data: { currencies: [], default_currency_code: 'CNY' } })
+    })
+    const api = createApiClient({ fetch })
+    await api.GET('/metadata')
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('未设置变量时回退，配置了绝对地址时使用绝对地址', async () => {
+    const fallback = vi.fn(async (request: Request) => {
+      expect(new URL(request.url).pathname).toBe('/api/v1/metadata')
+      return jsonResponse(200, { data: { currencies: [], default_currency_code: 'CNY' } })
+    })
+    await createApiClient({ fetch: fallback }).GET('/metadata')
+    expect(fallback).toHaveBeenCalledTimes(1)
+
+    vi.stubEnv('VITE_API_BASE_URL', 'https://api.example.com/api/v1')
+    const absolute = vi.fn(async (request: Request) => {
+      expect(request.url.startsWith('https://api.example.com/api/v1/metadata')).toBe(true)
+      return jsonResponse(200, { data: { currencies: [], default_currency_code: 'CNY' } })
+    })
+    await createApiClient({ fetch: absolute }).GET('/metadata')
+    expect(absolute).toHaveBeenCalledTimes(1)
   })
 })
