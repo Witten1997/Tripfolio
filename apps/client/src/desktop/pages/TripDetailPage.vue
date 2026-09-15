@@ -4,6 +4,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 
 import IconAction from '@/desktop/components/IconAction.vue'
+import MapToggleFab from '@/desktop/components/MapToggleFab.vue'
 import TripEditorDialog from '@/desktop/components/TripEditorDialog.vue'
 import TripShareDialog from '@/desktop/components/TripShareDialog.vue'
 import type { Trip } from '@/shared/api/trips'
@@ -39,6 +40,12 @@ const phase = computed(() => {
   return { label: '旅行中', type: 'success' as const }
 })
 const gone = computed(() => errorCode.value === 'TRIP_DELETED')
+const onMap = computed(() => route.name === 'trip-map')
+/** 悬浮按钮是页签之外的快捷入口：在地图页签时指回行程，否则指向地图。 */
+const mapToggleTarget = computed(() => ({
+  name: onMap.value ? 'trip-itinerary' : 'trip-map',
+  params: { tripId },
+}))
 
 async function saved(outcome: WriteOutcome<Trip>) {
   const warnings = writeWarnings(outcome.result)
@@ -108,6 +115,7 @@ onMounted(() => {
         >
       </nav>
       <RouterView />
+      <MapToggleFab :on-map="onMap" :to="mapToggleTarget" />
     </template>
     <TripEditorDialog ref="editor" @saved="saved" />
     <TripShareDialog ref="shareDialog" :trip-id="tripId" />

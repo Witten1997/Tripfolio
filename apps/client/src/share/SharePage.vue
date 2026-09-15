@@ -3,6 +3,8 @@ import { ElAlert, ElButton, ElRadioButton, ElRadioGroup, ElSkeleton } from 'elem
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
+import MapToggleFab from '@/desktop/components/MapToggleFab.vue'
+
 import type { SharedTravelMode } from './api'
 import SharedItinerary from './SharedItinerary.vue'
 import SharedMap from './SharedMap.vue'
@@ -82,6 +84,10 @@ onMounted(() => {
         :items="items"
         :routes="routes"
         :routes-state="routesState"
+      />
+      <MapToggleFab
+        :on-map="view === 'map'"
+        @toggle="view = view === 'map' ? 'itinerary' : 'map'"
       />
     </template>
   </section>

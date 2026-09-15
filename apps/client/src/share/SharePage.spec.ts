@@ -212,6 +212,25 @@ describe('访客页面', () => {
     wrapper.unmount()
   })
 
+  it('右下角悬浮按钮在行程与地图之间切换，标签随之反转', async () => {
+    const { wrapper } = await page()
+    expect(wrapper.find('.share-days').exists()).toBe(true)
+    expect(wrapper.get('.map-toggle').attributes('aria-label')).toBe('看地图')
+    await wrapper.get('.map-toggle').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.share-days').exists()).toBe(false)
+    expect(wrapper.text()).toContain('沿途各站')
+    expect(wrapper.get('.map-toggle').attributes('aria-label')).toBe('看行程')
+    await wrapper.get('.map-toggle').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.share-days').exists()).toBe(true)
+    // 顶部切换仍然可用，两个入口共享同一个视图状态。
+    await wrapper.get('input[value="map"]').setValue()
+    await flushPromises()
+    expect(wrapper.get('.map-toggle').attributes('aria-label')).toBe('看行程')
+    wrapper.unmount()
+  })
+
   it('空行程与无定位项目提供空状态', async () => {
     requests.items.mockResolvedValue([item('A', null)])
     const { wrapper } = await page()
