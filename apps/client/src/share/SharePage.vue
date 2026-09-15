@@ -29,10 +29,14 @@ const errorText = computed(() => {
   }
 })
 
-// 进入地图或切换出行方式时才算路；行程视图不触发上游请求。
-watch([view, mode], ([nextView, nextMode]) => {
-  if (nextView === 'map' && items.value.length >= 2) void loadRoutes(nextMode)
-})
+// 行程与地图两个视图都要显示站间距离：拿到行程后即算路，切换出行方式重算。
+watch(
+  [() => items.value.length, mode],
+  () => {
+    if (items.value.length >= 2) void loadRoutes(mode.value)
+  },
+  { immediate: true },
+)
 
 onMounted(() => {
   void load()
@@ -64,7 +68,14 @@ onMounted(() => {
           <ElRadioButton value="map">地图</ElRadioButton>
         </ElRadioGroup>
       </header>
-      <SharedItinerary v-if="view === 'itinerary'" :trip="trip" :items="items" />
+      <SharedItinerary
+        v-if="view === 'itinerary'"
+        v-model:mode="mode"
+        :trip="trip"
+        :items="items"
+        :routes="routes"
+        :routes-state="routesState"
+      />
       <SharedMap
         v-else
         v-model:mode="mode"

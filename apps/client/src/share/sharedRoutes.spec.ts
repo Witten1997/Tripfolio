@@ -61,6 +61,12 @@ describe('buildSharedMap', () => {
     expect(map.durationSeconds).toBe(900)
     expect(map.paths.some((p) => p.id === 'A>C' && p.kind === 'road')).toBe(true)
     expect(map.paths.some((p) => p.id === 'C>D' && p.kind === 'illustrative')).toBe(true)
+    // 两个视图都按出发站取下一段：算出的带结果，未算出的 route 为空，最后一站没有下一段。
+    expect(map.byOrigin.get('A')?.id).toBe('A>C')
+    expect(map.byOrigin.get('A')?.route?.distance_meters).toBe(4200)
+    expect(map.byOrigin.get('C')?.id).toBe('C>D')
+    expect(map.byOrigin.get('C')?.route).toBeNull()
+    expect(map.byOrigin.has('D')).toBe(false)
   })
 
   it('没有路线结果时全部为示意连线', () => {
@@ -68,11 +74,13 @@ describe('buildSharedMap', () => {
     expect(map.readyCount).toBe(0)
     expect(map.failedCount).toBe(2)
     expect(map.paths.every((p) => p.kind === 'illustrative')).toBe(true)
+    expect([...map.byOrigin.values()].every((leg) => leg.route === null)).toBe(true)
   })
 
   it('没有定位项目时没有点位与路段', () => {
     const map = buildSharedMap([item('B', '2026-10-01', 0)], null)
     expect(map.points).toHaveLength(0)
     expect(map.legs).toHaveLength(0)
+    expect(map.byOrigin.size).toBe(0)
   })
 })
