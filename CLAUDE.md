@@ -44,7 +44,7 @@ pnpm typecheck && pnpm test && pnpm build && pnpm format:check
 - 需求：`docs/requirements/2026-09-10-P0核心需求.md`（v0.4）
 - 技术选型：`docs/requirements/2026-09-10-技术选型与架构建议.md`（v0.4）
 - 接口：`docs/api/2026-09-11-P0接口设计.md`（v0.4，含 2026-09-14 算路补充与 2026-09-15 分享共 96 个接口）
-- 数据库：`docs/database/2026-09-11-P0数据库表结构设计.md`（v0.4，24 张表）
+- 数据库：`docs/database/2026-09-11-P0数据库表结构设计.md`（v0.5，24 张表，支持下限 PostgreSQL 13）
 - 总览与同步规则：`docs/architecture/2026-09-11-P0接口与数据设计总览.md`
 - 评审与决策记录：`docs/reviews/2026-09-12-P0设计评审.md`
 - 部署设计：`docs/architecture/2026-09-15-单二进制部署设计.md`（单二进制：内嵌前端、进程内迁移与高德代理、启动退出码）
