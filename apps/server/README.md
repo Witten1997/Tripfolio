@@ -1,6 +1,6 @@
 # apps/server
 
-Go 后端：一个 Go Module，三个入口（api、worker、migrate），目录职责见 `docs/architecture/2026-09-11-后端代码层级结构设计.md`。
+Go 后端：一个 Go Module，唯一入口 `cmd/tripfolio`（HTTP 接口、后台任务与内嵌前端同进程运行），目录职责见 `docs/architecture/2026-09-11-后端代码层级结构设计.md`，进程模型与部署见 `docs/architecture/2026-09-15-单二进制部署设计.md`。
 
 ## 前置条件
 
@@ -16,10 +16,11 @@ Go 后端：一个 Go Module，三个入口（api、worker、migrate），目录
 export TRIPFOLIO_DATABASE_URL=postgres://tripfolio:tripfolio@localhost:5432/tripfolio?sslmode=disable
 export TRIPFOLIO_TEST_DATABASE_URL=postgres://tripfolio:tripfolio@localhost:5432/tripfolio_test?sslmode=disable
 
-go run ./cmd/migrate up        # 先 River 自有表，再业务迁移
-go run ./cmd/migrate status
-go run ./cmd/api               # http://localhost:8080/health/ready、/api/v1/metadata
-go run ./cmd/worker
+go run ./cmd/tripfolio serve              # http://localhost:8080/health/ready、/api/v1/metadata，启动时自动迁移
+go run ./cmd/tripfolio migrate up         # 只跑迁移：先 River 自有表，再业务迁移
+go run ./cmd/tripfolio migrate status     # 查看迁移状态
+go run ./cmd/tripfolio migrate down       # 回退最近一次业务迁移，仅开发环境
+go run ./cmd/tripfolio healthcheck        # 就绪探针，供容器健康检查使用
 
 go test ./... -count=1        # 单元测试；设置了 TRIPFOLIO_TEST_DATABASE_URL 时包含集成测试
 go vet ./...
@@ -29,22 +30,23 @@ go vet ./...
 
 ## 生成代码
 
-| 来源 | 命令 | 输出 |
-| --- | --- | --- |
+| 来源                                                                                       | 命令                                        | 输出                                              |
+| ------------------------------------------------------------------------------------------ | ------------------------------------------- | ------------------------------------------------- |
 | `packages/contracts/dist/openapi.v1.yaml`（先 `pnpm --filter @tripfolio/contracts build`） | `go generate ./internal/transport/httpapi/` | `internal/transport/httpapi/generated/api.gen.go` |
-| `db/migrations/*.sql` + `db/queries/**/*.sql` | `bash scripts/sqlc.sh generate` | `internal/adapters/postgres/dbgen/` |
+| `db/migrations/*.sql` + `db/queries/**/*.sql`                                              | `bash scripts/sqlc.sh generate`             | `internal/adapters/postgres/dbgen/`               |
 
 生成文件提交入库；CI 重新生成并比对，不手工修改。
 
 ## 目录
 
 ```text
-cmd/               入口：api、worker、migrate
+cmd/tripfolio/     唯一入口：serve（等待数据库 → 自动迁移 → HTTP 与后台任务）、migrate、healthcheck、version
 db/                迁移（Goose）与查询（sqlc）的手工来源，以及嵌入声明
 internal/
   bootstrap/       装配与生命周期
   config/          环境变量配置
   transport/       httpapi（chi + oapi-codegen strict server）、river（任务处理器）
+  web/             内嵌前端产物（go:embed all:dist）与 /_AMapService 高德安全密钥代理
   modules/         业务模块（目前只有 metadata；旅行、账户、文件模块随功能落地）
   workflows/       跨模块协调（sync、datamanagement，随功能落地）
   adapters/        postgres（pgcore、dbgen）、queue（River）、objectstore、mail、security、geo

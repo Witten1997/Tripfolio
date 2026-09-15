@@ -18,7 +18,7 @@ pnpm --filter @tripfolio/contracts build   # 契约类型（apps/client 依赖 @
 pnpm --filter @tripfolio/client dev        # http://localhost:5173，/api 代理到 localhost:8080
 pnpm --filter @tripfolio/client typecheck
 pnpm --filter @tripfolio/client test
-pnpm --filter @tripfolio/client build      # 产物 dist/，同时供 Caddy 发布与 Capacitor 打包
+pnpm --filter @tripfolio/client build      # 产物 dist/，供打包进后端单二进制与 Capacitor 打包
 ```
 
 ## Capacitor（安卓）
@@ -38,9 +38,9 @@ pnpm --filter @tripfolio/client cap:open                # 用 Android Studio 打
 
 ## 地图与地点选择
 
-在 `.env.local` 配置 `VITE_AMAP_JS_KEY`（JS API Key）与 `AMAP_JSCODE`（安全密钥），重启 Vite。不要将安全密钥命名为 `VITE_AMAP_JSCODE`，也不要配置到 `window._AMapSecurityConfig.securityJsCode`：代码只设置 `serviceHost`，安全密钥在 Vite／Caddy 服务端追加。
+在 `.env.local` 配置 `VITE_AMAP_JS_KEY`（JS API Key）与 `AMAP_JSCODE`（安全密钥），重启 Vite。不要将安全密钥命名为 `VITE_AMAP_JSCODE`，也不要配置到 `window._AMapSecurityConfig.securityJsCode`：代码只设置 `serviceHost`，安全密钥由 Vite 开发代理（本地）或应用进程内的 `/_AMapService` 代理（部署）追加。
 
-`VITE_AMAP_SERVICE_HOST` 默认同源 `/_AMapService`。跨域或 Capacitor 构建须设为可访问的 HTTPS 代理完整路径（例如 `https://api.example.com/_AMapService`）；生产／预览需通过已配置高德代理的 Caddy 访问，`vite preview` 不是生产代理。POI 搜索和三种算路走 `/api/v1/geo`，需已登录，后端须配置独立的 Web 服务 Key。
+`VITE_AMAP_SERVICE_HOST` 默认同源 `/_AMapService`。跨域或 Capacitor 构建须设为可访问的 HTTPS 代理完整路径（例如 `https://api.example.com/_AMapService`）；生产由单二进制进程内的代理提供该路径，`vite preview` 不是生产代理。POI 搜索和三种算路走 `/api/v1/geo`，需已登录，后端须配置独立的 Web 服务 Key。
 
 旅行详情“行程”中新建／编辑时选点；“地图”页签按日期与行程顺序展示点位和道路路线，账单统计头部也有入口。搜索支持防抖与取消；地图有可键盘操作的点位列表、缩放按钮和坐标输入替代路径。无路线时显示示意虚线，并从道路里程汇总中排除。地址文字手动修改会清除旧坐标，需重新选点后才参与路线。
 

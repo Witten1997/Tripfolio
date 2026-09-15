@@ -1,0 +1,30 @@
+# 镜像构建上下文是仓库根目录（前端工作区 + Go 源码）。
+# 这里排除依赖、构建产物与本机文件：上下文更小，也避免把本地密钥打进镜像。
+.git
+.github
+.idea
+.agents
+.claude
+.tools
+docs
+dist
+node_modules
+**/node_modules
+**/dist
+apps/client/android
+apps/client/dist
+*.log
+
+# 本机打包残留的前端产物不入镜像：镜像里只嵌 Dockerfile 里现构建的那一份
+apps/server/internal/web/dist/*
+!apps/server/internal/web/dist/.gitignore
+
+# 本地环境变量与密钥不进镜像；构建期变量一律通过 --build-arg 传入（见 docker/Dockerfile）
+**/.env
+**/.env.local
+**/.env.*.local
+**/.env.production
+**/.env.development.local
+# 私有源凭据不入镜像
+**/.npmrc
+**/.pnpm-store

@@ -19,14 +19,38 @@ func LoadDotEnv(getenv func(string) string) (bool, error) {
 	if strings.TrimSpace(getenv(Prefix+"ENV")) == "prod" {
 		return false, nil
 	}
-	if _, err := os.Stat(DotEnvFile); err != nil {
+	data, err := os.ReadFile(DotEnvFile)
+	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return false, nil
 		}
-		return false, fmt.Errorf("检查 %s: %w", DotEnvFile, err)
-	}
-	if err := godotenv.Load(DotEnvFile); err != nil {
 		return false, fmt.Errorf("读取 %s: %w", DotEnvFile, err)
 	}
+	// Windows 记事本与 PowerShell 写出的文件常带 UTF-8 BOM；不剥掉会失败在一个看不懂的字符上。
+	content := strings.TrimPrefix(string(data), "\uFEFF")
+	values, err := godotenv.Unmarshal(content)
+	if err != nil {
+		return false, fmt.Errorf("解析 %s 失败：%w", DotEnvFile, sanitizeDotEnvError(err))
+	}
+	for key, value := range values {
+		if _, exists := os.LookupEnv(key); !exists {
+			if err := os.Setenv(key, value); err != nil {
+				return false, fmt.Errorf("设置环境变量 %s: %w", key, err)
+			}
+		}
+	}
 	return true, nil
+}
+
+// sanitizeDotEnvError 去掉解析错误里回显的原始行内容：.env 里是密钥，
+// 排查需要的是「哪一类语法问题」，不是把密码抄进容器日志。
+func sanitizeDotEnvError(err error) error {
+	message := err.Error()
+	if idx := strings.Index(message, " near "); idx >= 0 {
+		message = message[:idx]
+	}
+	if len(message) > 120 {
+		message = message[:120] + "…"
+	}
+	return fmt.Errorf("%s（为避免泄露密钥，不回显文件内容；请检查该行的键名与等号）", message)
 }

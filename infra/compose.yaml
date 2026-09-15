@@ -66,20 +66,37 @@ services:
       MINIO_ROOT_PASSWORD: tripfolio-dev-secret
       TRIPFOLIO_BUCKET: tripfolio
 
-  api:
+  # 单二进制容器：接口、内嵌页面与后台任务同进程运行（与生产同一形态），
+  # 只是环境变量指向本机开发依赖。前端产物在镜像构建时嵌入。
+  app:
     profiles: ['app']
     build:
-      context: ../apps/server
-      dockerfile: Dockerfile
-    image: tripfolio/server:local
-    command: ['/app/api']
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        NPM_REGISTRY: ${TRIPFOLIO_BUILD_NPM_REGISTRY:-https://registry.npmmirror.com}
+        GOPROXY: ${TRIPFOLIO_BUILD_GOPROXY:-https://goproxy.cn,direct}
+        VITE_AMAP_JS_KEY: ${VITE_AMAP_JS_KEY:-}
+    image: tripfolio/app:local
+    command: ['serve']
     environment:
       TRIPFOLIO_ENV: dev
       TRIPFOLIO_HTTP_ADDR: ':8080'
       TRIPFOLIO_DATABASE_URL: postgres://tripfolio:tripfolio@postgres:5432/tripfolio?sslmode=disable
       TRIPFOLIO_CORS_ORIGINS: http://localhost:5173,https://localhost
-      # 两套高德凭证隔离：Web 服务 Key 只给 API；JS 安全密钥只给 Caddy。
+      TRIPFOLIO_WEB_BASE_URL: http://localhost:5173
+      TRIPFOLIO_KEYRING: ${TRIPFOLIO_KEYRING:-}
+      # 对象存储：容器内必须用 host.docker.internal 访问宿主机的 MinIO——写 localhost 会指向容器自己，
+      # 服务端校验暂存对象时会连接失败。浏览器直传又要求端点能被浏览器解析，
+      # 需要完整走通上传时设成本机局域网 IP：TRIPFOLIO_DEV_OBJECTSTORE_ENDPOINT=http://192.168.x.x:9000
+      TRIPFOLIO_OBJECTSTORE_ENDPOINT: ${TRIPFOLIO_DEV_OBJECTSTORE_ENDPOINT:-http://host.docker.internal:9000}
+      TRIPFOLIO_OBJECTSTORE_BUCKET: tripfolio
+      TRIPFOLIO_OBJECTSTORE_ACCESS_KEY_ID: tripfolio
+      TRIPFOLIO_OBJECTSTORE_SECRET_ACCESS_KEY: tripfolio-dev-secret
+      TRIPFOLIO_OBJECTSTORE_USE_PATH_STYLE: 'true'
+      # 两套高德凭证隔离：Web 服务 Key 给应用；JS 安全密钥由应用内置的 /_AMapService 代理解析。
       TRIPFOLIO_AMAP_WEB_SERVICE_KEY: ${TRIPFOLIO_AMAP_WEB_SERVICE_KEY:-}
+      TRIPFOLIO_AMAP_JSCODE: ${AMAP_JSCODE:-}
       TRIPFOLIO_GEO_PER_ACCOUNT_PER_MINUTE: ${TRIPFOLIO_GEO_PER_ACCOUNT_PER_MINUTE:-60}
       TRIPFOLIO_GEO_GLOBAL_DAILY_LIMIT: ${TRIPFOLIO_GEO_GLOBAL_DAILY_LIMIT:-0}
       TRIPFOLIO_GEO_CACHE_TTL: ${TRIPFOLIO_GEO_CACHE_TTL:-24h}
@@ -87,37 +104,14 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      minio:
+        condition: service_healthy
+    # 容器内访问宿主机上的 MinIO；浏览器直传仍走宿主机端口
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
     ports:
       - '8080:8080'
-
-  worker:
-    profiles: ['app']
-    image: tripfolio/server:local
-    command: ['/app/worker']
-    environment:
-      TRIPFOLIO_ENV: dev
-      TRIPFOLIO_DATABASE_URL: postgres://tripfolio:tripfolio@postgres:5432/tripfolio?sslmode=disable
-    depends_on:
-      postgres:
-        condition: service_healthy
-
-  caddy:
-    profiles: ['edge']
-    image: caddy:2-alpine
-    ports:
-      - '80:80'
-    environment:
-      AMAP_JSCODE: ${AMAP_JSCODE:-}
-    volumes:
-      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - ../apps/client/dist:/srv/www:ro
-      - caddy-data:/data
-      - caddy-config:/config
-    depends_on:
-      - api
 
 volumes:
   postgres-data:
   minio-data:
-  caddy-data:
-  caddy-config:

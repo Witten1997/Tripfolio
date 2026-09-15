@@ -1,0 +1,45 @@
+name: tripfolio
+
+# 单二进制部署：只有一个应用容器。PostgreSQL 与对象存储都用已有服务，不在本编排里再起一份。
+# 启动即自动迁移；配置错误或依赖不可达会在日志里给出阶段、原因与排查建议。
+#
+# 用法（在本目录下，先 cp .env.example .env 并填好变量）：
+#   docker compose up -d --build      # 构建镜像并启动
+#   docker compose logs -f app        # 跟踪日志（启动失败会打印排查块）
+#   docker compose exec app /app/tripfolio migrate status
+#
+# 变量含义、OSS 配置与排障对照表见 README.md。
+
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        # 前端构建期变量：改了要重新 build 才会生效。
+        # 同源部署不要传 VITE_API_BASE_URL / VITE_AMAP_SERVICE_HOST：传空串会覆盖前端默认值
+        # （历史上曾因此让容器里的接口前缀丢失），需要跨域时再在这里加绝对地址。
+        VITE_AMAP_JS_KEY: ${VITE_AMAP_JS_KEY:-}
+        NPM_REGISTRY: ${TRIPFOLIO_BUILD_NPM_REGISTRY:-https://registry.npmmirror.com}
+        GOPROXY: ${TRIPFOLIO_BUILD_GOPROXY:-https://goproxy.cn,direct}
+        VERSION: ${TRIPFOLIO_IMAGE_TAG:-latest}
+    image: tripfolio/app:${TRIPFOLIO_IMAGE_TAG:-latest}
+    container_name: tripfolio-app
+    restart: unless-stopped
+    env_file: [.env]
+    environment:
+      # 容器内端口固定，映射到宿主机哪个端口由 TRIPFOLIO_HTTP_PORT 决定
+      TRIPFOLIO_HTTP_ADDR: ':8080'
+    ports:
+      - '${TRIPFOLIO_HTTP_PORT:-8080}:8080'
+    # 数据库跑在宿主机（或宿主机上的另一个容器）时用它访问；跨主机请直接写内网域名
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    # 健康检查由镜像的 HEALTHCHECK 提供（/app/tripfolio healthcheck），这里不再重复定义；
+    # 需要调整间隔时再在部署侧覆盖。
+    # 限制日志体积，避免长期运行把磁盘写满
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'

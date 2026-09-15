@@ -15,7 +15,7 @@
 ```bash
 pnpm install && pnpm --filter @tripfolio/contracts build       # 契约 lint、打包、TS 类型
 docker compose -f infra/compose.yaml up -d postgres             # PostgreSQL 18，含 tripfolio_test 测试库
-cd apps/server && go run ./cmd/migrate up && go run ./cmd/api  # http://localhost:8080
+cd apps/server && go run ./cmd/tripfolio serve                 # http://localhost:8080，启动时自动迁移
 go generate ./internal/transport/httpapi/ && bash scripts/sqlc.sh generate   # 契约或 SQL 改动后
 go vet ./... && TRIPFOLIO_TEST_DATABASE_URL=postgres://tripfolio:tripfolio@localhost:5432/tripfolio_test?sslmode=disable go test ./... -count=1
 pnpm typecheck && pnpm test && pnpm build && pnpm format:check
@@ -24,6 +24,7 @@ pnpm typecheck && pnpm test && pnpm build && pnpm format:check
 ## 代码约定
 
 - 后端分层与依赖方向见 `docs/architecture/2026-09-11-后端代码层级结构设计.md`：modules 不导入 transport、adapters、workflows；生成代码提交入库且不手改。
+- 后端只有一个入口 `cmd/tripfolio`（`serve`／`migrate`／`healthcheck`／`version`），前端产物通过 `go:embed` 嵌进二进制，改动前端要重新打包，见 `docs/architecture/2026-09-15-单二进制部署设计.md`。
 - 错误响应统一 problem+json，代码只在接口设计 1.4 登记；写接口带 Idempotency-Key 与 If-Match，可同步写走统一写事务（账号锁、收据、变更日志）。
 - 金额十进制字符串按币种小数位规范化；坐标 GCJ-02；时间列 timestamptz，当地时间 timestamp(0)。
 - 前端：桌面壳 Element Plus、移动壳 Vant，页面只依赖 `src/platform` 的接口访问平台能力；访问令牌只放内存。
@@ -46,4 +47,6 @@ pnpm typecheck && pnpm test && pnpm build && pnpm format:check
 - 数据库：`docs/database/2026-09-11-P0数据库表结构设计.md`（v0.4，24 张表）
 - 总览与同步规则：`docs/architecture/2026-09-11-P0接口与数据设计总览.md`
 - 评审与决策记录：`docs/reviews/2026-09-12-P0设计评审.md`
+- 部署设计：`docs/architecture/2026-09-15-单二进制部署设计.md`（单二进制：内嵌前端、进程内迁移与高德代理、启动退出码）
+- 部署：`docker/README.md`（单二进制部署：单个 app 服务、已有 PostgreSQL 与阿里云 OSS、变量表与运维命令；本地开发依赖仍走 `infra/compose.yaml`）
 - 实施计划：`docs/superpowers/plans/`。**当前进行中：`docs/superpowers/plans/2026-09-12-web-p0.md`，接手任何工作前先读文件顶部“接手须知”与文末“进度日志”，任务状态用 `[ ]`/`[~]`/`[x]` 标记，开始前改 `[~]`，完成后改 `[x]` 并追加日志。**

@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"tripfolio/server/internal/modules/metadata"
@@ -26,6 +27,67 @@ func newTestRouter(t *testing.T, ready error) http.Handler {
 		Readiness:   readinessFunc(func(context.Context) error { return ready }),
 		CORSOrigins: []string{"https://localhost"},
 	})
+}
+
+// webStub 代替内嵌前端：单二进制部署下未匹配的路径都由它接管。
+func webStub() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/_AMapService/") {
+			w.Header().Set("Content-Type", "text/plain")
+			_, _ = w.Write([]byte("proxied"))
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write([]byte("<div id=app></div>"))
+	})
+}
+
+func TestWebHandlerServesFrontendAndKeepsAPIContract(t *testing.T) {
+	router := httpapi.NewRouter(httpapi.Deps{
+		Logger:      slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Metadata:    metadata.Current(),
+		Readiness:   readinessFunc(func(context.Context) error { return nil }),
+		CORSOrigins: []string{"https://localhost"},
+		Web:         webStub(),
+	})
+
+	cases := []struct {
+		path        string
+		wantStatus  int
+		wantContent string
+		wantType    string
+	}{
+		{"/", http.StatusOK, "id=app", "text/html"},
+		{"/s/share-token", http.StatusOK, "id=app", "text/html"},
+		{"/_AMapService/v3/vectormap", http.StatusOK, "proxied", "text/plain"},
+		{"/api/v1/does-not-exist", http.StatusNotFound, "RESOURCE_NOT_FOUND", "application/problem+json"},
+		{"/api/unknown", http.StatusNotFound, "RESOURCE_NOT_FOUND", "application/problem+json"},
+	}
+	for _, tc := range cases {
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, tc.path, nil))
+		if rec.Code != tc.wantStatus {
+			t.Errorf("%s 状态 = %d，期望 %d", tc.path, rec.Code, tc.wantStatus)
+			continue
+		}
+		if !strings.Contains(rec.Body.String(), tc.wantContent) {
+			t.Errorf("%s 正文 = %q，未包含 %q", tc.path, rec.Body.String(), tc.wantContent)
+		}
+		if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, tc.wantType) {
+			t.Errorf("%s Content-Type = %q，期望包含 %q", tc.path, ct, tc.wantType)
+		}
+	}
+}
+
+func TestWithoutWebHandlerUnknownPathIsProblemJSON(t *testing.T) {
+	rec := httptest.NewRecorder()
+	newTestRouter(t, nil).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/somewhere", nil))
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("状态 = %d", rec.Code)
+	}
+	if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "application/problem+json") {
+		t.Fatalf("Content-Type = %q", ct)
+	}
 }
 
 func TestHealthLive(t *testing.T) {
@@ -132,5 +194,33 @@ func TestSharePathsDoNotRequireBearerButRequireShareToken(t *testing.T) {
 	}
 	if rec.Header().Get("X-Robots-Tag") != "noindex, nofollow" {
 		t.Fatalf("X-Robots-Tag = %q", rec.Header().Get("X-Robots-Tag"))
+	}
+}
+
+func TestCompressionAppliesToTextResponses(t *testing.T) {
+	router := httpapi.NewRouter(httpapi.Deps{
+		Logger:      slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Metadata:    metadata.Current(),
+		Readiness:   readinessFunc(func(context.Context) error { return nil }),
+		CORSOrigins: []string{"https://localhost"},
+		Web:         webStub(),
+	})
+
+	// 单二进制不再有 Caddy 做压缩：页面与 JSON 接口都要 gzip。
+	for _, path := range []string{"/", "/health/live"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.Header.Set("Accept-Encoding", "gzip")
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		if enc := rec.Header().Get("Content-Encoding"); enc != "gzip" {
+			t.Errorf("%s 的 Content-Encoding = %q，期望 gzip", path, enc)
+		}
+	}
+
+	// 客户端没有声明 gzip 时保持原文。
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/health/live", nil))
+	if enc := rec.Header().Get("Content-Encoding"); enc != "" {
+		t.Errorf("未声明 gzip 时不应压缩：Content-Encoding = %q", enc)
 	}
 }

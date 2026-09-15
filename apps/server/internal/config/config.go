@@ -87,6 +87,18 @@ type Config struct {
 	ObjectStore ObjectStoreConfig
 	// Geo 是高德地点服务代理配置。
 	Geo GeoConfig
+	// AMapJSCode 是高德 JS API 安全密钥，由进程内的 /_AMapService 代理覆盖进查询串。
+	// 它与 Web 服务 Key 是两套凭证：这个用在浏览器侧请求的代理上，不下发给前端。
+	AMapJSCode string
+	// AutoMigrate 控制 serve 启动时是否先执行数据库迁移。
+	AutoMigrate bool
+	// StartupDBTimeout 是启动时等待数据库可达的时长，超时即失败退出。
+	StartupDBTimeout time.Duration
+	// StartupDBRetryInterval 是等待数据库时的重试间隔。
+	StartupDBRetryInterval time.Duration
+	// Warnings 是不阻塞启动的配置提醒，由入口以 WARN 级别打印：
+	// 用于「能跑但不理想」的组合，例如没有 TLS 的部署、以及还没切到 prod 的形态。
+	Warnings []string
 }
 
 // Load 读取环境变量。getenv 通常传 os.Getenv，测试可传 map 查找函数。
@@ -142,12 +154,31 @@ func Load(getenv func(string) string) (Config, error) {
 		}
 	}
 
+	// COOKIE_SECURE 的解析要早于站点地址校验：显式设为 false 等于声明「这套部署没有 TLS」，
+	// 允许 prod 用 http 起服务（仅告警），否则仍然按配置错误拦下。
+	var cookieSecureSet, cookieSecureValue bool
+	if raw := get("COOKIE_SECURE", ""); raw != "" {
+		if b, err := strconv.ParseBool(raw); err != nil {
+			errs = append(errs, fmt.Errorf("%sCOOKIE_SECURE 必须是 true 或 false", Prefix))
+		} else {
+			cookieSecureSet, cookieSecureValue = true, b
+		}
+	}
+
 	cfg.WebBaseURL = strings.TrimRight(get("WEB_BASE_URL", "http://localhost:5173"), "/")
 	switch {
 	case !strings.HasPrefix(cfg.WebBaseURL, "http://") && !strings.HasPrefix(cfg.WebBaseURL, "https://"):
 		errs = append(errs, fmt.Errorf("%sWEB_BASE_URL 必须以 http:// 或 https:// 开头", Prefix))
 	case cfg.Env == "prod" && !strings.HasPrefix(cfg.WebBaseURL, "https://"):
-		errs = append(errs, fmt.Errorf("%sWEB_BASE_URL 在生产环境必须是 https 地址", Prefix))
+		if cookieSecureSet && !cookieSecureValue {
+			cfg.Warnings = append(cfg.Warnings,
+				"生产环境使用 http 站点地址，且已显式设置 TRIPFOLIO_COOKIE_SECURE=false："+
+					"分享链接是 http、刷新 Cookie 不再带 Secure，仅适合内网或个人自用；对外请在前面加一层 HTTPS 反向代理并改回 https")
+		} else {
+			errs = append(errs, fmt.Errorf(
+				"%sWEB_BASE_URL 在生产环境必须是 https 地址；确定是纯 http 部署时，显式设置 %sCOOKIE_SECURE=false 以确认这一取舍",
+				Prefix, Prefix))
+		}
 	}
 
 	if n, err := strconv.Atoi(get("WORKER_MAX_JOBS", "20")); err != nil || n < 1 {
@@ -166,17 +197,27 @@ func Load(getenv func(string) string) (Config, error) {
 		errs = append(errs, fmt.Errorf("%sKEYRING 在生产环境必须设置", Prefix))
 	}
 
-	secure := get("COOKIE_SECURE", "")
-	if secure == "" {
+	switch {
+	case cookieSecureSet:
+		cfg.CookieSecure = cookieSecureValue
+	default:
 		cfg.CookieSecure = cfg.Env == "prod"
-	} else if b, err := strconv.ParseBool(secure); err != nil {
-		errs = append(errs, fmt.Errorf("%sCOOKIE_SECURE 必须是 true 或 false", Prefix))
-	} else {
-		cfg.CookieSecure = b
 	}
 
+	// 非 prod 会放宽若干校验（邮件可用 log 驱动、高德缺失只告警），
+	// 部署时忘了切 prod 会静默跑在宽松模式下，这里明确提醒。
+	if cfg.Env != "prod" {
+		cfg.Warnings = append(cfg.Warnings, fmt.Sprintf(
+			"当前 TRIPFOLIO_ENV=%s：邮件允许 log 驱动、高德 key 缺失只告警、Cookie 不带 Secure；正式部署请设为 prod",
+			cfg.Env))
+	}
+
+	mailDriverDefault := "log"
+	if cfg.Env == "prod" {
+		mailDriverDefault = "disabled"
+	}
 	cfg.Mail = MailConfig{
-		Driver:       get("MAIL_DRIVER", "log"),
+		Driver:       get("MAIL_DRIVER", mailDriverDefault),
 		SMTPHost:     get("MAIL_SMTP_HOST", ""),
 		SMTPUsername: get("MAIL_SMTP_USERNAME", ""),
 		SMTPPassword: get("MAIL_SMTP_PASSWORD", ""),
@@ -251,6 +292,25 @@ func Load(getenv func(string) string) (Config, error) {
 	}
 	if cfg.Env == "prod" && !cfg.Geo.Configured() {
 		errs = append(errs, fmt.Errorf("%sAMAP_WEB_SERVICE_KEY 在生产环境必填", Prefix))
+	}
+
+	// 高德 JS API 安全密钥：未配置时代理返回 503、页面没有底图，因此不阻塞启动，只由启动日志提示。
+	cfg.AMapJSCode = get("AMAP_JSCODE", "")
+
+	if b, err := strconv.ParseBool(get("AUTO_MIGRATE", "true")); err != nil {
+		errs = append(errs, fmt.Errorf("%sAUTO_MIGRATE 必须是 true 或 false", Prefix))
+	} else {
+		cfg.AutoMigrate = b
+	}
+	if d, err := time.ParseDuration(get("STARTUP_DB_TIMEOUT", "60s")); err != nil || d <= 0 {
+		errs = append(errs, fmt.Errorf("%sSTARTUP_DB_TIMEOUT 必须是正的时长，例如 60s", Prefix))
+	} else {
+		cfg.StartupDBTimeout = d
+	}
+	if d, err := time.ParseDuration(get("STARTUP_DB_RETRY_INTERVAL", "2s")); err != nil || d <= 0 {
+		errs = append(errs, fmt.Errorf("%sSTARTUP_DB_RETRY_INTERVAL 必须是正的时长，例如 2s", Prefix))
+	} else {
+		cfg.StartupDBRetryInterval = d
 	}
 
 	if len(errs) > 0 {

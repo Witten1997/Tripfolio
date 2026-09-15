@@ -37,8 +37,23 @@ func (w *statusWriter) Flush() {
 	}
 }
 
+// quietPath 是高噪音路径：探针、内嵌静态资源与高德代理按 Debug 记录，
+// 否则每个页面请求都会刷出十几行资源日志，把业务日志挤掉。
+func quietPath(path string) bool {
+	switch {
+	case strings.HasPrefix(path, "/health/"):
+		return true
+	case strings.HasPrefix(path, "/assets/"):
+		return true
+	case strings.HasPrefix(path, "/_AMapService/"):
+		return true
+	default:
+		return false
+	}
+}
+
 // Logging 记录每个请求的方法、路径、状态、耗时与请求编号。
-// 探针路径按 Debug 级别记录以减少噪音；5xx 按 Error 级别。日志不包含查询串与请求正文，避免写入凭证。
+// 探针、静态资源与高德代理按 Debug 级别记录以减少噪音；5xx 按 Error 级别。日志不包含查询串与请求正文，避免写入凭证。
 func Logging(logger *slog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -53,7 +68,7 @@ func Logging(logger *slog.Logger) func(http.Handler) http.Handler {
 			switch {
 			case sw.status >= 500:
 				level = slog.LevelError
-			case strings.HasPrefix(r.URL.Path, "/health/"):
+			case quietPath(r.URL.Path):
 				level = slog.LevelDebug
 			}
 			logger.LogAttrs(r.Context(), level, "http 请求",

@@ -3,7 +3,6 @@
 package bootstrap
 
 import (
-	"context"
 	"encoding/base64"
 	"fmt"
 	"log/slog"
@@ -34,7 +33,6 @@ import (
 	"tripfolio/server/internal/modules/travel/share"
 	"tripfolio/server/internal/modules/travel/todo"
 	"tripfolio/server/internal/modules/travel/trip"
-	"tripfolio/server/internal/transport/httpapi"
 )
 
 // Services 是 API 用到的全部业务服务；测试也用它在内存或真实数据库上组装。
@@ -146,7 +144,7 @@ func uploadLimits(l metadata.UploadLimits) assets.UploadLimits {
 }
 
 // buildObjectStore 按配置创建对象存储客户端。未配置时返回 nil：
-// 开发环境允许不接对象存储，文件接口返回依赖不可用；生产由 config 校验保证已配置。
+// 所有环境都允许不接对象存储，文件授权接口返回依赖不可用。
 func buildObjectStore(cfg config.Config, logger *slog.Logger) (*objectstore.S3Store, error) {
 	if !cfg.ObjectStore.Configured() {
 		logger.Warn("未配置对象存储，文件相关接口将返回依赖不可用")
@@ -203,44 +201,18 @@ func loadKeyring(cfg config.Config, logger *slog.Logger) (*security.Keyring, err
 	return security.ParseKeyring("ephemeral=" + base64.StdEncoding.EncodeToString(raw))
 }
 
+// buildMailer 按配置创建投递实现；禁用时返回 nil，log 驱动只在开发与测试使用。
 func buildMailer(cfg config.Config, logger *slog.Logger) mail.Mailer {
-	if cfg.Mail.Driver == "smtp" {
+	switch cfg.Mail.Driver {
+	case "smtp":
 		return mail.NewSMTPMailer(mail.SMTPConfig{
 			Host: cfg.Mail.SMTPHost, Port: cfg.Mail.SMTPPort, Username: cfg.Mail.SMTPUsername, Password: cfg.Mail.SMTPPassword,
 			From: cfg.Mail.From, FromName: cfg.Mail.FromName, ImplicitTLS: cfg.Mail.ImplicitTLS,
 		})
+	case "log":
+		return mail.LogMailer{Logger: logger}
+	default:
+		logger.Warn("邮件服务未启用，注册与找回密码的验证码接口将返回依赖不可用；已有账号仍可用密码登录")
+		return nil
 	}
-	return mail.LogMailer{Logger: logger}
-}
-
-// RunAPI 启动 HTTP 服务并阻塞到 ctx 结束。启动时先检查数据库可达与迁移版本，不满足则直接失败。
-func RunAPI(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
-	pool, err := pgcore.NewPool(ctx, cfg.DatabaseURL, cfg.DBMaxConns)
-	if err != nil {
-		return err
-	}
-	defer pool.Close()
-
-	readiness, err := newDBReadiness(pool)
-	if err != nil {
-		return err
-	}
-	if err := readiness.Check(ctx); err != nil {
-		return fmt.Errorf("启动检查失败: %w", err)
-	}
-	services, err := BuildServices(pool, cfg, logger, nil)
-	if err != nil {
-		return err
-	}
-
-	router := httpapi.NewRouter(httpapi.Deps{
-		Logger: logger, Metadata: metadata.Current(), Readiness: readiness, CORSOrigins: cfg.CORSOrigins,
-		Cookies:  httpapi.CookieSettings{Secure: cfg.CookieSecure},
-		Identity: services.Identity, Sessions: services.Sessions, Profile: services.Profile, Categories: services.Categories,
-		Trips: services.Trips, Itinerary: services.Itinerary, Packing: services.Packing, Todos: services.Todos,
-		Ledger: services.Ledger, Statistics: services.Statistics, Assets: services.Assets, Geo: services.Geo, Shares: services.Shares,
-	})
-	srv := httpapi.NewServer(cfg.HTTPAddr, router)
-	logger.Info("api 启动", "env", cfg.Env, "addr", cfg.HTTPAddr, "cors_origins", cfg.CORSOrigins, "cookie_secure", cfg.CookieSecure, "mail_driver", cfg.Mail.Driver)
-	return httpapi.Serve(ctx, srv, cfg.ShutdownTimeout, logger)
 }

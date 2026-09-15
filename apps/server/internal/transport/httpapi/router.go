@@ -9,6 +9,7 @@ import (
 	"tripfolio/server/internal/modules/travel/share"
 
 	"github.com/go-chi/chi/v5"
+	chimw "github.com/go-chi/chi/v5/middleware"
 
 	"tripfolio/server/internal/modules/account"
 	"tripfolio/server/internal/modules/assets"
@@ -45,6 +46,8 @@ type Deps struct {
 	Statistics *finance.StatisticsService
 	Assets     *assets.Service
 	Geo        *geo.Service
+	// Web 是内嵌前端资源与高德安全密钥代理；为 nil 时未匹配路径返回 problem+json 404。
+	Web http.Handler
 }
 
 // publicPaths 是不要求身份的业务路径（接口设计 1.1）。带令牌访问时仍会解析身份。
@@ -77,15 +80,24 @@ func allowWhileDeleting(r *http.Request) bool {
 	return path == "/auth/logout" || strings.HasPrefix(path, "/account/deletion")
 }
 
-// NewRouter 组装中间件顺序、探针与 /api/v1 下的生成路由。
-// 中间件顺序：请求编号 → 恢复 → 日志 → CORS → 请求上下文 → 认证。
+// NewRouter 组装中间件顺序、探针、/api/v1 下的生成路由，以及内嵌前端与高德代理的兜底处理。
+// 中间件顺序：请求编号 → 恢复 → 日志 → CORS → 压缩 → 请求上下文 → 认证。
 func NewRouter(d Deps) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	r.Use(middleware.Recoverer(d.Logger))
 	r.Use(middleware.Logging(d.Logger))
 	r.Use(middleware.CORS(d.CORSOrigins))
-	r.NotFound(notFound)
+	// 单二进制里不再有 Caddy 负责压缩：统一在这里给 JSON、HTML、JS、CSS 等文本响应做 gzip。
+	// chi 只压缩它默认类型表里的内容类型，高德瓦片等二进制响应不受影响；已带 Content-Encoding 的响应会跳过。
+	r.Use(chimw.Compress(5))
+	if d.Web != nil {
+		r.NotFound(d.Web.ServeHTTP)
+	} else {
+		r.NotFound(notFound)
+	}
+	// /api 下未匹配的路径保持 JSON 404：否则会被前端回退处理成一张 HTML 页面。
+	r.Handle("/api/*", http.HandlerFunc(notFound))
 	r.MethodNotAllowed(methodNotAllowed)
 
 	r.Get("/health/live", live)

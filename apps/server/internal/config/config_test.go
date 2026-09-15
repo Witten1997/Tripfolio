@@ -51,6 +51,64 @@ func TestLoadRequiresDatabaseURL(t *testing.T) {
 	}
 }
 
+func TestLoadStartupControls(t *testing.T) {
+	cfg, err := config.Load(envFrom(map[string]string{
+		"TRIPFOLIO_DATABASE_URL": "postgres://u:p@localhost:5432/db",
+	}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// 默认自动迁移并给外部数据库 60 秒等待：单二进制部署最常见的就是数据库还没就绪。
+	if !cfg.AutoMigrate {
+		t.Error("AutoMigrate 默认应为 true")
+	}
+	if cfg.StartupDBTimeout != 60*time.Second {
+		t.Errorf("StartupDBTimeout = %v, want 60s", cfg.StartupDBTimeout)
+	}
+	if cfg.StartupDBRetryInterval != 2*time.Second {
+		t.Errorf("StartupDBRetryInterval = %v, want 2s", cfg.StartupDBRetryInterval)
+	}
+	if cfg.AMapJSCode != "" {
+		t.Errorf("AMapJSCode = %q, want 空", cfg.AMapJSCode)
+	}
+
+	configured, err := config.Load(envFrom(map[string]string{
+		"TRIPFOLIO_DATABASE_URL":              "postgres://u:p@localhost:5432/db",
+		"TRIPFOLIO_AMAP_JSCODE":               "jscode-from-env",
+		"TRIPFOLIO_AUTO_MIGRATE":              "false",
+		"TRIPFOLIO_STARTUP_DB_TIMEOUT":        "15s",
+		"TRIPFOLIO_STARTUP_DB_RETRY_INTERVAL": "500ms",
+	}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if configured.AMapJSCode != "jscode-from-env" || configured.AutoMigrate {
+		t.Errorf("AMapJSCode/AutoMigrate = %q/%v", configured.AMapJSCode, configured.AutoMigrate)
+	}
+	if configured.StartupDBTimeout != 15*time.Second || configured.StartupDBRetryInterval != 500*time.Millisecond {
+		t.Errorf("超时与重试间隔 = %v/%v", configured.StartupDBTimeout, configured.StartupDBRetryInterval)
+	}
+}
+
+func TestLoadRejectsInvalidStartupControls(t *testing.T) {
+	_, err := config.Load(envFrom(map[string]string{
+		"TRIPFOLIO_DATABASE_URL":              "postgres://u:p@localhost:5432/db",
+		"TRIPFOLIO_AUTO_MIGRATE":              "maybe",
+		"TRIPFOLIO_STARTUP_DB_TIMEOUT":        "0s",
+		"TRIPFOLIO_STARTUP_DB_RETRY_INTERVAL": "-1s",
+	}))
+	if err == nil {
+		t.Fatal("want error")
+	}
+	for _, want := range []string{
+		"TRIPFOLIO_AUTO_MIGRATE", "TRIPFOLIO_STARTUP_DB_TIMEOUT", "TRIPFOLIO_STARTUP_DB_RETRY_INTERVAL",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("错误信息未包含 %s：%v", want, err)
+		}
+	}
+}
+
 func TestLoadRejectsInvalidValuesTogether(t *testing.T) {
 	_, err := config.Load(envFrom(map[string]string{
 		"TRIPFOLIO_DATABASE_URL":     "postgres://u:p@localhost:5432/db",
@@ -155,20 +213,21 @@ func TestObjectStoreConfiguredRequiresAllFields(t *testing.T) {
 	}
 }
 
-func TestProdRequiresObjectStoreAndAmapKey(t *testing.T) {
+func TestProdStillRequiresAmapKey(t *testing.T) {
 	_, err := config.Load(envFrom(map[string]string{
 		"TRIPFOLIO_ENV":            "prod",
 		"TRIPFOLIO_DATABASE_URL":   "postgres://u:p@localhost:5432/db",
 		"TRIPFOLIO_KEYRING":        "k1=" + strings.Repeat("A", 44),
+		"TRIPFOLIO_WEB_BASE_URL":   "https://trip.example.com",
 		"TRIPFOLIO_MAIL_DRIVER":    "smtp",
 		"TRIPFOLIO_MAIL_SMTP_HOST": "smtpdm.aliyun.com",
 		"TRIPFOLIO_MAIL_FROM":      "no-reply@example.com",
 	}))
 	if err == nil {
-		t.Fatal("生产环境缺少对象存储与高德配置应报错")
+		t.Fatal("生产环境缺少高德配置应报错")
 	}
-	if !strings.Contains(err.Error(), "OBJECTSTORE_ENDPOINT") {
-		t.Errorf("错误应提到对象存储配置: %v", err)
+	if strings.Contains(err.Error(), "OBJECTSTORE_") {
+		t.Errorf("对象存储未配置不应阻塞启动: %v", err)
 	}
 	if !strings.Contains(err.Error(), "AMAP_WEB_SERVICE_KEY") {
 		t.Errorf("错误应提到高德 key: %v", err)
@@ -241,5 +300,77 @@ func TestWebBaseURLDefaultsInDevAndRequiresHTTPSInProd(t *testing.T) {
 	}))
 	if err == nil || !strings.Contains(err.Error(), "WEB_BASE_URL") {
 		t.Errorf("生产环境非 https 分享地址应报错: %v", err)
+	}
+}
+
+// prod 要求 https 站点地址，是因为 Secure Cookie 在 http 下不会被浏览器回传、登录会静默失效。
+// 显式关闭 COOKIE_SECURE 等于部署方确认「这套部署没有 TLS」，此时放行但必须留下告警。
+func TestProdPlainHTTPNeedsExplicitCookieSecureOptOut(t *testing.T) {
+	base := map[string]string{
+		"TRIPFOLIO_ENV":                           "prod",
+		"TRIPFOLIO_DATABASE_URL":                  "postgres://u:p@localhost:5432/db",
+		"TRIPFOLIO_KEYRING":                       "k1=" + strings.Repeat("A", 44),
+		"TRIPFOLIO_MAIL_DRIVER":                   "smtp",
+		"TRIPFOLIO_MAIL_SMTP_HOST":                "smtpdm.aliyun.com",
+		"TRIPFOLIO_MAIL_FROM":                     "no-reply@example.com",
+		"TRIPFOLIO_OBJECTSTORE_ENDPOINT":          "https://oss-cn-hangzhou.aliyuncs.com",
+		"TRIPFOLIO_OBJECTSTORE_BUCKET":            "tripfolio",
+		"TRIPFOLIO_OBJECTSTORE_ACCESS_KEY_ID":     "ak",
+		"TRIPFOLIO_OBJECTSTORE_SECRET_ACCESS_KEY": "sk",
+		"TRIPFOLIO_AMAP_WEB_SERVICE_KEY":          "amap-key",
+		"TRIPFOLIO_WEB_BASE_URL":                  "http://trip.example.com",
+	}
+
+	_, err := config.Load(envFrom(base))
+	if err == nil || !strings.Contains(err.Error(), "COOKIE_SECURE=false") {
+		t.Fatalf("未显式确认时应报错并提示显式设置 COOKIE_SECURE=false: %v", err)
+	}
+
+	base["TRIPFOLIO_COOKIE_SECURE"] = "false"
+	cfg, err := config.Load(envFrom(base))
+	if err != nil {
+		t.Fatalf("显式关闭 Secure Cookie 后应可启动: %v", err)
+	}
+	if cfg.CookieSecure {
+		t.Error("CookieSecure 应为 false")
+	}
+	if !slices.ContainsFunc(cfg.Warnings, func(w string) bool { return strings.Contains(w, "http") }) {
+		t.Errorf("缺少 http 部署告警: %v", cfg.Warnings)
+	}
+}
+
+func TestNonProdEnvironmentIsWarned(t *testing.T) {
+	cfg, err := config.Load(envFrom(map[string]string{
+		"TRIPFOLIO_DATABASE_URL": "postgres://u:p@localhost:5432/db",
+	}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !slices.ContainsFunc(cfg.Warnings, func(w string) bool { return strings.Contains(w, "TRIPFOLIO_ENV=dev") }) {
+		t.Errorf("dev 环境应提示切到 prod: %v", cfg.Warnings)
+	}
+	// 生产 + https 时不该出现「忘了切 prod」这类提醒。
+	prod, err := config.Load(envFrom(map[string]string{
+		"TRIPFOLIO_ENV":                           "prod",
+		"TRIPFOLIO_DATABASE_URL":                  "postgres://u:p@localhost:5432/db",
+		"TRIPFOLIO_KEYRING":                       "k1=" + strings.Repeat("A", 44),
+		"TRIPFOLIO_MAIL_DRIVER":                   "smtp",
+		"TRIPFOLIO_MAIL_SMTP_HOST":                "smtpdm.aliyun.com",
+		"TRIPFOLIO_MAIL_FROM":                     "no-reply@example.com",
+		"TRIPFOLIO_OBJECTSTORE_ENDPOINT":          "https://oss-cn-hangzhou.aliyuncs.com",
+		"TRIPFOLIO_OBJECTSTORE_BUCKET":            "tripfolio",
+		"TRIPFOLIO_OBJECTSTORE_ACCESS_KEY_ID":     "ak",
+		"TRIPFOLIO_OBJECTSTORE_SECRET_ACCESS_KEY": "sk",
+		"TRIPFOLIO_AMAP_WEB_SERVICE_KEY":          "amap-key",
+		"TRIPFOLIO_WEB_BASE_URL":                  "https://trip.example.com",
+	}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !prod.CookieSecure {
+		t.Error("prod + https 时 CookieSecure 应为 true")
+	}
+	if len(prod.Warnings) != 0 {
+		t.Errorf("规范的 prod 配置不该有告警: %v", prod.Warnings)
 	}
 }

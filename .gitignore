@@ -13,11 +13,20 @@ coverage/
 /packages/contracts/dist/*
 !/packages/contracts/dist/openapi.v1.yaml
 
+# 单二进制内嵌前端产物的目录：目录本身与占位 .gitignore 必须入库，
+# 否则全新克隆后 go:embed all:dist 匹配不到任何文件、编译直接失败；产物本身仍被忽略。
+!/apps/server/internal/web/dist/
+/apps/server/internal/web/dist/*
+!/apps/server/internal/web/dist/.gitignore
+
 # 本地环境变量与密钥；仅放行模板和已确认无密钥的前端开发默认值
 .env
 .env.*
 !.env.example
 !.env.*.example
+# NAS 部署脚本的连接信息（含主机与账号），模板可提交
+.deploy.env
+!.deploy.env.example
 !/apps/client/.env.development
 *.local
 *.key
