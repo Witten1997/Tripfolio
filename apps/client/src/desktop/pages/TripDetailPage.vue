@@ -3,6 +3,7 @@ import { ElAlert, ElButton, ElCard, ElSkeleton, ElTag } from 'element-plus'
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 
+import IconAction from '@/desktop/components/IconAction.vue'
 import TripEditorDialog from '@/desktop/components/TripEditorDialog.vue'
 import type { Trip } from '@/shared/api/trips'
 import { writeWarnings, type WriteOutcome } from '@/shared/api/writes'
@@ -22,6 +23,7 @@ const feedbackType = ref<'success' | 'warning'>('success')
 const tabs = [
   { name: 'trip-itinerary', label: '行程' },
   { name: 'trip-ledger', label: '账单' },
+  { name: 'trip-map', label: '地图' },
   { name: 'trip-packing', label: '行李清单' },
   { name: 'trip-album', label: '相册' },
   { name: 'trip-todos', label: '待办' },
@@ -80,9 +82,9 @@ onMounted(() => {
             <span>{{ trip.timezone }} · {{ trip.currency_code }}</span>
           </p>
         </div>
-        <div class="detail-actions">
-          <ElButton :loading="loading" @click="context.reload">刷新</ElButton>
-          <ElButton type="primary" @click="editor?.open(trip)">编辑旅行</ElButton>
+        <div class="detail-actions tf-actions">
+          <IconAction icon="refresh" label="刷新旅行" :loading="loading" @click="context.reload" />
+          <IconAction icon="edit" label="编辑旅行" type="primary" @click="editor?.open(trip)" />
         </div>
       </header>
       <ElAlert
@@ -164,6 +166,7 @@ onMounted(() => {
 }
 .detail-actions {
   display: flex;
+  align-items: center;
   flex-shrink: 0;
   gap: 8px;
 }

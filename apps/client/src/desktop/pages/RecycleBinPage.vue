@@ -15,6 +15,7 @@ import {
   ElTag,
 } from 'element-plus'
 
+import IconAction from '@/desktop/components/IconAction.vue'
 import type { TrashedTrip } from '@/shared/api/trips'
 import {
   canRestoreTrip,
@@ -63,9 +64,13 @@ function closePurge(done?: () => void) {
         <h1>旅行回收站</h1>
         <p>整趟旅行及关联内容可在恢复截止时间前一并恢复。</p>
       </div>
-      <ElButton :loading="loading" :disabled="purging || !!busy" @click="recycle.reload"
-        >刷新列表</ElButton
-      >
+      <IconAction
+        icon="refresh"
+        label="刷新回收站"
+        :loading="loading"
+        :disabled="purging || !!busy"
+        @click="recycle.reload"
+      />
     </header>
     <ElAlert
       title="旅行进入回收站后保留 30 天。永久清理一经请求，便无法恢复。"
@@ -119,7 +124,7 @@ function closePurge(done?: () => void) {
         >
         <ElTableColumn label="操作" width="190" fixed="right"
           ><template #default="{ row: value }"
-            ><div class="recycle-actions">
+            ><div class="recycle-actions tf-actions">
               <ElButton
                 size="small"
                 :loading="busy === row(value).id"
@@ -129,18 +134,16 @@ function closePurge(done?: () => void) {
                 :aria-label="`恢复旅行${row(value).name}`"
                 @click="recycle.restore(row(value))"
                 >恢复</ElButton
-              ><ElButton
-                size="small"
+              >
+              <IconAction
+                icon="trash"
+                :label="`永久清理旅行：${row(value).name}`"
                 type="danger"
                 plain
                 :disabled="!!row(value).purge_requested_at || purging || !!busy"
-                :aria-label="`永久清理旅行${row(value).name}`"
                 @click="recycle.openPurge(row(value))"
-                >永久清理</ElButton
-              >
-            </div></template
-          ></ElTableColumn
-        >
+              /></div></template
+        ></ElTableColumn>
       </ElTable>
     </ElCard>
     <div v-if="items.length" class="recycle-pagination">

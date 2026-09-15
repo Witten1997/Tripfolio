@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { CategoryTotals, DailyTotals } from '@/shared/api/statistics'
 import {
+  categoryAmountRows,
   dailyBars,
   formatMoney,
   formatShare,
@@ -21,6 +22,54 @@ function cat(overrides: Partial<CategoryTotals> & { category_id: string }): Cate
     ...overrides,
   }
 }
+
+describe('categoryAmountRows', () => {
+  it('只展示当前筛选范围有记录的分类，不用整趟净额判断是否有记录', () => {
+    const input = [
+      cat({ category_id: 'empty' }),
+      cat({ category_id: 'outside-range', trip_category_net_amount: '300.00' }),
+      cat({ category_id: 'dining', expense_amount: '60.00', net_amount: '60.00' }),
+      cat({ category_id: 'transport', expense_amount: '200.00', net_amount: '200.00' }),
+    ]
+    expect(categoryAmountRows(input).map((row) => row.category_id)).toEqual(['transport', 'dining'])
+    expect(input.map((row) => row.category_id)).toEqual([
+      'empty',
+      'outside-range',
+      'dining',
+      'transport',
+    ])
+  })
+
+  it('保留全额退款的零净额分类、只有退款及已删除但被引用的分类', () => {
+    const refunded = cat({
+      category_id: 'refunded',
+      expense_amount: '100.00',
+      refund_amount: '100.00',
+      net_amount: '0.00',
+    })
+    const refundOnly = cat({
+      category_id: 'refund-only',
+      refund_amount: '50.00',
+      net_amount: '-50.00',
+    })
+    const deleted = cat({
+      category_id: 'deleted',
+      name: '已删除分类',
+      expense_amount: '0.0001',
+      net_amount: '0.0001',
+    })
+    expect(categoryAmountRows([refundOnly, refunded, deleted])).toEqual([
+      deleted,
+      refunded,
+      refundOnly,
+    ])
+  })
+
+  it('没有记录时返回空列表', () => {
+    expect(categoryAmountRows([])).toEqual([])
+    expect(categoryAmountRows([cat({ category_id: 'empty' })])).toEqual([])
+  })
+})
 
 describe('formatMoney', () => {
   it('按千分位分组并保留服务端小数位，负号在最前', () => {

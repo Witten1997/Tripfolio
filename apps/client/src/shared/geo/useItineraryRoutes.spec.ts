@@ -1,0 +1,240 @@
+import { effectScope, nextTick, ref, shallowRef } from 'vue'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+import { ApiError } from '@/shared/api/auth'
+import {
+  calculateRoute,
+  GeoRouteError,
+  type GeoCoordinate,
+  type GeoRoute,
+  type TravelMode,
+} from '@/shared/api/geo'
+import type { ItineraryItem } from '@/shared/api/itinerary'
+import { useItineraryRoutes } from '@/shared/geo/useItineraryRoutes'
+
+vi.mock('@/shared/api/geo', async (original) => ({
+  ...(await original<typeof import('@/shared/api/geo')>()),
+  calculateRoute: vi.fn(),
+}))
+const scopes: ReturnType<typeof effectScope>[] = []
+let fixtureId = 0
+
+function items(count = 3) {
+  fixtureId++
+  return ['a', 'b', 'c', 'd', 'e', 'f'].slice(0, count).map(
+    (id, index) =>
+      ({
+        id,
+        title: id,
+        place_name: id,
+        scheduled_on: '2026-10-01',
+        sort_order: index,
+        latitude: 30 + fixtureId / 100 + index / 1000,
+        longitude: 116 + index / 1000,
+      }) as ItineraryItem,
+  )
+}
+const route = (a: GeoCoordinate, b: GeoCoordinate, mode: TravelMode): GeoRoute => ({
+  mode,
+  path: [a, b],
+  provider: 'amap',
+  distance_meters: mode === 'walking' ? 200 : 300,
+  duration_seconds: 100,
+})
+const settle = async () => {
+  await nextTick()
+  await vi.runAllTimersAsync()
+  await nextTick()
+}
+function setup(count = 3) {
+  const list = shallowRef(items(count))
+  const mode = ref<TravelMode>('driving')
+  const scope = effectScope()
+  scopes.push(scope)
+  const result = scope.run(() => useItineraryRoutes(() => list.value, mode))!
+  return { list, mode, result, scope }
+}
+
+beforeEach(() => {
+  vi.useFakeTimers()
+  vi.mocked(calculateRoute)
+    .mockReset()
+    .mockImplementation(async (a, b, mode) => route(a, b, mode))
+})
+afterEach(() => {
+  scopes.forEach((s) => s.stop())
+  scopes.length = 0
+  vi.useRealTimers()
+})
+
+describe('行程自动算路', () => {
+  it('只请求相邻路段，刷新复用成功缓存，重排后计算新邻接关系', async () => {
+    const { list, result } = setup()
+    await settle()
+    expect(calculateRoute).toHaveBeenCalledTimes(2)
+    expect(result.totals.value.distance).toBe(600)
+    await result.refresh()
+    expect(calculateRoute).toHaveBeenCalledTimes(2)
+    list.value = list.value.map((item, index) => ({ ...item, sort_order: 2 - index }))
+    await settle()
+    expect(result.legs.value.map((leg) => leg.id)).toEqual(['c>b', 'b>a'])
+    expect(calculateRoute).toHaveBeenCalledTimes(4)
+  })
+
+  it('切换方式取消旧请求，旧返回不能污染新模式里程', async () => {
+    const old: Array<() => void> = []
+    vi.mocked(calculateRoute).mockImplementation((a, b, mode) =>
+      mode === 'driving'
+        ? new Promise((resolve) => {
+            old.push(() => resolve(route(a, b, mode)))
+          })
+        : Promise.resolve(route(a, b, mode)),
+    )
+    const { mode, result } = setup()
+    await nextTick()
+    const oldSignal = vi.mocked(calculateRoute).mock.calls[0]?.[3]
+    mode.value = 'walking'
+    await settle()
+    expect(oldSignal?.aborted).toBe(true)
+    old.forEach((resolve) => resolve())
+    await settle()
+    expect(result.totals.value.distance).toBe(400)
+    expect(result.legs.value.every((leg) => leg.route?.mode === 'walking')).toBe(true)
+  })
+
+  it('部分路线不可用仍保留全部点位，只汇总成功路段', async () => {
+    vi.mocked(calculateRoute).mockRejectedValueOnce(
+      new ApiError({
+        code: 'RESOURCE_NOT_FOUND',
+        status: 404,
+        title: '无路线',
+        type: 'about:blank',
+        request_id: 'test',
+      }),
+    )
+    const { result } = setup()
+    await settle()
+    expect(result.points.value.length).toBe(3)
+    expect(result.failedCount.value).toBe(1)
+    expect(result.readyCount.value).toBe(1)
+    expect(result.totals.value.distance).toBe(300)
+    expect(result.paths.value.some((p) => p.kind === 'illustrative')).toBe(true)
+  })
+
+  it('离开页面取消所有在途请求', async () => {
+    vi.mocked(calculateRoute).mockImplementation(() => new Promise(() => {}))
+    const { scope } = setup()
+    await nextTick()
+    const signals = vi.mocked(calculateRoute).mock.calls.map((call) => call[3])
+    scope.stop()
+    expect(signals.every((signal) => signal?.aborted)).toBe(true)
+  })
+
+  it('六点五段首轮遇到两次短时限流会自动恢复，成功缓存不再请求', async () => {
+    const seen = new Set<string>()
+    vi.mocked(calculateRoute).mockImplementation(async (a, b, mode) => {
+      const name = (a as ItineraryItem).id
+      if (['b', 'd'].includes(name) && !seen.has(name)) {
+        seen.add(name)
+        throw new GeoRouteError(
+          {
+            type: 'about:blank',
+            code: 'RATE_LIMITED',
+            status: 429,
+            title: 'QPS',
+            request_id: 'test',
+          },
+          '1',
+        )
+      }
+      return route(a, b, mode)
+    })
+    const { result } = setup(6)
+    await settle()
+    expect(calculateRoute).toHaveBeenCalledTimes(7)
+    expect(result.readyCount.value).toBe(5)
+    expect(result.failedCount.value).toBe(0)
+    expect(result.totals.value.distance).toBe(1500)
+    await result.refresh()
+    expect(calculateRoute).toHaveBeenCalledTimes(7)
+  })
+
+  it('请求间隔不小于 1.1 秒，持续失败只重试两次且不跳过后续路段', async () => {
+    const starts: number[] = []
+    vi.mocked(calculateRoute).mockImplementation(async (a, b, mode) => {
+      starts.push(Date.now())
+      if ((a as ItineraryItem).id === 'b')
+        throw new GeoRouteError(
+          {
+            type: 'about:blank',
+            code: 'DEPENDENCY_UNAVAILABLE',
+            status: 503,
+            title: '暂时繁忙',
+            request_id: 'test',
+          },
+          '1',
+        )
+      return route(a, b, mode)
+    })
+    const { result } = setup(6)
+    await settle()
+    expect(calculateRoute).toHaveBeenCalledTimes(7)
+    expect(result.failedCount.value).toBe(1)
+    expect(result.readyCount.value).toBe(4)
+    expect(starts.slice(1).every((start, i) => start - starts[i]! >= 1100)).toBe(true)
+  })
+
+  it.each([
+    ['DEPENDENCY_UNAVAILABLE', 503, null],
+    ['RATE_LIMITED', 429, '60'],
+    ['AUTH_REQUIRED', 401, null],
+  ] as const)('配额／凭证错误或长时间限流不自动反复请求：%s', async (code, status, retry) => {
+    vi.mocked(calculateRoute).mockRejectedValue(
+      new GeoRouteError(
+        { type: 'about:blank', code, status, title: '不可用', request_id: 'test' },
+        retry,
+      ),
+    )
+    const { result } = setup(6)
+    await settle()
+    expect(calculateRoute).toHaveBeenCalledOnce()
+    expect(result.failedCount.value).toBe(5)
+    expect(result.totals.value.distance).toBe(0)
+  })
+
+  it('尊重 Retry-After，退避等待中离开会清理计时器，不再发起重试', async () => {
+    vi.mocked(calculateRoute).mockRejectedValue(
+      new GeoRouteError(
+        {
+          type: 'about:blank',
+          code: 'RATE_LIMITED',
+          status: 429,
+          title: 'QPS',
+          request_id: 'test',
+        },
+        '3',
+      ),
+    )
+    const { scope } = setup(6)
+    await nextTick()
+    await vi.advanceTimersByTimeAsync(2900)
+    expect(calculateRoute).toHaveBeenCalledOnce()
+    scope.stop()
+    await vi.runAllTimersAsync()
+    expect(calculateRoute).toHaveBeenCalledOnce()
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('平滑排队中切换模式，未开始的旧路段不会继续请求', async () => {
+    const { mode, result } = setup(6)
+    await vi.advanceTimersByTimeAsync(100)
+    expect(calculateRoute).toHaveBeenCalledOnce()
+    mode.value = 'walking'
+    await settle()
+    expect(
+      vi.mocked(calculateRoute).mock.calls.filter((call) => call[2] === 'driving'),
+    ).toHaveLength(1)
+    expect(result.readyCount.value).toBe(5)
+    expect(result.legs.value.every((leg) => leg.route?.mode === 'walking')).toBe(true)
+  })
+})

@@ -15,29 +15,25 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	geodata "tripfolio/server/internal/modules/geo"
 )
 
 // ErrNoResult 表示高德返回空结果（例如境外坐标）。
 // 传输层映射为 404 RESOURCE_NOT_FOUND，客户端按「无结果」处理并允许手填。
-var ErrNoResult = errors.New("地点服务无结果")
+var ErrNoResult = geodata.ErrNoResult
 
 // ErrQuotaExceeded 表示触达服务端设置的全局日上限，用于保护高德免费配额。
 // 传输层映射为 503 DEPENDENCY_UNAVAILABLE。
-var ErrQuotaExceeded = errors.New("地点服务日配额已用尽")
+var ErrQuotaExceeded = geodata.ErrQuotaExceeded
 
 // Place 是统一的地点模型，对应接口设计 3.10 的 GeoPlace。
-type Place struct {
-	Name      string
-	Address   string
-	Latitude  float64
-	Longitude float64
-	Adcode    string
-	Provider  string
-}
+type Place = geodata.Place
 
 // Limiter 是按键固定窗口限流器，由 adapters/ratelimit 提供实现。
 type Limiter interface {
@@ -58,6 +54,9 @@ type Config struct {
 	GlobalDailyLimit int
 	// CacheTTL 是逆地理编码缓存时长，0 表示用默认值 24 小时。
 	CacheTTL time.Duration
+	// RouteInterval 是同一个 Key 算路请求的最小发起间隔，默认 1.1 秒。
+	// 配合串行门闩保护低 QPS 配额；测试可使用极短间隔。
+	RouteInterval time.Duration
 	// HTTPClient 可注入自定义客户端；为 nil 时按 Timeout 构造。
 	HTTPClient *http.Client
 	// Now 可注入时钟，便于测试缓存过期与限流窗口。
@@ -73,9 +72,14 @@ type AmapClient struct {
 	perAccount int
 	now        func() time.Time
 
-	cacheTTL time.Duration
-	cacheMu  sync.Mutex
-	cache    map[string]cacheEntry
+	cacheTTL      time.Duration
+	cacheMu       sync.Mutex
+	cache         map[string]cacheEntry
+	routes        map[string]routeCacheEntry
+	routeGate     chan struct{}
+	routeInterval time.Duration
+	// routeNext 仅在持有 routeGate 时访问，使用真实单调时钟，不复用缓存测试时钟。
+	routeNext time.Time
 
 	dailyLimit int
 	dailyMu    sync.Mutex
@@ -118,16 +122,23 @@ func NewAmapClient(cfg Config, limiter Limiter) (*AmapClient, error) {
 	if now == nil {
 		now = time.Now
 	}
+	interval := cfg.RouteInterval
+	if interval <= 0 {
+		interval = 1100 * time.Millisecond
+	}
 	return &AmapClient{
-		key:        cfg.Key,
-		baseURL:    strings.TrimRight(baseURL, "/"),
-		httpClient: client,
-		limiter:    limiter,
-		perAccount: perAccount,
-		now:        now,
-		cacheTTL:   ttl,
-		cache:      map[string]cacheEntry{},
-		dailyLimit: cfg.GlobalDailyLimit,
+		key:           cfg.Key,
+		baseURL:       strings.TrimRight(baseURL, "/"),
+		httpClient:    client,
+		limiter:       limiter,
+		perAccount:    perAccount,
+		now:           now,
+		cacheTTL:      ttl,
+		cache:         map[string]cacheEntry{},
+		routes:        map[string]routeCacheEntry{},
+		routeGate:     make(chan struct{}, 1),
+		routeInterval: interval,
+		dailyLimit:    cfg.GlobalDailyLimit,
 	}, nil
 }
 
@@ -139,7 +150,10 @@ func (c *AmapClient) ReverseGeocode(ctx context.Context, accountKey string, lat,
 		if entry.noResult {
 			return Place{}, ErrNoResult
 		}
-		return entry.place, nil
+		// 缓存只共享地址，坐标必须保留本次点击的位置。
+		place := entry.place
+		place.Latitude, place.Longitude = lat, lng
+		return place, nil
 	}
 
 	if err := c.admit(accountKey); err != nil {
@@ -177,7 +191,7 @@ func (c *AmapClient) ReverseGeocode(ctx context.Context, accountKey string, lat,
 		return Place{}, err
 	}
 	if body.Status != "1" {
-		return Place{}, fmt.Errorf("高德逆地理编码失败：info=%s infocode=%s", body.Info, body.InfoCode)
+		return Place{}, providerError(body.InfoCode)
 	}
 
 	comp := body.Regeo.AddressComponent
@@ -200,7 +214,7 @@ func (c *AmapClient) ReverseGeocode(ctx context.Context, accountKey string, lat,
 		Address:   address,
 		Latitude:  lat,
 		Longitude: lng,
-		Adcode:    comp.Adcode.String(),
+		Adcode:    optionalString(comp.Adcode.String()),
 		Provider:  "amap",
 	}
 	c.storeCache(cacheKey, cacheEntry{place: place, expiresAt: c.now().Add(c.cacheTTL)})
@@ -221,37 +235,38 @@ func (c *AmapClient) SearchPlaces(ctx context.Context, accountKey, keyword strin
 	q := url.Values{}
 	q.Set("key", c.key)
 	q.Set("keywords", keyword)
-	q.Set("datatype", "poi")
+	q.Set("offset", "20")
+	q.Set("page", "1")
+	q.Set("extensions", "base")
 	q.Set("output", "json")
 	if city != "" {
 		q.Set("city", city)
-	}
-	// location 只在 city 不为空时生效（高德文档），因此两者都有才带上。
-	if lat != nil && lng != nil && city != "" {
-		q.Set("location", formatCoord(*lng)+","+formatCoord(*lat))
 	}
 
 	var body struct {
 		Status   string `json:"status"`
 		Info     string `json:"info"`
 		InfoCode string `json:"infocode"`
-		Tips     []struct {
+		POIs     []struct {
+			ID       flexString `json:"id"`
 			Name     flexString `json:"name"`
-			District flexString `json:"district"`
+			Province flexString `json:"pname"`
+			City     flexString `json:"cityname"`
+			District flexString `json:"adname"`
 			Address  flexString `json:"address"`
 			Location flexString `json:"location"`
 			Adcode   flexString `json:"adcode"`
-		} `json:"tips"`
+		} `json:"pois"`
 	}
-	if err := c.get(ctx, "/v3/assistant/inputtips", q, &body); err != nil {
+	if err := c.get(ctx, "/v3/place/text", q, &body); err != nil {
 		return nil, err
 	}
 	if body.Status != "1" {
-		return nil, fmt.Errorf("高德地点搜索失败：info=%s infocode=%s", body.Info, body.InfoCode)
+		return nil, providerError(body.InfoCode)
 	}
 
-	places := make([]Place, 0, len(body.Tips))
-	for _, tip := range body.Tips {
+	places := make([]Place, 0, len(body.POIs))
+	for _, tip := range body.POIs {
 		// 公交线路等条目不返回坐标，选点用不上，直接丢弃。
 		lng, lat, ok := parseCoord(tip.Location.String())
 		if !ok {
@@ -263,10 +278,11 @@ func (c *AmapClient) SearchPlaces(ctx context.Context, accountKey, keyword strin
 		}
 		places = append(places, Place{
 			Name:      name,
-			Address:   firstNonEmpty(tip.Address.String(), tip.District.String()),
+			Address:   firstNonEmpty(tip.Address.String(), tip.Province.String()+tip.City.String()+tip.District.String()),
 			Latitude:  lat,
 			Longitude: lng,
-			Adcode:    tip.Adcode.String(),
+			Adcode:    optionalString(tip.Adcode.String()),
+			POIID:     optionalString(tip.ID.String()),
 			Provider:  "amap",
 		})
 		if len(places) == 20 {
@@ -276,15 +292,21 @@ func (c *AmapClient) SearchPlaces(ctx context.Context, accountKey, keyword strin
 	if len(places) == 0 {
 		return nil, ErrNoResult
 	}
+	// POI 关键字接口不接受 location；在最多 20 个匹配结果中按球面距离就近排序。
+	if lat != nil && lng != nil {
+		sort.SliceStable(places, func(i, j int) bool {
+			return angularDistance(*lat, *lng, places[i]) < angularDistance(*lat, *lng, places[j])
+		})
+	}
 	return places, nil
 }
 
 // admit 依次检查按账号限流与全局日上限。
 func (c *AmapClient) admit(accountKey string) error {
 	if c.limiter != nil && accountKey != "" {
-		if ok, _ := c.limiter.Allow("geo:"+accountKey, c.perAccount, time.Minute, c.now()); !ok {
+		if ok, retry := c.limiter.Allow("geo:"+accountKey, c.perAccount, time.Minute, c.now()); !ok {
 			// 限流的重试时长由传输层换算为 Retry-After。
-			return errRateLimited{retryAfter: time.Minute}
+			return errRateLimited{retryAfter: retry}
 		}
 	}
 	if c.dailyLimit > 0 {
@@ -304,9 +326,18 @@ func (c *AmapClient) admit(accountKey string) error {
 }
 
 // errRateLimited 让传输层拿到重试时长而不必导入 apperr。
-type errRateLimited struct{ retryAfter time.Duration }
+type errRateLimited struct {
+	retryAfter time.Duration
+	cause      error
+}
 
-func (e errRateLimited) Error() string { return "地点服务请求过于频繁" }
+func (e errRateLimited) Error() string {
+	if e.cause != nil {
+		return fmt.Sprintf("地点服务请求过于频繁: %v", e.cause)
+	}
+	return "地点服务请求过于频繁"
+}
+func (e errRateLimited) Unwrap() error { return e.cause }
 
 // RetryAfter 供传输层构造 429 响应。
 func (e errRateLimited) RetryAfter() time.Duration { return e.retryAfter }
@@ -324,7 +355,8 @@ func (c *AmapClient) lookupCache(key string) (cacheEntry, bool) {
 	c.cacheMu.Lock()
 	defer c.cacheMu.Unlock()
 	entry, ok := c.cache[key]
-	if !ok || c.now().After(entry.expiresAt) {
+	if !ok || !c.now().Before(entry.expiresAt) {
+		delete(c.cache, key)
 		return cacheEntry{}, false
 	}
 	return entry, true
@@ -334,11 +366,17 @@ func (c *AmapClient) storeCache(key string, entry cacheEntry) {
 	c.cacheMu.Lock()
 	defer c.cacheMu.Unlock()
 	// 顺带清理过期项，避免长期运行后无界增长。
-	if len(c.cache) > 4096 {
+	if len(c.cache) >= 4096 {
 		now := c.now()
 		for k, v := range c.cache {
 			if now.After(v.expiresAt) {
 				delete(c.cache, k)
+			}
+		}
+		if len(c.cache) >= 4096 {
+			for k := range c.cache {
+				delete(c.cache, k)
+				break
 			}
 		}
 	}
@@ -354,17 +392,34 @@ func (c *AmapClient) get(ctx context.Context, path string, q url.Values, out any
 	}
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
+		// url.Error 的 Error() 包含完整 URL（含 key），日志不得原样输出。
+		var urlErr *url.Error
+		if errors.As(err, &urlErr) {
+			err = urlErr.Err
+		}
 		return fmt.Errorf("请求高德: %w", err)
 	}
 	defer resp.Body.Close()
 
 	// 上游响应体限长，避免异常响应占用内存。
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, (1<<20)+1))
 	if err != nil {
 		return fmt.Errorf("读取高德响应: %w", err)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		if resp.StatusCode == http.StatusTooManyRequests {
+			return errRateLimited{retryAfter: upstreamRetryAfter(resp.Header.Get("Retry-After"))}
+		}
+		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+			return fmt.Errorf("%w: HTTP %d", geodata.ErrConfiguration, resp.StatusCode)
+		}
+		if resp.StatusCode >= 500 {
+			return errTemporary{cause: fmt.Errorf("高德返回状态 %d", resp.StatusCode), retryAfter: upstreamRetryAfter(resp.Header.Get("Retry-After"))}
+		}
 		return fmt.Errorf("高德返回状态 %d", resp.StatusCode)
+	}
+	if len(raw) > 1<<20 {
+		return errors.New("高德响应超过大小上限")
 	}
 	if err := json.Unmarshal(raw, out); err != nil {
 		return fmt.Errorf("解析高德响应: %w", err)
@@ -446,7 +501,7 @@ func parseCoord(s string) (lng, lat float64, ok bool) {
 	if err != nil {
 		return 0, 0, false
 	}
-	if lat < -90 || lat > 90 || lng < -180 || lng > 180 {
+	if !(geodata.Coordinate{Latitude: lat, Longitude: lng}).Valid() {
 		return 0, 0, false
 	}
 	return lng, lat, true
@@ -459,4 +514,18 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func optionalString(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
+}
+
+func angularDistance(lat, lng float64, place Place) float64 {
+	rad := math.Pi / 180
+	a := math.Sin((place.Latitude - lat) * rad / 2)
+	b := math.Sin((place.Longitude - lng) * rad / 2)
+	return a*a + math.Cos(lat*rad)*math.Cos(place.Latitude*rad)*b*b
 }

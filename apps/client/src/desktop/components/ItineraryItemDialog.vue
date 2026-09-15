@@ -14,7 +14,15 @@ import {
   ElSelect,
   ElSkeleton,
 } from 'element-plus'
-import { computed } from 'vue'
+import { computed, nextTick, onScopeDispose, ref, useId, watch } from 'vue'
+
+import ActionIcon from '@/desktop/components/ActionIcon.vue'
+import IconAction from '@/desktop/components/IconAction.vue'
+import LedgerEntryDialog from '@/desktop/components/LedgerEntryDialog.vue'
+import PlacePicker from '@/desktop/components/PlacePicker.vue'
+import { listCategories, type ExpenseCategory } from '@/shared/api/categories'
+import type { GeoPlace } from '@/shared/api/geo'
+import type { LedgerEntry } from '@/shared/api/ledger'
 
 import {
   createItineraryItem,
@@ -26,24 +34,40 @@ import {
   type ItineraryKind,
   type ItineraryStatus,
 } from '@/shared/api/itinerary'
-import type { WriteOutcome } from '@/shared/api/writes'
+import { actionError, writeWarnings, type WriteOutcome } from '@/shared/api/writes'
 import {
+  applyItineraryPlace,
   changedItineraryFields,
+  clearItineraryPlace,
   emptyItineraryDraft,
   itineraryDraftFrom,
+  itineraryExpensePreset,
   itineraryFieldLabels,
   validateItineraryDraft,
   type ItineraryDraft,
 } from '@/shared/travel/itineraryDraft'
+import { DraftError } from '@/shared/travel/tripDraft'
 import { useTripContext } from '@/shared/travel/tripContext'
 import { dayTitle } from '@/shared/travel/tripDays'
-import { useItemEditor } from '@/shared/travel/useItemEditor'
+import { useItemEditor, type ItemEditor } from '@/shared/travel/useItemEditor'
 
 const emit = defineEmits<{ saved: [outcome: WriteOutcome<ItineraryItem>] }>()
 const context = useTripContext()
 const currency = computed(() => context.trip.value?.currency_code ?? 'CNY')
+const locatingPlace = ref(false)
+const detailsOpened = ref(false)
+const detailsId = `${useId()}-details`
+const form = ref<InstanceType<typeof ElForm>>()
+const placePicker = ref<InstanceType<typeof PlacePicker>>()
+const ledgerDialog = ref<InstanceType<typeof LedgerEntryDialog>>()
+const ledgerOpened = ref(false)
+const loadingExpense = ref(false)
+const expenseCategories = ref<ExpenseCategory[]>([])
+const expenseError = ref('')
+const expenseNotice = ref('')
+let expenseGeneration = 0
 
-const editor = useItemEditor<
+const editor: ItemEditor<ItineraryItem, ItineraryDraft> = useItemEditor<
   ItineraryItem,
   ItineraryDraft,
   ReturnType<typeof validateItineraryDraft>,
@@ -52,10 +76,14 @@ const editor = useItemEditor<
   emptyDraft: () => emptyItineraryDraft(),
   draftFrom: itineraryDraftFrom,
   validate: (draft) =>
-    validateItineraryDraft(draft, {
-      currency: currency.value,
-      minorUnits: context.minorUnits.value,
-    }),
+    validateItineraryDraft(
+      draft,
+      {
+        currency: currency.value,
+        minorUnits: context.minorUnits.value,
+      },
+      !editor.isEditing.value,
+    ),
   diff: changedItineraryFields,
   get: (id) => getItineraryItem(context.tripId, id),
   create: (body, operationId) => createItineraryItem(context.tripId, body, operationId),
@@ -81,6 +109,93 @@ const {
 
 const kinds = Object.keys(itineraryKindLabels) as ItineraryKind[]
 const statuses = Object.keys(itineraryStatusLabels) as ItineraryStatus[]
+const locationError = computed(
+  () =>
+    errors.value.place_name ||
+    errors.value.address ||
+    errors.value.latitude ||
+    errors.value.longitude ||
+    (errors.value.title ? '请重新选择地点，行程名称将自动填写' : ''),
+)
+const detailFields = ['notes', 'status', 'actual_start_local', 'actual_end_local', 'actual_notes']
+watch(errors, (value) => {
+  if (detailFields.some((field) => value[field])) detailsOpened.value = true
+})
+watch(opened, (value) => {
+  if (!value) expenseGeneration++
+})
+onScopeDispose(() => expenseGeneration++)
+
+function choosePlace(place: GeoPlace) {
+  applyItineraryPlace(draft, place)
+  for (const field of ['title', 'place_name', 'address', 'latitude', 'longitude'])
+    delete errors.value[field]
+  expenseError.value = ''
+}
+
+function clearPlace() {
+  clearItineraryPlace(draft)
+  expenseError.value = ''
+}
+
+async function recordExpense() {
+  if (
+    saving.value ||
+    uncertainCreate.value ||
+    locatingPlace.value ||
+    loadingExpense.value ||
+    ledgerOpened.value
+  )
+    return
+  expenseError.value = ''
+  let presets: ReturnType<typeof itineraryExpensePreset>
+  try {
+    presets = itineraryExpensePreset(draft)
+  } catch (cause) {
+    if (cause instanceof DraftError) {
+      errors.value = { ...errors.value, ...cause.fields }
+      expenseError.value = Object.values(cause.fields).join('；')
+      await focusFirstError()
+    }
+    return
+  }
+  const request = ++expenseGeneration
+  loadingExpense.value = true
+  try {
+    const categories = await listCategories()
+    if (!opened.value || request !== expenseGeneration) return
+    if (!categories.length) {
+      expenseError.value = '还没有可用账单分类，请先在账单页添加分类。'
+      return
+    }
+    expenseCategories.value = categories
+    await nextTick()
+    if (opened.value && request === expenseGeneration)
+      await ledgerDialog.value?.open(undefined, 'expense', presets)
+  } catch (cause) {
+    if (opened.value && request === expenseGeneration)
+      expenseError.value = actionError(cause, '无法加载账单分类，请再次点击加号重试。')
+  } finally {
+    if (request === expenseGeneration) loadingExpense.value = false
+  }
+}
+
+async function expenseSaved(outcome: WriteOutcome<LedgerEntry>) {
+  expenseNotice.value = ['账目已保存，可在账单页查看。', ...writeWarnings(outcome.result)].join(' ')
+  // 第一笔账目会锁定币种；保留行程草稿，仅更新旅行上下文。
+  await context.reload()
+}
+
+async function focusFirstError() {
+  await nextTick()
+  if (locationError.value) placePicker.value?.focus()
+  else
+    (form.value?.$el as HTMLElement | undefined)
+      ?.querySelector<HTMLElement>(
+        '.el-form-item.is-error input, .el-form-item.is-error textarea, .el-form-item.is-error [tabindex="0"]',
+      )
+      ?.focus()
+}
 
 const conflictRows = computed(() => {
   if (!baseline.value || !latest.value) return []
@@ -114,7 +229,10 @@ function setText(field: TextField, value: unknown) {
 }
 
 async function requestClose(done?: () => void) {
-  if (saving.value) return
+  if (saving.value || ledgerOpened.value) return
+  // 即使关闭确认尚未结束，也不能让迟到的分类请求突然打开第二个弹窗。
+  expenseGeneration++
+  loadingExpense.value = false
   if (dirty.value || uncertainCreate.value) {
     try {
       await ElMessageBox.confirm(
@@ -150,12 +268,19 @@ async function adoptLatest() {
 }
 
 async function save(againstLatest = false) {
+  if (locatingPlace.value || loadingExpense.value || ledgerOpened.value) return
   const outcome = await editor.save(againstLatest)
   if (outcome) emit('saved', outcome)
+  else await focusFirstError()
 }
 
 /** 新建时可传入所属日期（从某一天的“添加”按钮进入）。 */
 function open(item?: ItineraryItem, scheduledOn?: string) {
+  if (saving.value || uncertainCreate.value || ledgerOpened.value) return
+  expenseGeneration++
+  detailsOpened.value = false
+  loadingExpense.value = false
+  expenseError.value = expenseNotice.value = ''
   return editor.open(item, scheduledOn ? { scheduled_on: scheduledOn } : {})
 }
 
@@ -168,7 +293,7 @@ defineExpose({ open })
     :title="isEditing ? '编辑行程' : '新建行程'"
     width="min(720px, calc(100vw - 32px))"
     :close-on-click-modal="false"
-    :close-on-press-escape="!saving"
+    :close-on-press-escape="!saving && !ledgerOpened"
     :before-close="requestClose"
     destroy-on-close
   >
@@ -185,13 +310,11 @@ defineExpose({ open })
       <ElButton v-if="isEditing && !baseline" @click="editor.load">重新加载行程</ElButton>
       <ElForm
         v-else
+        ref="form"
         label-position="top"
-        :disabled="saving || uncertainCreate"
+        :disabled="saving || uncertainCreate || loadingExpense || ledgerOpened"
         @submit.prevent="save()"
       >
-        <ElFormItem label="标题" required :error="errors.title">
-          <ElInput v-model="draft.title" maxlength="200" autofocus placeholder="例如：浅草寺" />
-        </ElFormItem>
         <div class="editor-columns">
           <ElFormItem label="类型" required :error="errors.kind">
             <ElSelect v-model="draft.kind" aria-label="类型">
@@ -221,6 +344,19 @@ defineExpose({ open })
             }}</span>
           </ElFormItem>
         </div>
+        <PlacePicker
+          ref="placePicker"
+          :value="draft"
+          :city="context.trip.value?.destination?.slice(0, 40) ?? ''"
+          :disabled="saving || uncertainCreate || loadingExpense || ledgerOpened"
+          :validation-error="locationError"
+          @select="choosePlace"
+          @clear="clearPlace"
+          @locating="locatingPlace = $event"
+        />
+        <p v-if="isEditing && !draft.place_name && draft.title" class="editor-hint">
+          原有行程：{{ draft.title }}。可继续编辑，或选点补充地图位置。
+        </p>
         <fieldset class="editor-group">
           <legend>计划时间</legend>
           <div class="editor-columns">
@@ -269,76 +405,84 @@ defineExpose({ open })
           </ElFormItem>
           <p class="editor-hint">时间按旅行时区 {{ context.trip.value?.timezone }} 解释。</p>
         </fieldset>
-        <div class="editor-columns">
-          <ElFormItem label="地点" :error="errors.place_name">
-            <ElInput v-model="draft.place_name" maxlength="200" placeholder="地点名称" />
-          </ElFormItem>
-          <ElFormItem label="地址" :error="errors.address">
-            <ElInput v-model="draft.address" maxlength="500" placeholder="手工填写地址" />
-          </ElFormItem>
-        </div>
-        <ElFormItem label="预计费用" :error="errors.estimated_amount">
-          <ElInput
-            v-model="draft.estimated_amount"
-            inputmode="decimal"
-            placeholder="留空表示未估算"
-            clearable
-          >
-            <template #append>{{ currency }}</template>
-          </ElInput>
-          <span class="editor-hint">预计费用不进入实际开支统计，币种与旅行一致。</span>
-        </ElFormItem>
-        <ElFormItem label="备注" :error="errors.notes">
-          <ElInput
-            v-model="draft.notes"
-            type="textarea"
-            :rows="2"
-            maxlength="10000"
-            show-word-limit
+        <div class="expense-action tf-actions">
+          <span>记录该地点花费</span>
+          <IconAction
+            icon="plus"
+            label="记录该地点花费"
+            :loading="loadingExpense"
+            :disabled="saving || uncertainCreate || locatingPlace || ledgerOpened"
+            @click="recordExpense"
           />
-        </ElFormItem>
-        <fieldset class="editor-group">
-          <legend>实际情况</legend>
-          <ElFormItem label="状态" :error="errors.status">
-            <ElRadioGroup v-model="draft.status" aria-label="状态">
-              <ElRadioButton v-for="status in statuses" :key="status" :value="status">{{
-                itineraryStatusLabels[status]
-              }}</ElRadioButton>
-            </ElRadioGroup>
-          </ElFormItem>
-          <div class="editor-columns">
-            <ElFormItem label="实际开始" :error="errors.actual_start_local">
-              <ElDatePicker
-                :model-value="draft.actual_start"
-                type="datetime"
-                value-format="YYYY-MM-DD HH:mm"
-                format="YYYY-MM-DD HH:mm"
-                placeholder="可留空"
-                @update:model-value="setText('actual_start', $event)"
-              />
-            </ElFormItem>
-            <ElFormItem label="实际结束" :error="errors.actual_end_local">
-              <ElDatePicker
-                :model-value="draft.actual_end"
-                type="datetime"
-                value-format="YYYY-MM-DD HH:mm"
-                format="YYYY-MM-DD HH:mm"
-                placeholder="可留空"
-                @update:model-value="setText('actual_end', $event)"
-              />
-            </ElFormItem>
-          </div>
-          <ElFormItem label="实际记录" :error="errors.actual_notes">
+        </div>
+        <p class="editor-hint">
+          自动带入地点和所属日期；账单单独保存，取消行程不会撤销已保存的账单。
+        </p>
+        <p v-if="expenseError" class="coordinate-error" role="alert">{{ expenseError }}</p>
+        <p class="expense-notice" role="status">{{ expenseNotice }}</p>
+        <div class="details-action tf-actions">
+          <ElButton
+            :aria-expanded="detailsOpened"
+            :aria-controls="detailsId"
+            @click="detailsOpened = !detailsOpened"
+          >
+            <ActionIcon :name="detailsOpened ? 'chevron-up' : 'chevron-down'" />
+            <span>{{ detailsOpened ? '收起详情' : '展开详情' }}</span>
+          </ElButton>
+        </div>
+        <div v-show="detailsOpened" :id="detailsId">
+          <ElFormItem label="备注" :error="errors.notes">
             <ElInput
-              v-model="draft.actual_notes"
+              v-model="draft.notes"
               type="textarea"
               :rows="2"
               maxlength="10000"
               show-word-limit
-              placeholder="与计划的差异、当时的感受"
             />
           </ElFormItem>
-        </fieldset>
+          <fieldset class="editor-group">
+            <legend>实际情况</legend>
+            <ElFormItem label="状态" :error="errors.status">
+              <ElRadioGroup v-model="draft.status" aria-label="状态">
+                <ElRadioButton v-for="status in statuses" :key="status" :value="status">{{
+                  itineraryStatusLabels[status]
+                }}</ElRadioButton>
+              </ElRadioGroup>
+            </ElFormItem>
+            <div class="editor-columns">
+              <ElFormItem label="实际开始" :error="errors.actual_start_local">
+                <ElDatePicker
+                  :model-value="draft.actual_start"
+                  type="datetime"
+                  value-format="YYYY-MM-DD HH:mm"
+                  format="YYYY-MM-DD HH:mm"
+                  placeholder="可留空"
+                  @update:model-value="setText('actual_start', $event)"
+                />
+              </ElFormItem>
+              <ElFormItem label="实际结束" :error="errors.actual_end_local">
+                <ElDatePicker
+                  :model-value="draft.actual_end"
+                  type="datetime"
+                  value-format="YYYY-MM-DD HH:mm"
+                  format="YYYY-MM-DD HH:mm"
+                  placeholder="可留空"
+                  @update:model-value="setText('actual_end', $event)"
+                />
+              </ElFormItem>
+            </div>
+            <ElFormItem label="实际记录" :error="errors.actual_notes">
+              <ElInput
+                v-model="draft.actual_notes"
+                type="textarea"
+                :rows="2"
+                maxlength="10000"
+                show-word-limit
+                placeholder="与计划的差异、当时的感受"
+              />
+            </ElFormItem>
+          </fieldset>
+        </div>
         <button type="submit" class="visually-hidden" tabindex="-1" aria-hidden="true">保存</button>
       </ElForm>
       <section v-if="conflict" class="conflict-panel" aria-live="polite">
@@ -362,10 +506,14 @@ defineExpose({ open })
             </tr>
           </tbody>
         </table>
-        <div class="conflict-actions">
-          <ElButton :loading="loadingLatest" :disabled="saving" @click="editor.loadLatest"
-            >刷新最新内容</ElButton
-          >
+        <div class="conflict-actions tf-actions">
+          <IconAction
+            icon="refresh"
+            label="刷新行程最新内容"
+            :loading="loadingLatest"
+            :disabled="saving"
+            @click="editor.loadLatest"
+          />
           <ElButton :disabled="!latest || saving" @click="adoptLatest"
             >放弃输入，载入最新版本</ElButton
           >
@@ -373,30 +521,67 @@ defineExpose({ open })
       </section>
     </template>
     <template #footer>
-      <ElButton :disabled="saving" @click="requestClose()">取消</ElButton>
+      <ElButton :disabled="saving || ledgerOpened" @click="requestClose()">取消</ElButton>
       <ElButton
         v-if="conflict"
         type="primary"
-        :loading="saving"
-        :disabled="!latest || loadingLatest"
+        :loading="saving || locatingPlace"
+        :disabled="!latest || loadingLatest || locatingPlace || loadingExpense || ledgerOpened"
         @click="save(true)"
         >确认用我的改动更新最新版本</ElButton
       >
       <ElButton
         v-else
         type="primary"
-        :loading="saving"
-        :disabled="loading || (isEditing && (!baseline || !dirty))"
+        :loading="saving || locatingPlace"
+        :disabled="
+          loading ||
+          locatingPlace ||
+          loadingExpense ||
+          ledgerOpened ||
+          (isEditing && (!baseline || !dirty))
+        "
         @click="save()"
         >{{ uncertainCreate ? '重试创建' : isEditing ? '保存修改' : '添加行程' }}</ElButton
       >
     </template>
   </ElDialog>
+  <LedgerEntryDialog
+    ref="ledgerDialog"
+    :categories="expenseCategories"
+    @update:opened="ledgerOpened = $event"
+    @saved="expenseSaved"
+  />
 </template>
 
 <style scoped>
 .editor-alert {
   margin-bottom: 16px;
+}
+.coordinate-error {
+  color: var(--tf-danger);
+  font-size: 13px;
+}
+.expense-action {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 6px;
+  color: var(--tf-text-1);
+}
+.expense-notice {
+  color: var(--tf-text-2);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.expense-notice:empty {
+  margin: 0;
+}
+.details-action {
+  margin: 16px 0;
+}
+.details-action .el-button :deep(> span) {
+  gap: 6px;
 }
 .editor-columns {
   display: grid;
@@ -459,6 +644,7 @@ defineExpose({ open })
 }
 .conflict-actions {
   display: flex;
+  align-items: center;
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 12px;

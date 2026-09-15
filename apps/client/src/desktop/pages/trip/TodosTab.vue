@@ -14,6 +14,7 @@ import {
 } from 'element-plus'
 import { computed, onMounted, ref, shallowRef, watch } from 'vue'
 
+import IconAction from '@/desktop/components/IconAction.vue'
 import TodoDialog from '@/desktop/components/TodoDialog.vue'
 import { ApiError } from '@/shared/api/auth'
 import {
@@ -182,18 +183,24 @@ onMounted(reload)
           <span v-if="progress.overdue" class="overdue-count">{{ progress.overdue }} 项已逾期</span>
           <span v-else>逾期按旅行时区 {{ context.trip.value?.timezone }} 的今天判定</span>
         </div>
-        <ElProgress :percentage="progress.percent" :stroke-width="10" class="progress-bar" />
+        <ElProgress
+          :percentage="progress.percent"
+          :stroke-width="10"
+          class="progress-bar"
+          aria-label="待办完成进度"
+          :aria-valuetext="`已完成 ${progress.done} / ${progress.total} 项`"
+        />
       </div>
     </ElCard>
-    <div class="tab-toolbar">
+    <div class="tab-toolbar tf-filter-controls">
       <ElRadioGroup v-model="state" size="small" aria-label="筛选待办">
         <ElRadioButton v-for="s in states" :key="s" :value="s">{{
           todoStateLabels[s]
         }}</ElRadioButton>
       </ElRadioGroup>
-      <div class="tab-actions">
-        <ElButton size="small" :loading="loading" @click="reload">刷新</ElButton>
-        <ElButton size="small" type="primary" @click="dialog?.open()">新建待办</ElButton>
+      <div class="tab-actions tf-actions">
+        <IconAction icon="refresh" label="刷新待办" :loading="loading" @click="reload" />
+        <IconAction icon="plus" label="新建待办" type="primary" @click="dialog?.open()" />
       </div>
     </div>
     <ElAlert
@@ -215,7 +222,13 @@ onMounted(reload)
           state === 'all' ? '还没有待办，记下出发前要做的事' : `没有${todoStateLabels[state]}的待办`
         "
       >
-        <ElButton v-if="state === 'all'" type="primary" @click="dialog?.open()">新建待办</ElButton>
+        <IconAction
+          v-if="state === 'all'"
+          icon="plus"
+          label="新建待办"
+          type="primary"
+          @click="dialog?.open()"
+        />
         <ElButton v-else @click="state = 'all'">查看全部</ElButton>
       </ElEmpty>
     </ElCard>
@@ -246,17 +259,23 @@ onMounted(reload)
           </p>
           <p v-if="item.notes" class="todo-notes">{{ item.notes }}</p>
         </div>
-        <div class="todo-actions">
-          <ElButton size="small" text :disabled="!!busy" @click="dialog?.open(item)">编辑</ElButton>
-          <ElButton
-            size="small"
+        <div class="todo-actions tf-actions">
+          <IconAction
+            icon="edit"
+            :label="`编辑待办：${item.title}`"
+            text
+            :disabled="!!busy"
+            @click="dialog?.open(item)"
+          />
+          <IconAction
+            icon="trash"
+            :label="`删除待办：${item.title}`"
             text
             type="danger"
             :disabled="!!busy"
             :loading="busy === item.id"
             @click="remove(item)"
-            >删除</ElButton
-          >
+          />
         </div>
       </li>
     </ul>
@@ -300,6 +319,7 @@ onMounted(reload)
 }
 .tab-actions {
   display: flex;
+  align-items: center;
   gap: 8px;
 }
 .tab-actions .el-button {
@@ -378,5 +398,19 @@ onMounted(reload)
 }
 .todo-actions .el-button {
   margin-left: 0;
+}
+@media (max-width: 600px) {
+  .todo {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .todo-actions {
+    grid-column: 2;
+    justify-self: end;
+  }
+  .todo-meta {
+    flex-wrap: wrap;
+    gap: 6px 14px;
+  }
 }
 </style>

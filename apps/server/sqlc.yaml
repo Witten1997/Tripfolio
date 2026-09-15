@@ -9,6 +9,7 @@ sql:
       - "db/queries/sync"
       - "db/queries/finance"
       - "db/queries/travel"
+      - "db/queries/assets"
     gen:
       go:
         package: "dbgen"

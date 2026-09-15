@@ -117,3 +117,63 @@
   --el-button-hover-text-color: var(--tf-accent-contrast);
   --el-button-active-text-color: var(--tf-accent-contrast);
 }
+
+/* 仅统一显式操作组，不放大普通表单及其他紧凑控件。 */
+.tf-actions > .el-button,
+.tf-actions > a > .el-button {
+  height: auto;
+  min-height: var(--tf-control-size);
+  margin-inline-start: 0;
+}
+.tf-actions > .el-button:not(.icon-action),
+.tf-actions > a > .el-button {
+  max-width: 100%;
+  white-space: normal;
+}
+
+/* 筛选组与旁边操作按钮共用尺寸，保留 Element Plus 单选键盘行为。 */
+.tf-filter-controls .el-select__wrapper,
+.tf-filter-controls .el-radio-button__inner {
+  min-height: var(--tf-control-size);
+  box-sizing: border-box;
+}
+.tf-filter-controls .el-radio-button__inner {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: normal;
+  line-height: 1.4;
+}
+
+/* 圆形准备状态：图形 20px，整个 label 保留 40／44px 点击区域。 */
+.tf-round-check.el-checkbox {
+  flex: 0 0 var(--tf-control-size);
+  justify-content: center;
+  min-width: var(--tf-control-size);
+  height: auto;
+  min-height: var(--tf-control-size);
+  margin: 0;
+}
+.tf-round-check .el-checkbox__inner {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+}
+.tf-round-check .el-checkbox__label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+.tf-round-check .el-checkbox__inner::after {
+  left: 6px;
+  top: 3px;
+  width: 4px;
+  height: 8px;
+}
+.tf-round-check .el-checkbox__original:focus-visible + .el-checkbox__inner {
+  outline: auto;
+  outline-offset: 3px;
+}

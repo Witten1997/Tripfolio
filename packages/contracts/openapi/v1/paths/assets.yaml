@@ -1,0 +1,306 @@
+collection:
+  post:
+    tags: [assets]
+    operationId: createAsset
+    summary: 登记私有资产与首次上传尝试，直接返回暂存对象的 PUT 授权；不接受用户指定对象键
+    parameters:
+      - $ref: ../openapi.yaml#/components/parameters/IdempotencyKey
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: ../openapi.yaml#/components/schemas/AssetCreate
+    responses:
+      '201':
+        description: 已登记；upload_authorization 为首个尝试的直传授权
+        content:
+          application/json:
+            schema:
+              $ref: ../openapi.yaml#/components/schemas/AssetWriteResponse
+      '401':
+        $ref: ../openapi.yaml#/components/responses/Unauthorized
+      '404':
+        $ref: ../openapi.yaml#/components/responses/NotFound
+      '409':
+        $ref: ../openapi.yaml#/components/responses/Conflict
+      '410':
+        $ref: ../openapi.yaml#/components/responses/Gone
+      '413':
+        description: 声明大小超过该类型上限（REQUEST_TOO_LARGE）；不签发授权
+        content:
+          application/problem+json:
+            schema:
+              $ref: ../openapi.yaml#/components/schemas/Problem
+      '415':
+        description: 声明类型不在允许集合内（UNSUPPORTED_MEDIA_TYPE）
+        content:
+          application/problem+json:
+            schema:
+              $ref: ../openapi.yaml#/components/schemas/Problem
+      '422':
+        $ref: ../openapi.yaml#/components/responses/ValidationFailed
+      '503':
+        $ref: ../openapi.yaml#/components/responses/DependencyUnavailable
+
+item:
+  parameters:
+    - name: asset_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  get:
+    tags: [assets]
+    operationId: getAsset
+    summary: 公开处理状态与已校验元数据；不含对象键与下载地址
+    responses:
+      '200':
+        description: 资产，带 ETag
+        headers:
+          ETag:
+            schema:
+              type: string
+        content:
+          application/json:
+            schema:
+              $ref: ../openapi.yaml#/components/schemas/AssetResponse
+      '401':
+        $ref: ../openapi.yaml#/components/responses/Unauthorized
+      '404':
+        $ref: ../openapi.yaml#/components/responses/NotFound
+      '410':
+        $ref: ../openapi.yaml#/components/responses/Gone
+
+uploadAuthorization:
+  parameters:
+    - name: asset_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  post:
+    tags: [assets]
+    operationId: authorizeAssetUpload
+    summary: 续签当前尝试，或在失败/过期后创建新尝试并返回授权
+    description: |
+      当前尝试仍在确认窗口内时续签同一暂存键；failed 或已过期的 uploading 会创建新尝试
+      （upload_attempt 加 1、新暂存键与截止时间）。processing 与 ready 不接受新尝试。
+      原有的资料、照片、票据引用与文字不受影响。
+    parameters:
+      - $ref: ../openapi.yaml#/components/parameters/IdempotencyKey
+    responses:
+      '200':
+        description: 已签发授权；创建新尝试时 upload_attempt 递增
+        content:
+          application/json:
+            schema:
+              $ref: ../openapi.yaml#/components/schemas/AssetWriteResponse
+      '401':
+        $ref: ../openapi.yaml#/components/responses/Unauthorized
+      '404':
+        $ref: ../openapi.yaml#/components/responses/NotFound
+      '409':
+        description: processing 或 ready 的资产不接受上传尝试（UPLOAD_NOT_ALLOWED）
+        content:
+          application/problem+json:
+            schema:
+              $ref: ../openapi.yaml#/components/schemas/Problem
+      '410':
+        $ref: ../openapi.yaml#/components/responses/Gone
+      '503':
+        $ref: ../openapi.yaml#/components/responses/DependencyUnavailable
+
+confirm:
+  parameters:
+    - name: asset_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  post:
+    tags: [assets]
+    operationId: confirmAssetUpload
+    summary: 按尝试序号确认上传并事务入队校验任务；不能直接宣称 ready
+    description: |
+      确认只表示客户端已完成 PUT。服务端转入 processing 并入队校验任务，
+      由 worker 读取暂存对象校验大小、类型与摘要，再以校验时的 ETag 条件复制到最终键。
+      使用 upload_attempt 标识当前尝试，不使用 If-Match。
+    parameters:
+      - $ref: ../openapi.yaml#/components/parameters/IdempotencyKey
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: ../openapi.yaml#/components/schemas/AssetConfirm
+    responses:
+      '202':
+        description: 已受理并入队校验；data 为 processing 状态的资产
+        content:
+          application/json:
+            schema:
+              $ref: ../openapi.yaml#/components/schemas/WriteResponse
+      '401':
+        $ref: ../openapi.yaml#/components/responses/Unauthorized
+      '404':
+        $ref: ../openapi.yaml#/components/responses/NotFound
+      '409':
+        description: 尝试序号不是当前尝试，或资产已在 processing/ready（UPLOAD_NOT_ALLOWED）
+        content:
+          application/problem+json:
+            schema:
+              $ref: ../openapi.yaml#/components/schemas/Problem
+      '410':
+        description: 资产已删除（RESOURCE_GONE）或尝试超过确认窗口（UPLOAD_EXPIRED）
+        content:
+          application/problem+json:
+            schema:
+              $ref: ../openapi.yaml#/components/schemas/Problem
+      '422':
+        $ref: ../openapi.yaml#/components/responses/ValidationFailed
+
+download:
+  parameters:
+    - name: asset_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  get:
+    tags: [assets]
+    operationId: authorizeAssetDownload
+    summary: 校验归属后签发短期下载授权；仅 ready 资产
+    parameters:
+      - name: variant
+        in: query
+        required: false
+        schema:
+          allOf:
+            - $ref: ../openapi.yaml#/components/schemas/DownloadVariant
+          default: original
+      - name: disposition
+        in: query
+        required: false
+        schema:
+          allOf:
+            - $ref: ../openapi.yaml#/components/schemas/DownloadDisposition
+          default: inline
+    responses:
+      '200':
+        description: 下载授权；原图与 PDF 有效 60 秒，缩略图 15 分钟
+        headers:
+          Cache-Control:
+            schema:
+              type: string
+            description: 固定为 no-store
+        content:
+          application/json:
+            schema:
+              $ref: ../openapi.yaml#/components/schemas/DownloadAuthorizationResponse
+      '401':
+        $ref: ../openapi.yaml#/components/responses/Unauthorized
+      '404':
+        $ref: ../openapi.yaml#/components/responses/NotFound
+      '409':
+        description: 资产尚未 ready，或所请求变体不可用（ASSET_NOT_READY）
+        content:
+          application/problem+json:
+            schema:
+              $ref: ../openapi.yaml#/components/schemas/Problem
+      '410':
+        $ref: ../openapi.yaml#/components/responses/Gone
+      '503':
+        $ref: ../openapi.yaml#/components/responses/DependencyUnavailable
+
+downloadBatch:
+  post:
+    tags: [assets]
+    operationId: authorizeAssetDownloads
+    summary: 一次最多 100 个资产；返回各自状态，仅 ready 的带 URL
+    description: 任一 asset_id 非本人时整批 404，不泄漏他人资产的存在。
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: ../openapi.yaml#/components/schemas/AssetDownloadBatch
+    responses:
+      '200':
+        description: 授权列表，顺序与请求一致
+        headers:
+          Cache-Control:
+            schema:
+              type: string
+            description: 固定为 no-store
+        content:
+          application/json:
+            schema:
+              $ref: ../openapi.yaml#/components/schemas/DownloadAuthorizationBatchResponse
+      '401':
+        $ref: ../openapi.yaml#/components/responses/Unauthorized
+      '404':
+        $ref: ../openapi.yaml#/components/responses/NotFound
+      '422':
+        $ref: ../openapi.yaml#/components/responses/ValidationFailed
+      '503':
+        $ref: ../openapi.yaml#/components/responses/DependencyUnavailable
+
+tripCollection:
+  parameters:
+    - name: trip_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  get:
+    tags: [assets]
+    operationId: listTripAssets
+    summary: 按状态或 ID 集合查询本旅行资产，供恢复上传状态与批量核对
+    parameters:
+      - name: status
+        in: query
+        required: false
+        schema:
+          $ref: ../openapi.yaml#/components/schemas/AssetStatus
+      - name: ids
+        in: query
+        required: false
+        description: 最多 100 个 UUID，逗号分隔
+        schema:
+          type: string
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 50
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+    responses:
+      '200':
+        description: 一页资产，按 created_at、id 均降序
+        content:
+          application/json:
+            schema:
+              $ref: ../openapi.yaml#/components/schemas/AssetPage
+      '400':
+        $ref: ../openapi.yaml#/components/responses/BadRequest
+      '401':
+        $ref: ../openapi.yaml#/components/responses/Unauthorized
+      '404':
+        $ref: ../openapi.yaml#/components/responses/NotFound
+      '410':
+        $ref: ../openapi.yaml#/components/responses/Gone
+      '422':
+        $ref: ../openapi.yaml#/components/responses/ValidationFailed

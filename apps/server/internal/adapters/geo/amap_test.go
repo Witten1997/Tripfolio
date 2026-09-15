@@ -34,7 +34,7 @@ func newStubAmap(t *testing.T, handler func(path string, q url.Values) string) *
 
 func newTestClient(t *testing.T, stub *stubAmap, mutate func(*Config)) *AmapClient {
 	t.Helper()
-	cfg := Config{Key: "test-key", BaseURL: stub.server.URL, Timeout: 2 * time.Second}
+	cfg := Config{Key: "test-key", BaseURL: stub.server.URL, Timeout: 2 * time.Second, RouteInterval: time.Nanosecond}
 	if mutate != nil {
 		mutate(&cfg)
 	}
@@ -78,8 +78,8 @@ func TestReverseGeocodeHandlesAmapEmptyArrayFields(t *testing.T) {
 	if place.Name != "北京大学" {
 		t.Errorf("地点名应退到社区名，得到 %q", place.Name)
 	}
-	if place.Adcode != "110108" {
-		t.Errorf("adcode 不符：%q", place.Adcode)
+	if place.Adcode == nil || *place.Adcode != "110108" {
+		t.Errorf("adcode 不符：%v", place.Adcode)
 	}
 	if place.Provider != "amap" {
 		t.Errorf("provider 应为 amap，得到 %q", place.Provider)
@@ -100,8 +100,12 @@ func TestReverseGeocodeCachesByRoundedCoordinate(t *testing.T) {
 		t.Fatal(err)
 	}
 	// 第四位小数的差异落在同一个缓存键里。
-	if _, err := client.ReverseGeocode(ctx, "acct", 39.98874, 116.30573); err != nil {
+	second, err := client.ReverseGeocode(ctx, "acct", 39.98874, 116.30573)
+	if err != nil {
 		t.Fatal(err)
+	}
+	if second.Latitude != 39.98874 || second.Longitude != 116.30573 {
+		t.Fatal("地址缓存不得移动本次选点坐标")
 	}
 	if got := stub.calls.Load(); got != 1 {
 		t.Errorf("邻近坐标应命中缓存，上游被调用 %d 次", got)
@@ -189,10 +193,10 @@ func TestReverseGeocodeSendsLngLatOrderWithSixDecimals(t *testing.T) {
 
 const tipsOK = `{
   "status": "1", "info": "OK", "infocode": "10000",
-  "tips": [
-    {"id":"B1","name":"故宫博物院","district":"北京市东城区","address":"景山前街4号","location":"116.397026,39.918058","adcode":"110101"},
-    {"id":"B2","name":"故宫角楼","district":"北京市东城区","address":[],"location":"116.401,39.921","adcode":"110101"},
-    {"id":"L1","name":"1路公交","district":[],"address":[],"location":[],"adcode":[]}
+  "pois": [
+    {"id":"B1","name":"故宫博物院","adname":"北京市东城区","address":"景山前街4号","location":"116.397026,39.918058","adcode":"110101"},
+    {"id":"B2","name":"故宫角楼","adname":"北京市东城区","address":[],"location":"116.401,39.921","adcode":"110101"},
+    {"id":"L1","name":"1路公交","adname":[],"address":[],"location":[],"adcode":[]}
   ]
 }`
 
@@ -221,7 +225,7 @@ func TestSearchPlacesDropsEntriesWithoutCoordinates(t *testing.T) {
 }
 
 func TestSearchPlacesNoResult(t *testing.T) {
-	const emptyTips = `{"status":"1","info":"OK","infocode":"10000","tips":[]}`
+	const emptyTips = `{"status":"1","info":"OK","infocode":"10000","pois":[]}`
 	stub := newStubAmap(t, func(string, url.Values) string { return emptyTips })
 	client := newTestClient(t, stub, nil)
 
@@ -230,11 +234,16 @@ func TestSearchPlacesNoResult(t *testing.T) {
 	}
 }
 
-// location 只在 city 非空时对高德生效，因此只有两者都给出才发送。
-func TestSearchPlacesSendsLocationOnlyWithCity(t *testing.T) {
-	stub := newStubAmap(t, func(string, url.Values) string { return tipsOK })
+// POI text 接口不支持 location，结果在本地就近排序，不发送无效参数。
+func TestSearchPlacesUsesPOITextAndSortsNearby(t *testing.T) {
+	stub := newStubAmap(t, func(path string, q url.Values) string {
+		if path != "/v3/place/text" || q.Get("offset") != "20" {
+			t.Error("应使用 POI 搜索接口与 20 条上限")
+		}
+		return tipsOK
+	})
 	client := newTestClient(t, stub, nil)
-	lat, lng := 39.9, 116.4
+	lat, lng := 39.921, 116.401
 	ctx := context.Background()
 
 	if _, err := client.SearchPlaces(ctx, "acct", "故宫", &lat, &lng, ""); err != nil {
@@ -244,11 +253,15 @@ func TestSearchPlacesSendsLocationOnlyWithCity(t *testing.T) {
 		t.Errorf("无 city 时不应发送 location，得到 %q", stub.lastQry.Get("location"))
 	}
 
-	if _, err := client.SearchPlaces(ctx, "acct", "故宫", &lat, &lng, "110000"); err != nil {
+	places, err := client.SearchPlaces(ctx, "acct", "故宫", &lat, &lng, "110000")
+	if err != nil {
 		t.Fatal(err)
 	}
-	if stub.lastQry.Get("location") != "116.4,39.9" {
-		t.Errorf("有 city 时应发送 location，得到 %q", stub.lastQry.Get("location"))
+	if stub.lastQry.Get("location") != "" {
+		t.Error("关键字接口不接受 location")
+	}
+	if places[0].Name != "故宫角楼" || places[0].POIID == nil || *places[0].POIID != "B2" {
+		t.Error("应按距离排序且保留 POI 标识")
 	}
 	if stub.lastQry.Get("city") != "110000" {
 		t.Errorf("city 未透传：%q", stub.lastQry.Get("city"))

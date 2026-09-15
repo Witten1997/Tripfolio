@@ -46,9 +46,25 @@ pnpm typecheck && pnpm test && pnpm build
 pnpm format:check
 ```
 
-对象存储用例需要额外设置 `TRIPFOLIO_TEST_OBJECTSTORE_ENDPOINT`（开发指向 MinIO 的 `http://localhost:9000`），未设置时自动跳过。高德地点服务需要 `TRIPFOLIO_AMAP_WEB_SERVICE_KEY`，未配置时地点接口返回 503；它与前端 JS API 的安全密钥是两套凭证，后者由 Caddy 在 `/_AMapService` 路径追加。
+对象存储用例需要额外设置 `TRIPFOLIO_TEST_OBJECTSTORE_ENDPOINT`（开发指向 MinIO 的 `http://localhost:9000`），未设置时自动跳过。
 
 浏览器直传对象存储需要桶的 CORS 允许 PUT 并暴露 `ETag`。MinIO 不实现按桶 CORS（`PutBucketCors` 返回 NotImplemented），开发环境由 `infra/compose.yaml` 里 minio 服务的 `MINIO_API_CORS_ALLOW_ORIGIN` 全局配置；生产使用 OSS 时在控制台按桶配置。
+
+## 高德地图
+
+每日行程新建／编辑支持搜索高德兴趣点、地图点击或输入 GCJ-02 坐标选点。保存两个及以上地点后，自动显示相邻路段的驾车、步行或骑行距离与预计时长。旅行“地图”页签和账单统计区的“地图视图”入口展示整趟路线，也可筛选单日；缺坐标或无可通行路线会明确提示，不用直线距离冒充道路里程。
+
+本地开发配置两套独立凭证，修改后重启 API 与 Vite：
+
+| 文件                     | 变量                             | 用途                                                         |
+| ------------------------ | -------------------------------- | ------------------------------------------------------------ |
+| `apps/server/.env`       | `TRIPFOLIO_AMAP_WEB_SERVICE_KEY` | Web 服务类型 Key；后端 POI 搜索、逆地理编码与算路            |
+| `apps/client/.env.local` | `VITE_AMAP_JS_KEY`               | Web 端（JS API）类型 Key；浏览器公开标识                     |
+| `apps/client/.env.local` | `AMAP_JSCODE`                    | JS API 安全密钥；仅 Vite 服务端代理读取，禁止加 `VITE_` 前缀 |
+
+上述本地文件均被 Git 忽略，模板不含真实凭证。JS Key 应在高德控制台限制允许域名；后端 Key 应按部署出口限制访问。未配 Web 服务 Key 时 `/geo` 接口返回 503；未配 JS Key 时仍可搜索并保存地点，但不显示底图。生产构建需要注入 `VITE_AMAP_JS_KEY`，Caddy 运行时需要 `AMAP_JSCODE`，API 运行时需要 Web 服务 Key，详见 [部署说明](infra/README.md#高德凭证与代理)。
+
+真实高德冒烟测试仅在显式设置 `TRIPFOLIO_TEST_AMAP_KEY` 后运行：`cd apps/server && go test ./internal/adapters/geo -run TestLiveAmap -count=1 -v`。每次消耗 5 次上游请求，普通测试默认使用桩响应，不消耗高德配额。
 
 ## 生成代码
 

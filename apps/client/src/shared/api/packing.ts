@@ -9,6 +9,7 @@ export type PackingCreate = components['schemas']['PackingCreate']
 export type PackingPatch = components['schemas']['PackingPatch']
 export type PackingCategory = components['schemas']['PackingCategory']
 export type PackingStatus = components['schemas']['PackingStatus']
+export type PreparedPackingStatus = Exclude<PackingStatus, 'packed'>
 export type PackingBatchCreate = components['schemas']['PackingBatchCreate']
 export type PackingBatchResult = components['schemas']['PackingBatchResult']
 export type PackingLibrary = components['schemas']['PackingLibrary']
@@ -36,11 +37,16 @@ export const packingCategoryOrder: PackingCategory[] = [
 
 export const packingStatusLabels: Record<PackingStatus, string> = {
   pending: '待准备',
-  ready: '已备齐',
-  packed: '已装包',
+  ready: '已准备',
+  packed: '已准备',
 }
 
-export const packingStatusOrder: PackingStatus[] = ['pending', 'ready', 'packed']
+export const packingStatusOrder: PreparedPackingStatus[] = ['pending', 'ready']
+
+/** 兼容历史三态，不修改服务器保存的历史值。 */
+export function normalizePackingStatus(status: PackingStatus): PreparedPackingStatus {
+  return status === 'pending' ? 'pending' : 'ready'
+}
 
 function isItem(value: Record<string, unknown>) {
   return (

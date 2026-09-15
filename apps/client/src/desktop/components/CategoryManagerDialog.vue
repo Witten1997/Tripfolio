@@ -15,6 +15,7 @@ import {
   ElTag,
 } from 'element-plus'
 
+import IconAction from '@/desktop/components/IconAction.vue'
 import type { ExpenseCategory } from '@/shared/api/categories'
 import { useMetadataStore } from '@/shared/stores/metadata'
 import {
@@ -133,13 +134,14 @@ defineExpose({ open: manager.open })
     />
     <div class="category-toolbar">
       <span>{{ items.length }} 个分类</span>
-      <div>
-        <ElButton
+      <div class="tf-actions">
+        <IconAction
+          icon="refresh"
+          label="刷新分类"
           :loading="loading"
           :disabled="saving || !!deleting || uncertainCreate"
           @click="manager.load"
-          >刷新</ElButton
-        ><ElButton
+        /><ElButton
           type="primary"
           :disabled="saving || !!deleting || loading || uncertainCreate"
           @click="start()"
@@ -176,25 +178,23 @@ defineExpose({ open: manager.open })
             ><span>排序 {{ category.sort_order }} · {{ categoryIconLabel(category.icon) }}</span>
           </div>
           <ElTag v-if="category.is_preset" size="small" type="info">预设</ElTag>
-          <div class="category-actions">
-            <ElButton
-              size="small"
-              link
-              type="primary"
+          <div class="category-actions tf-actions">
+            <IconAction
+              icon="edit"
+              :label="`编辑分类：${category.name}`"
+              text
               :disabled="saving || !!deleting || uncertainCreate"
-              :aria-label="`编辑分类${category.name}`"
               @click="start(category)"
-              >编辑</ElButton
-            ><ElButton
-              size="small"
-              link
+            />
+            <IconAction
+              icon="trash"
+              :label="`删除分类：${category.name}`"
+              text
               type="danger"
               :loading="deleting === category.id"
               :disabled="saving || (!!deleting && deleting !== category.id) || uncertainCreate"
-              :aria-label="`删除分类${category.name}`"
               @click="remove(category)"
-              >删除</ElButton
-            >
+            />
           </div>
         </div>
       </div>
@@ -245,12 +245,17 @@ defineExpose({ open: manager.open })
               最新内容：{{ latest.name }} · {{ categoryIconLabel(latest.icon) }} · 排序
               {{ latest.sort_order }}
             </p>
-            <ElButton size="small" :loading="loadingLatest" @click="manager.loadLatest"
-              >刷新最新内容</ElButton
-            >
-            <ElButton size="small" :disabled="!latest" @click="adoptLatest"
-              >放弃输入并载入</ElButton
-            >
+            <div class="tf-actions">
+              <IconAction
+                icon="refresh"
+                label="刷新分类最新内容"
+                :loading="loadingLatest"
+                @click="manager.loadLatest"
+              />
+              <ElButton size="small" :disabled="!latest" @click="adoptLatest"
+                >放弃输入并载入</ElButton
+              >
+            </div>
           </div>
         </ElForm>
         <ElButton
@@ -301,6 +306,14 @@ defineExpose({ open: manager.open })
 .category-toolbar > span {
   font-size: 13px;
   color: var(--tf-text-3);
+}
+.category-toolbar > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.category-toolbar .el-button {
+  margin-left: 0;
 }
 .category-layout.has-editor {
   display: grid;
@@ -369,8 +382,8 @@ defineExpose({ open: manager.open })
   line-height: 1.7;
   margin-bottom: 16px;
 }
-.category-conflict .el-button {
-  margin: 4px 4px 0 0;
+.category-conflict .tf-actions {
+  margin-top: 8px;
 }
 @media (max-width: 700px) {
   .category-layout.has-editor {

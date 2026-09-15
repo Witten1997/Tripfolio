@@ -4,6 +4,7 @@ import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import 'element-plus/dist/index.css'
 import '@/styles/bridge/element-plus.css'
 
+import IconAction from '@/desktop/components/IconAction.vue'
 import { useSessionStore } from '@/shared/stores/session'
 
 const session = useSessionStore()
@@ -17,10 +18,15 @@ const session = useSessionStore()
         <RouterLink to="/trips" class="desktop-shell__brand">Tripfolio</RouterLink>
         <nav class="desktop-shell__nav">
           <template v-if="session.isAuthenticated">
-            <RouterLink :to="{ name: 'trips' }">旅行</RouterLink>
-            <RouterLink :to="{ name: 'recycle-bin' }">回收站</RouterLink>
+            <IconAction :to="{ name: 'trips' }" icon="home" label="旅行首页" variant="navigation" />
+            <IconAction
+              :to="{ name: 'recycle-bin' }"
+              icon="trash"
+              label="回收站"
+              variant="navigation"
+            />
           </template>
-          <RouterLink :to="{ name: 'themes' }">主题</RouterLink>
+          <IconAction :to="{ name: 'themes' }" icon="theme" label="主题" variant="navigation" />
           <RouterLink
             v-if="session.isAuthenticated"
             :to="{ name: 'account' }"
@@ -60,7 +66,8 @@ const session = useSessionStore()
 
 .desktop-shell__nav {
   display: flex;
-  gap: 20px;
+  align-items: center;
+  gap: 12px;
 }
 
 .desktop-shell__nav a {

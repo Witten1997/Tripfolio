@@ -73,6 +73,129 @@ export type paths = {
         patch?: never;
         trace?: never;
     };
+    "/assets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 登记私有资产与首次上传尝试，直接返回暂存对象的 PUT 授权；不接受用户指定对象键 */
+        post: operations["createAsset"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/assets/{asset_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                asset_id: string;
+            };
+            cookie?: never;
+        };
+        /** 公开处理状态与已校验元数据；不含对象键与下载地址 */
+        get: operations["getAsset"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/assets/{asset_id}/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                asset_id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 按尝试序号确认上传并事务入队校验任务；不能直接宣称 ready
+         * @description 确认只表示客户端已完成 PUT。服务端转入 processing 并入队校验任务，
+         *     由 worker 读取暂存对象校验大小、类型与摘要，再以校验时的 ETag 条件复制到最终键。
+         *     使用 upload_attempt 标识当前尝试，不使用 If-Match。
+         */
+        post: operations["confirmAssetUpload"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/assets/{asset_id}/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                asset_id: string;
+            };
+            cookie?: never;
+        };
+        /** 校验归属后签发短期下载授权；仅 ready 资产 */
+        get: operations["authorizeAssetDownload"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/assets/{asset_id}/upload-authorization": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                asset_id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 续签当前尝试，或在失败/过期后创建新尝试并返回授权
+         * @description 当前尝试仍在确认窗口内时续签同一暂存键；failed 或已过期的 uploading 会创建新尝试
+         *     （upload_attempt 加 1、新暂存键与截止时间）。processing 与 ready 不接受新尝试。
+         *     原有的资料、照片、票据引用与文字不受影响。
+         */
+        post: operations["authorizeAssetUpload"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/assets/download-authorizations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 一次最多 100 个资产；返回各自状态，仅 ready 的带 URL
+         * @description 任一 asset_id 非本人时整批 404，不泄漏他人资产的存在。
+         */
+        post: operations["authorizeAssetDownloads"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/email-challenges": {
         parameters: {
             query?: never;
@@ -235,6 +358,60 @@ export type paths = {
         head?: never;
         /** 改名、改图标或排序 */
         patch: operations["updateExpenseCategory"];
+        trace?: never;
+    };
+    "/geo/places": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 搜索高德兴趣点，最多 20 个可定位结果 */
+        get: operations["searchPlaces"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/geo/reverse-geocode": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 将 GCJ-02 坐标解析为地点名与地址 */
+        get: operations["reverseGeocode"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/geo/routes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 计算两点间的道路距离、预计时长和路线
+         * @description 驾车、步行、骑行使用高德路径规划 2.0；成功结果按有序坐标和模式缓存 5 分钟，无路线返回 404。按 Key 平滑请求；短时限流 429 和可恢复的 503 带 Retry-After，未配置或配额不足的 503 不自动重试。
+         */
+        get: operations["calculateRoute"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/metadata": {
@@ -401,6 +578,25 @@ export type paths = {
         put?: never;
         /** 归档或取消归档；归档后仍允许修正；要求版本相等 */
         post: operations["setTripArchived"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/trips/{trip_id}/assets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        /** 按状态或 ID 集合查询本旅行资产，供恢复上传状态与批量核对 */
+        get: operations["listTripAssets"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -668,6 +864,128 @@ export type components = {
             /** @description true 归档，false 取消归档；已处于目标状态时原样成功 */
             archived: boolean;
         };
+        /**
+         * @description 私有文件资产的规范资源（接口设计 3.7）；同一结构也是同步日志与快照中的表示。
+         *     暂存键、最终对象键与回收字段不进入公开模型。
+         *     exif_* 是 worker 从图片提取的建议值（WGS-84 原始坐标），不自动写入任何业务记录。
+         */
+        Asset: {
+            /** @description 已校验字节数；校验完成前为 null */
+            byte_size: number | null;
+            created_at: components["schemas"]["Instant"];
+            /** Format: date-time */
+            deleted_at: string | null;
+            /** @description 可公开的上传或处理错误代码 */
+            error_code: string | null;
+            /**
+             * Format: double
+             * @description EXIF 纬度，WGS-84 原始值；采用前需由客户端转换为 GCJ-02
+             */
+            exif_latitude: number | null;
+            /**
+             * Format: double
+             * @description EXIF 经度，与 exif_latitude 成对
+             */
+            exif_longitude: number | null;
+            /** @description EXIF 拍摄时间，按原样保存，仅供客户端建议 */
+            exif_taken_at_local: string | null;
+            height: number | null;
+            /** Format: uuid */
+            id: string;
+            /** @description 服务端识别后的 MIME；校验完成前为 null */
+            media_type: string | null;
+            /** @description 原始文件名，仅展示，不参与对象路径拼接 */
+            original_name: string;
+            scope: components["schemas"]["AssetScope"];
+            /** @description 服务端计算的摘要；校验完成前为 null */
+            sha256: string | null;
+            status: components["schemas"]["AssetStatus"];
+            thumbnail_status: components["schemas"]["ThumbnailStatus"];
+            /**
+             * Format: uuid
+             * @description trip 范围必有旅行；avatar 范围为 null
+             */
+            trip_id: string | null;
+            updated_at: components["schemas"]["Instant"];
+            /** @description 当前上传尝试序号，重试递增 */
+            upload_attempt: number;
+            /**
+             * Format: date-time
+             * @description 当前尝试的确认截止时间；非 uploading 时为 null
+             */
+            upload_expires_at: string | null;
+            version: components["schemas"]["Version"];
+            width: number | null;
+        };
+        /** @description 确认当前尝试已上传完成并入队校验；不信任客户端的成功声明 */
+        AssetConfirm: {
+            /** @description 必须等于资产当前尝试序号，否则 409 UPLOAD_NOT_ALLOWED */
+            upload_attempt: number;
+        };
+        /**
+         * @description 登记资产与首次上传尝试。不接受对象键：键由服务端按账号、资产与尝试序号推导。
+         *     scope=trip 时 trip_id 必填，avatar 时不允许 trip_id。
+         */
+        AssetCreate: {
+            /** @description 可选客户端摘要；提供时 worker 校验不一致即判定失败 */
+            client_sha256?: components["schemas"]["Sha256"];
+            /** @description 客户端声明类型，不作为最终判定；worker 嗅探实际内容 */
+            declared_media_type: string;
+            /** @description 客户端声明的字节数；超出上限直接拒绝，不签发授权 */
+            expected_size: number;
+            /** Format: uuid */
+            id: string;
+            original_name: string;
+            scope: components["schemas"]["AssetScope"];
+            /**
+             * Format: uuid
+             * @description scope=trip 时必填
+             */
+            trip_id?: string;
+        };
+        /** @description 批量下载授权；任一资产非本人时整批 404 */
+        AssetDownloadBatch: {
+            /** @default inline */
+            disposition: components["schemas"]["DownloadDisposition"];
+            items: components["schemas"]["DownloadAuthorizationRequest"][];
+        };
+        /** @description 旅行资产分页 */
+        AssetPage: {
+            items: components["schemas"]["Asset"][];
+            next_cursor: string | null;
+        };
+        AssetResponse: {
+            data: components["schemas"]["Asset"];
+        };
+        /**
+         * @description 资产范围；trip 属于某次旅行，avatar 是账号头像
+         * @enum {string}
+         */
+        AssetScope: "trip" | "avatar";
+        /**
+         * @description 上传与校验状态（数据库设计第 14 节）。状态机：
+         *     uploading →（确认）processing →（worker 校验）ready 或 failed；
+         *     failed 与已过期的 uploading →（新尝试）uploading。
+         *     删除只用 deleted_at 表达，不在此枚举内。
+         * @enum {string}
+         */
+        AssetStatus: "uploading" | "processing" | "ready" | "failed";
+        AssetWriteResponse: {
+            data: components["schemas"]["AssetWriteResult"];
+        };
+        /** @description 资产写响应；内嵌上传授权，客户端无需再请求一次 */
+        AssetWriteResult: {
+            affected?: components["schemas"]["EntityRef"][];
+            commit_cursor?: string | null;
+            data?: components["schemas"]["Asset"] | null;
+            /** Format: uuid */
+            operation_id: string;
+            primary: components["schemas"]["EntityRef"];
+            replayed?: boolean;
+            /** @description 签发新授权时非空；ready 资产不再签发 */
+            upload_authorization: components["schemas"]["UploadAuthorization"] | null;
+            warnings?: string[];
+        };
         AuthResponse: {
             data: components["schemas"]["AuthResult"];
         };
@@ -741,6 +1059,53 @@ export type components = {
          * @example 2026-10-01
          */
         Date: string;
+        /**
+         * @description 单个资产的下载授权。仅 ready 且所请求变体可用时 url 非空。
+         *     原图与 PDF 有效 60 秒，缩略图 15 分钟；响应带 Cache-Control: no-store。
+         */
+        DownloadAuthorization: {
+            /** Format: uuid */
+            asset_id: string;
+            byte_size: number | null;
+            /** Format: date-time */
+            expires_at: string | null;
+            /** @description 建议的保存文件名，已按 RFC 5987 编码进签名 */
+            file_name: string;
+            media_type: string | null;
+            status: components["schemas"]["AssetStatus"];
+            thumbnail_status: components["schemas"]["ThumbnailStatus"];
+            /**
+             * Format: uri
+             * @description 非 ready 或变体不可用时为 null
+             */
+            url: string | null;
+        };
+        /** @description 批量授权结果，顺序与请求一致 */
+        DownloadAuthorizationBatch: {
+            items: components["schemas"]["DownloadAuthorization"][];
+        };
+        DownloadAuthorizationBatchResponse: {
+            data: components["schemas"]["DownloadAuthorizationBatch"];
+        };
+        DownloadAuthorizationRequest: {
+            /** Format: uuid */
+            asset_id: string;
+            /** @default original */
+            variant: components["schemas"]["DownloadVariant"];
+        };
+        DownloadAuthorizationResponse: {
+            data: components["schemas"]["DownloadAuthorization"];
+        };
+        /**
+         * @description 响应的 Content-Disposition；签名固定该值
+         * @enum {string}
+         */
+        DownloadDisposition: "inline" | "attachment";
+        /**
+         * @description 下载的对象变体
+         * @enum {string}
+         */
+        DownloadVariant: "original" | "thumbnail";
         EmailChallengeRequest: {
             email: string;
             /** @enum {string} */
@@ -804,6 +1169,51 @@ export type components = {
             /** @description 面向用户的说明，可直接展示 */
             message: string;
         };
+        GeoCoordinate: {
+            /** Format: double */
+            latitude: number;
+            /** Format: double */
+            longitude: number;
+        };
+        GeoPlace: {
+            adcode: string | null;
+            address: string;
+            /** Format: double */
+            latitude: number;
+            /** Format: double */
+            longitude: number;
+            name: string;
+            poi_id: string | null;
+            /** @enum {string} */
+            provider: "amap";
+        };
+        GeoPlaceResponse: {
+            data: components["schemas"]["GeoPlace"];
+        };
+        GeoPlacesResponse: {
+            data: components["schemas"]["GeoPlace"][];
+        };
+        GeoRoute: {
+            /**
+             * Format: int64
+             * @description 高德道路里程，单位米，不是直线距离
+             */
+            distance_meters: number;
+            /**
+             * Format: int64
+             * @description 预计交通时长，单位秒，不含停留
+             */
+            duration_seconds: number;
+            mode: components["schemas"]["GeoTravelMode"];
+            path: components["schemas"]["GeoCoordinate"][];
+            /** @enum {string} */
+            provider: "amap";
+        };
+        GeoRouteResponse: {
+            data: components["schemas"]["GeoRoute"];
+        };
+        /** @enum {string} */
+        GeoTravelMode: "driving" | "walking" | "cycling";
         /**
          * Format: date-time
          * @description RFC 3339 UTC 时间点，例如 2026-09-11T08:30:00Z
@@ -1270,6 +1680,8 @@ export type components = {
         SessionListResponse: {
             data: components["schemas"]["Session"][];
         };
+        /** @description 64 位小写十六进制的 SHA-256 摘要 */
+        Sha256: string;
         /**
          * @description 可带负号的十进制字符串，仅用于统计里的净额、剩余预算等派生金额；格式其余同 Money。
          *     净额 = 支出 − 退款，独立退款可使退款超过支出而为负。
@@ -1291,6 +1703,11 @@ export type components = {
             net_amount: components["schemas"]["SignedMoney"];
             refund_amount: components["schemas"]["Money"];
         };
+        /**
+         * @description 缩略图状态；缩略图失败不影响原图可用性，分别展示
+         * @enum {string}
+         */
+        ThumbnailStatus: "none" | "processing" | "ready" | "failed";
         /** @description 待办的规范资源（接口设计 3.4）；同一结构也是同步日志与快照中的表示 */
         Todo: {
             /** @description 是否已完成；与 completed_at 是否为空一致 */
@@ -1475,6 +1892,22 @@ export type components = {
         TripStatisticsResponse: {
             data: components["schemas"]["TripStatistics"];
         };
+        /** @description 暂存对象的直传授权；只授权当前尝试 */
+        UploadAuthorization: {
+            expires_at: components["schemas"]["Instant"];
+            /** @enum {string} */
+            method: "PUT";
+            /** @description 必须原样发送的请求头；缺失或改动会被存储端拒绝 */
+            required_headers: {
+                [key: string]: string;
+            };
+            upload_attempt: number;
+            /**
+             * Format: uri
+             * @description 预签名地址，直传对象存储，不经过 API
+             */
+            url: string;
+        };
         UploadLimits: {
             /**
              * Format: int64
@@ -1542,6 +1975,17 @@ export type components = {
         /** @description 409 类错误（IDEMPOTENCY_CONFLICT、ID_ALREADY_USED、ACCOUNT_ALREADY_EXISTS、CATEGORY_IN_USE 等） */
         Conflict: {
             headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["Problem"];
+            };
+        };
+        /** @description 503 DEPENDENCY_UNAVAILABLE，对象存储或地点服务不可用、未配置或超时 */
+        DependencyUnavailable: {
+            headers: {
+                /** @description 地点服务短时不可用时给出建议等待秒数；未配置、权限或配额不足时不提供，不自动重试 */
+                "Retry-After"?: number;
                 [name: string]: unknown;
             };
             content: {
@@ -1762,6 +2206,241 @@ export interface operations {
                 content?: never;
             };
             401: components["responses"]["Unauthorized"];
+        };
+    };
+    createAsset: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 写请求的操作编号（UUID）；相同成功操作重试复用同一键 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssetCreate"];
+            };
+        };
+        responses: {
+            /** @description 已登记；upload_authorization 为首个尝试的直传授权 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetWriteResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            410: components["responses"]["Gone"];
+            /** @description 声明大小超过该类型上限（REQUEST_TOO_LARGE）；不签发授权 */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description 声明类型不在允许集合内（UNSUPPORTED_MEDIA_TYPE） */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            422: components["responses"]["ValidationFailed"];
+            503: components["responses"]["DependencyUnavailable"];
+        };
+    };
+    getAsset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                asset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 资产，带 ETag */
+            200: {
+                headers: {
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            410: components["responses"]["Gone"];
+        };
+    };
+    confirmAssetUpload: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 写请求的操作编号（UUID）；相同成功操作重试复用同一键 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                asset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssetConfirm"];
+            };
+        };
+        responses: {
+            /** @description 已受理并入队校验；data 为 processing 状态的资产 */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WriteResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            /** @description 尝试序号不是当前尝试，或资产已在 processing/ready（UPLOAD_NOT_ALLOWED） */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description 资产已删除（RESOURCE_GONE）或尝试超过确认窗口（UPLOAD_EXPIRED） */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    authorizeAssetDownload: {
+        parameters: {
+            query?: {
+                disposition?: components["schemas"]["DownloadDisposition"];
+                variant?: components["schemas"]["DownloadVariant"];
+            };
+            header?: never;
+            path: {
+                asset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 下载授权；原图与 PDF 有效 60 秒，缩略图 15 分钟 */
+            200: {
+                headers: {
+                    /** @description 固定为 no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DownloadAuthorizationResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            /** @description 资产尚未 ready，或所请求变体不可用（ASSET_NOT_READY） */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            410: components["responses"]["Gone"];
+            503: components["responses"]["DependencyUnavailable"];
+        };
+    };
+    authorizeAssetUpload: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 写请求的操作编号（UUID）；相同成功操作重试复用同一键 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                asset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已签发授权；创建新尝试时 upload_attempt 递增 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetWriteResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            /** @description processing 或 ready 的资产不接受上传尝试（UPLOAD_NOT_ALLOWED） */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            410: components["responses"]["Gone"];
+            503: components["responses"]["DependencyUnavailable"];
+        };
+    };
+    authorizeAssetDownloads: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssetDownloadBatch"];
+            };
+        };
+        responses: {
+            /** @description 授权列表，顺序与请求一致 */
+            200: {
+                headers: {
+                    /** @description 固定为 no-store */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DownloadAuthorizationBatchResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationFailed"];
+            503: components["responses"]["DependencyUnavailable"];
         };
     };
     requestEmailChallenge: {
@@ -2079,6 +2758,99 @@ export interface operations {
             412: components["responses"]["PreconditionFailed"];
             422: components["responses"]["ValidationFailed"];
             428: components["responses"]["VersionRequired"];
+        };
+    };
+    searchPlaces: {
+        parameters: {
+            query: {
+                city?: string;
+                /** @description 与 longitude 同时提供时，结果就近排序 */
+                latitude?: number;
+                longitude?: number;
+                q: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 可选兴趣点 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GeoPlacesResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationFailed"];
+            429: components["responses"]["RateLimited"];
+            503: components["responses"]["DependencyUnavailable"];
+        };
+    };
+    reverseGeocode: {
+        parameters: {
+            query: {
+                latitude: number;
+                longitude: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 地点；返回坐标始终为本次请求位置 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GeoPlaceResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationFailed"];
+            429: components["responses"]["RateLimited"];
+            503: components["responses"]["DependencyUnavailable"];
+        };
+    };
+    calculateRoute: {
+        parameters: {
+            query: {
+                destination_latitude: number;
+                destination_longitude: number;
+                mode: components["schemas"]["GeoTravelMode"];
+                origin_latitude: number;
+                origin_longitude: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 首选路线；距离为米，时长为秒 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GeoRouteResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationFailed"];
+            429: components["responses"]["RateLimited"];
+            503: components["responses"]["DependencyUnavailable"];
         };
     };
     getMetadata: {
@@ -2439,6 +3211,39 @@ export interface operations {
             412: components["responses"]["PreconditionFailed"];
             422: components["responses"]["ValidationFailed"];
             428: components["responses"]["VersionRequired"];
+        };
+    };
+    listTripAssets: {
+        parameters: {
+            query?: {
+                cursor?: string;
+                /** @description 最多 100 个 UUID，逗号分隔 */
+                ids?: string;
+                limit?: number;
+                status?: components["schemas"]["AssetStatus"];
+            };
+            header?: never;
+            path: {
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 一页资产，按 created_at、id 均降序 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetPage"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            410: components["responses"]["Gone"];
+            422: components["responses"]["ValidationFailed"];
         };
     };
     listItineraryItems: {

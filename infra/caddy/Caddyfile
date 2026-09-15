@@ -13,11 +13,11 @@
 	}
 
 	# 高德 JS API 安全密钥代理：三段路径与高德官方 Nginx 示例一致，在服务端追加 jscode，
-	# 密钥不进入前端代码。AMAP_JSCODE 由环境变量提供。
+	# 密钥不进入前端代码，并覆盖客户端自行传入的 jscode。AMAP_JSCODE 由环境变量提供。
 	@amapStyles path /_AMapService/v4/map/styles*
 	handle @amapStyles {
 		uri strip_prefix /_AMapService
-		uri query +jscode {env.AMAP_JSCODE}
+		uri query jscode {env.AMAP_JSCODE}
 		reverse_proxy https://webapi.amap.com {
 			header_up Host webapi.amap.com
 		}
@@ -25,7 +25,7 @@
 	@amapVector path /_AMapService/v3/vectormap*
 	handle @amapVector {
 		uri strip_prefix /_AMapService
-		uri query +jscode {env.AMAP_JSCODE}
+		uri query jscode {env.AMAP_JSCODE}
 		reverse_proxy https://fmap01.amap.com {
 			header_up Host fmap01.amap.com
 		}
@@ -33,7 +33,7 @@
 	@amapRest path /_AMapService/*
 	handle @amapRest {
 		uri strip_prefix /_AMapService
-		uri query +jscode {env.AMAP_JSCODE}
+		uri query jscode {env.AMAP_JSCODE}
 		reverse_proxy https://restapi.amap.com {
 			header_up Host restapi.amap.com
 		}

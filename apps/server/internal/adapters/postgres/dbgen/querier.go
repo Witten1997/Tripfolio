@@ -14,6 +14,7 @@ import (
 type Querier interface {
 	AccountExistsByEmailKey(ctx context.Context, emailKey string) (bool, error)
 	AdvanceAccountSeq(ctx context.Context, arg AdvanceAccountSeqParams) error
+	AssetIDExists(ctx context.Context, arg AssetIDExistsParams) (*bool, error)
 	ChangedFieldsBetweenVersions(ctx context.Context, arg ChangedFieldsBetweenVersionsParams) ([]ChangedFieldsBetweenVersionsRow, error)
 	ConsumeChallenge(ctx context.Context, arg ConsumeChallengeParams) error
 	CountActiveLedgerEntries(ctx context.Context, arg CountActiveLedgerEntriesParams) (int64, error)
@@ -37,6 +38,13 @@ type Querier interface {
 	GetAccountDefaultTimezone(ctx context.Context, accountID uuid.UUID) (string, error)
 	GetAccountSyncState(ctx context.Context, accountID uuid.UUID) (AccountSyncState, error)
 	GetActiveTripDeletionJob(ctx context.Context, arg GetActiveTripDeletionJobParams) (DeletionJob, error)
+	GetAsset(ctx context.Context, arg GetAssetParams) (Asset, error)
+	GetAssetForUpdate(ctx context.Context, arg GetAssetForUpdateParams) (Asset, error)
+	// 私有文件资产（数据库设计表 14）。对象键由适配器按 account_id、asset_id、upload_attempt 推导后传入；
+	// 暂存键、最终键、缩略图键与声明信息不进入公开模型，由独立查询按需读取。
+	GetAssetTripInfo(ctx context.Context, arg GetAssetTripInfoParams) (*time.Time, error)
+	// 批量读取保持输入顺序：unnest WITH ORDINALITY 再按序号排序，适配器据此判断缺失项。
+	GetAssetsByIDs(ctx context.Context, arg GetAssetsByIDsParams) ([]Asset, error)
 	GetChallengeForUpdate(ctx context.Context, id uuid.UUID) (AuthChallenge, error)
 	GetExpenseCategory(ctx context.Context, arg GetExpenseCategoryParams) (ExpenseCategory, error)
 	GetExpenseCategoryForUpdate(ctx context.Context, arg GetExpenseCategoryForUpdateParams) (ExpenseCategory, error)
@@ -62,6 +70,7 @@ type Querier interface {
 	GetTripContentInfo(ctx context.Context, arg GetTripContentInfoParams) (GetTripContentInfoRow, error)
 	GetTripForUpdate(ctx context.Context, arg GetTripForUpdateParams) (Trip, error)
 	IncrementChallengeAttempts(ctx context.Context, id uuid.UUID) error
+	InsertAsset(ctx context.Context, arg InsertAssetParams) (Asset, error)
 	// 账号级账单分类。
 	InsertExpenseCategory(ctx context.Context, arg InsertExpenseCategoryParams) (ExpenseCategory, error)
 	InsertItineraryItem(ctx context.Context, arg InsertItineraryItemParams) (ItineraryItem, error)
@@ -101,6 +110,8 @@ type Querier interface {
 	// 列表：接口设计 3.9 TodoFilters；state 为 all/pending/completed/overdue，today 为旅行时区的今天。
 	ListTodoItems(ctx context.Context, arg ListTodoItemsParams) ([]TodoItem, error)
 	ListTrashedTrips(ctx context.Context, arg ListTrashedTripsParams) ([]Trip, error)
+	// 列表按 (created_at, id) 降序走部分索引 assets_trip_created_idx；ids 为空数组时不过滤。
+	ListTripAssets(ctx context.Context, arg ListTripAssetsParams) ([]Asset, error)
 	// 票据引用校验：同账号同旅行、未删除的图片资产，状态不限。
 	ListTripImageAssetIDs(ctx context.Context, arg ListTripImageAssetIDsParams) ([]uuid.UUID, error)
 	// 列表：接口设计 3.9 TripFilters。q 由应用转义 LIKE 通配符；游标用行比较走 (account_id, start_date DESC, id DESC) 索引。
@@ -108,11 +119,19 @@ type Querier interface {
 	ListTripsByUpdatedAt(ctx context.Context, arg ListTripsByUpdatedAtParams) ([]ListTripsByUpdatedAtRow, error)
 	// 统一写事务：账号锁、变更日志、操作收据、字段级合并读取。
 	LockAccountForWrite(ctx context.Context, accountID uuid.UUID) (LockAccountForWriteRow, error)
+	// 校验失败：记录可公开的错误码并清空暂存键，等待用户开启新尝试。
+	MarkAssetFailed(ctx context.Context, arg MarkAssetFailedParams) (Asset, error)
+	// 确认：转入 processing，不再有确认窗口；暂存键保留给 worker 读取。
+	MarkAssetProcessing(ctx context.Context, arg MarkAssetProcessingParams) (Asset, error)
+	// 校验通过：写入最终键与实际元数据，清空暂存键（ready 的 CHECK 要求）；缩略图状态由适配器按类型传入。
+	MarkAssetReady(ctx context.Context, arg MarkAssetReadyParams) (Asset, error)
 	MaxExpenseCategorySortOrder(ctx context.Context, accountID uuid.UUID) (int32, error)
 	MaxItinerarySortOrder(ctx context.Context, arg MaxItinerarySortOrderParams) (MaxItinerarySortOrderRow, error)
 	PackingItemIDExists(ctx context.Context, arg PackingItemIDExistsParams) (*bool, error)
 	PackingNameTaken(ctx context.Context, arg PackingNameTakenParams) (bool, error)
 	ReissueSessionWithinGrace(ctx context.Context, arg ReissueSessionWithinGraceParams) error
+	// 续签：只延长当前尝试的截止时间，暂存键与序号不变。
+	RenewAssetAttempt(ctx context.Context, arg RenewAssetAttemptParams) (Asset, error)
 	RepositionItineraryItem(ctx context.Context, arg RepositionItineraryItemParams) (ItineraryItem, error)
 	RequestTripPurge(ctx context.Context, arg RequestTripPurgeParams) (Trip, error)
 	RestoreTrip(ctx context.Context, arg RestoreTripParams) (Trip, error)
@@ -121,6 +140,7 @@ type Querier interface {
 	RevokeSession(ctx context.Context, arg RevokeSessionParams) error
 	RotateSession(ctx context.Context, arg RotateSessionParams) error
 	SetAccountStatus(ctx context.Context, arg SetAccountStatusParams) error
+	SetAssetThumbnail(ctx context.Context, arg SetAssetThumbnailParams) (Asset, error)
 	SetChallengeDelivery(ctx context.Context, arg SetChallengeDeliveryParams) error
 	SetSessionReauthenticated(ctx context.Context, arg SetSessionReauthenticatedParams) error
 	SetTripArchived(ctx context.Context, arg SetTripArchivedParams) (Trip, error)
@@ -131,6 +151,8 @@ type Querier interface {
 	SoftDeleteLedgerEntry(ctx context.Context, arg SoftDeleteLedgerEntryParams) (LedgerEntry, error)
 	SoftDeletePackingItem(ctx context.Context, arg SoftDeletePackingItemParams) (PackingItem, error)
 	SoftDeleteTodoItem(ctx context.Context, arg SoftDeleteTodoItemParams) (TodoItem, error)
+	// 新尝试：序号加 1、换暂存键与截止时间、回到 uploading 并清掉上次错误码；最终键留空由校验重写。
+	StartAssetAttempt(ctx context.Context, arg StartAssetAttemptParams) (Asset, error)
 	TodoItemIDExists(ctx context.Context, arg TodoItemIDExistsParams) (*bool, error)
 	TouchSession(ctx context.Context, arg TouchSessionParams) error
 	TrashTrip(ctx context.Context, arg TrashTripParams) (Trip, error)

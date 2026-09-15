@@ -7,7 +7,6 @@ package objectstore
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"time"
@@ -36,11 +35,22 @@ const (
 )
 
 // ErrNotFound 表示对象不存在。调用方据此判断暂存对象是否真的上传过。
-var ErrNotFound = errors.New("对象不存在")
+// 它同时带 IsObjectNotFound 方法，使用方可以不导入本包、只凭错误链上的方法识别。
+var ErrNotFound error = notFoundError{}
 
 // ErrPreconditionFailed 表示条件复制的 If-Match ETag 不匹配：
 // 暂存对象在校验后被改写，按设计判定本次上传失败。
-var ErrPreconditionFailed = errors.New("对象 ETag 与条件不匹配")
+var ErrPreconditionFailed error = preconditionError{}
+
+type notFoundError struct{}
+
+func (notFoundError) Error() string          { return "对象不存在" }
+func (notFoundError) IsObjectNotFound() bool { return true }
+
+type preconditionError struct{}
+
+func (preconditionError) Error() string              { return "对象 ETag 与条件不匹配" }
+func (preconditionError) IsPreconditionFailed() bool { return true }
 
 // UploadAuthorization 是暂存对象的直传授权。客户端按 Method 与 RequiredHeaders 直传，不经过 API。
 type UploadAuthorization struct {

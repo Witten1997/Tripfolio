@@ -18,6 +18,7 @@ describe('buildRoutes', () => {
     expect(names).toEqual([
       'trip-itinerary',
       'trip-ledger',
+      'trip-map',
       'trip-packing',
       'trip-album',
       'trip-todos',

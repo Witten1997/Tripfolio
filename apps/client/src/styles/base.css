@@ -4,6 +4,7 @@
     system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC',
     sans-serif;
   --tf-font-display: var(--tf-font-body);
+  --tf-control-size: 40px;
   font-family: var(--tf-font-body);
 }
 
@@ -45,6 +46,20 @@ body {
 .tf-bar {
   background: var(--tf-surface-raised);
   border-bottom: 1px solid var(--tf-line-soft);
+}
+
+/* 操作组共享几何尺寸，图标与文字按钮不再各用一套高度。 */
+.tf-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+@media (max-width: 767px), (pointer: coarse) {
+  :root {
+    --tf-control-size: 44px;
+  }
 }
 
 /* 切换主题的一帧内抑制所有过渡，避免颜色拖影。 */

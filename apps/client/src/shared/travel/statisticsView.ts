@@ -18,6 +18,18 @@ export function toNumber(amount: string): number {
   return Number.isFinite(value) ? value : 0
 }
 
+/**
+ * 分类金额只显示当前筛选范围内有收支的分类。
+ * 账目金额必须为正；分别检查支出与退款，不能用净额判空，也不能只检查已加载的一页账目。
+ */
+export function categoryAmountRows(byCategory: readonly CategoryTotals[]): CategoryTotals[] {
+  return byCategory
+    .filter(
+      (category) => toNumber(category.expense_amount) > 0 || toNumber(category.refund_amount) > 0,
+    )
+    .sort((a, b) => toNumber(b.net_amount) - toNumber(a.net_amount))
+}
+
 /** 精确求和同币种金额：按最大小数位当定点整数相加，避免浮点误差进入展示金额。 */
 export function sumMoney(amounts: readonly string[]): string {
   if (!amounts.length) return '0'

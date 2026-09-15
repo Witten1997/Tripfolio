@@ -4,8 +4,12 @@ import type { ItineraryItem } from '@/shared/api/itinerary'
 import type { PackingItem } from '@/shared/api/packing'
 import type { Todo } from '@/shared/api/todos'
 import {
+  applyItineraryPlace,
   changedItineraryFields,
+  clearItineraryPlace,
+  emptyItineraryDraft,
   itineraryDraftFrom,
+  itineraryExpensePreset,
   validateItineraryDraft,
 } from '@/shared/travel/itineraryDraft'
 import {
@@ -43,6 +47,61 @@ const baseItem: ItineraryItem = {
 }
 
 describe('itineraryDraft', () => {
+  it('新建须选点，换选时名称与位置一并更新，清除不遗留旧地址', () => {
+    const draft = emptyItineraryDraft('2026-10-02')
+    draft.title = '旧标题'
+    const money = { currency: 'CNY', minorUnits: 2 }
+    expect(() => validateItineraryDraft(draft, money, true)).toThrow('选点')
+    for (const name of ['故宫', '景山公园'])
+      applyItineraryPlace(draft, {
+        name,
+        address: '北京市东城区',
+        latitude: 39.9,
+        longitude: 116.4,
+        poi_id: null,
+        adcode: null,
+        provider: 'amap',
+      })
+    expect(validateItineraryDraft(draft, money, true)).toMatchObject({
+      title: '景山公园',
+      place_name: '景山公园',
+      address: '北京市东城区',
+      latitude: 39.9,
+      longitude: 116.4,
+    })
+    clearItineraryPlace(draft)
+    expect(draft).toMatchObject({
+      title: '',
+      place_name: '',
+      address: '',
+      latitude: null,
+      longitude: null,
+    })
+  })
+
+  it('地点账单预填当前日期与地点，既有预计费用不变成账单金额', () => {
+    const draft = itineraryDraftFrom(baseItem)
+    expect(itineraryExpensePreset(draft)).toEqual({ notes: '浅草', occurred_on: '2026-10-02' })
+    draft.scheduled_on = '2026-10-03'
+    draft.place_name = '雷门'
+    expect(itineraryExpensePreset(draft)).toEqual({ notes: '雷门', occurred_on: '2026-10-03' })
+    expect(draft.estimated_amount).toBe('1500')
+    draft.scheduled_on = ''
+    expect(() => itineraryExpensePreset(draft)).toThrow('所属日期')
+    clearItineraryPlace(draft)
+    expect(() => itineraryExpensePreset(draft)).toThrow('地点')
+  })
+
+  it('编辑旧无定位记录不强制补选点，也不改写名称和历史费用', () => {
+    const draft = itineraryDraftFrom(baseItem)
+    draft.notes = '新备注'
+    expect(
+      changedItineraryFields(
+        validateItineraryDraft(draft, { currency: 'JPY', minorUnits: 0 }),
+        baseItem,
+      ),
+    ).toEqual({ notes: '新备注' })
+  })
   it('草稿把当地时间拆成日期与时刻，时长模式与结束模式互斥', () => {
     const draft = itineraryDraftFrom(baseItem)
     expect(draft.planned_start).toBe('2026-10-02 09:00')
@@ -132,10 +191,25 @@ describe('packingDraft', () => {
 
   it('差异只含变化字段', () => {
     const draft = packingDraftFrom(basePacking)
-    draft.status = 'packed'
+    draft.status = 'ready'
     draft.name = ' 护照 '
     expect(changedPackingFields(validatePackingDraft(draft), basePacking)).toEqual({
-      status: 'packed',
+      status: 'ready',
+    })
+  })
+
+  it('旧 packed 编辑为已准备，无关修改不顺带迁移状态，取消勾选才写 pending', () => {
+    const original = { ...basePacking, status: 'packed' as const }
+    const draft = packingDraftFrom(original)
+    expect(draft.status).toBe('ready')
+    draft.notes = '放随身包'
+    expect(changedPackingFields(validatePackingDraft(draft), original)).toEqual({
+      notes: '放随身包',
+    })
+    draft.status = 'pending'
+    expect(changedPackingFields(validatePackingDraft(draft), original)).toEqual({
+      notes: '放随身包',
+      status: 'pending',
     })
   })
 })

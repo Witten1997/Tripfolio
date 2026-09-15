@@ -29,8 +29,18 @@ func RunWorker(ctx context.Context, cfg config.Config, logger *slog.Logger) erro
 		return fmt.Errorf("启动检查失败: %w", err)
 	}
 
+	// worker 与 API 共用同一套装配：校验器需要写事务、对象存储与图片处理，全部来自 BuildServices。
+	services, err := BuildServices(pool, cfg, logger, nil)
+	if err != nil {
+		return err
+	}
 	workers := river.NewWorkers()
-	riverjobs.RegisterWorkers(workers, logger)
+	deps := riverjobs.Deps{Logger: logger}
+	// 未配置对象存储时 AssetVerifier 为 nil 指针；保持接口为 nil，让 worker 走推迟分支而不是解引用。
+	if services.AssetVerifier != nil {
+		deps.AssetVerifier = services.AssetVerifier
+	}
+	riverjobs.RegisterWorkers(workers, deps)
 	client, err := queue.NewWorkerClient(pool, logger, workers, cfg.WorkerMaxJobs)
 	if err != nil {
 		return fmt.Errorf("创建 worker 客户端: %w", err)

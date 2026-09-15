@@ -1,4 +1,10 @@
-import type { PackingCreate, PackingItem, PackingPatch } from '@/shared/api/packing'
+import {
+  normalizePackingStatus,
+  type PackingCreate,
+  type PackingItem,
+  type PackingPatch,
+  type PreparedPackingStatus,
+} from '@/shared/api/packing'
 import { DraftError } from '@/shared/travel/tripDraft'
 
 export interface PackingDraft {
@@ -6,10 +12,14 @@ export interface PackingDraft {
   category: PackingItem['category']
   quantity: string
   notes: string
-  status: PackingItem['status']
+  status: PreparedPackingStatus
 }
 
-export type PackingValues = Omit<PackingCreate, 'id'> & { quantity: number; notes: string }
+export type PackingValues = Omit<PackingCreate, 'id'> & {
+  quantity: number
+  notes: string
+  status: PreparedPackingStatus
+}
 
 export const packingFieldLabels: Record<string, string> = {
   name: '物品名称',
@@ -29,7 +39,7 @@ export function packingDraftFrom(item: PackingItem): PackingDraft {
     category: item.category,
     quantity: String(item.quantity),
     notes: item.notes,
-    status: item.status,
+    status: normalizePackingStatus(item.status),
   }
 }
 
@@ -48,8 +58,10 @@ export function validatePackingDraft(draft: PackingDraft): PackingValues {
 
 export function changedPackingFields(values: PackingValues, baseline: PackingItem): PackingPatch {
   const patch: Record<string, unknown> = {}
-  for (const key of ['name', 'category', 'quantity', 'notes', 'status'] as const) {
+  for (const key of ['name', 'category', 'quantity', 'notes'] as const) {
     if (values[key] !== baseline[key]) patch[key] = values[key]
   }
+  // 修改名称等字段不能顺带把历史 packed 写成 ready。
+  if (values.status !== normalizePackingStatus(baseline.status)) patch.status = values.status
   return patch as PackingPatch
 }

@@ -8,6 +8,7 @@ import {
   ElInput,
   ElMessage,
   ElPopconfirm,
+  ElProgress,
   ElSkeleton,
   ElTag,
   type FormInstance,
@@ -15,6 +16,7 @@ import {
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
+import IconAction from '@/desktop/components/IconAction.vue'
 import {
   changePassword,
   fetchAccount,
@@ -24,9 +26,12 @@ import {
   updateAccount,
   type Session,
 } from '@/shared/api/account'
+import { authorizeAssetDownload } from '@/shared/api/assets'
 import { ApiError } from '@/shared/api/auth'
+import { actionError } from '@/shared/api/writes'
 import { isValidPassword } from '@/shared/auth/useEmailChallenge'
 import { useSessionStore } from '@/shared/stores/session'
+import { useAssetUpload } from '@/shared/travel/useAssetUpload'
 
 const router = useRouter()
 const session = useSessionStore()
@@ -60,6 +65,95 @@ const profileDirty = computed(
     (profile.nickname.trim() !== account.value.nickname ||
       profile.default_timezone.trim() !== account.value.default_timezone),
 )
+
+// 头像：上传走资产链路（登记 → 直传 → 确认 → 等 worker 校验），完成后 PATCH 绑定到账号。
+const upload = useAssetUpload()
+const avatarInputRef = ref<HTMLInputElement>()
+const avatarUrl = ref<string | null>(null)
+const avatarBinding = ref(false)
+const avatarBusy = computed(
+  () =>
+    avatarBinding.value || ['preparing', 'uploading', 'processing'].includes(upload.state.phase),
+)
+const avatarInitial = computed(() => (account.value?.nickname ?? '').trim().slice(0, 1) || '·')
+const avatarHint = computed(() => {
+  if (upload.state.error) return upload.state.error
+  switch (upload.state.phase) {
+    case 'preparing':
+      return '正在准备上传…'
+    case 'processing':
+      return '正在处理图片…'
+    default:
+      return avatarBinding.value ? '正在保存…' : ''
+  }
+})
+
+/** 头像地址是短期签名，进入页面与更换后都要重新签发。 */
+async function loadAvatarUrl() {
+  const id = account.value?.avatar_asset_id
+  if (!id) {
+    avatarUrl.value = null
+    return
+  }
+  try {
+    const auth = await authorizeAssetDownload(id, 'thumbnail')
+    avatarUrl.value = auth.url ?? null
+  } catch {
+    // 头像还在处理或缩略图未就绪：显示占位，不打扰用户。
+    avatarUrl.value = null
+  }
+}
+
+async function onAvatarPicked(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  // 清空 value，让同一文件可以再次选择触发 change。
+  input.value = ''
+  if (!file || !account.value) return
+
+  const asset = await upload.start({ file, scope: 'avatar' })
+  if (!asset || asset.status !== 'ready') return
+  await bindAvatar(asset.id)
+}
+
+async function retryAvatar() {
+  const asset = await upload.retry()
+  if (!asset || asset.status !== 'ready') return
+  await bindAvatar(asset.id)
+}
+
+async function bindAvatar(assetId: string | null) {
+  if (!account.value) return
+  avatarBinding.value = true
+  try {
+    await updateAccount(account.value.version, { avatar_asset_id: assetId })
+    await loadAvatarUrl()
+    upload.reset()
+    ElMessage.success(assetId ? '头像已更新' : '头像已移除')
+  } catch (cause) {
+    if (cause instanceof ApiError && cause.code === 'VERSION_CONFLICT') {
+      // 资料在别处改过：重新拉取后重试一次绑定，避免用户重传文件。
+      await fetchAccount()
+      try {
+        await updateAccount(account.value.version, { avatar_asset_id: assetId })
+        await loadAvatarUrl()
+        upload.reset()
+        ElMessage.success(assetId ? '头像已更新' : '头像已移除')
+        return
+      } catch (retryCause) {
+        upload.state.error = actionError(retryCause, '头像保存失败，请重试')
+      }
+    } else {
+      upload.state.error = actionError(cause, '头像保存失败，请重试')
+    }
+  } finally {
+    avatarBinding.value = false
+  }
+}
+
+async function removeAvatar() {
+  await bindAvatar(null)
+}
 
 async function saveProfile() {
   if (!account.value || !profileRef.value) return
@@ -163,6 +257,7 @@ onMounted(async () => {
   try {
     await fetchAccount()
     fillProfile()
+    await loadAvatarUrl()
     await loadSessions()
   } catch (cause) {
     loadError.value = cause instanceof ApiError ? cause.message : '无法加载账号信息'
@@ -189,6 +284,44 @@ onMounted(async () => {
           </ElFormItem>
           <ElFormItem label="注册时间">
             <ElInput :model-value="formatTime(account.created_at)" readonly />
+          </ElFormItem>
+          <ElFormItem label="头像">
+            <div class="avatar-field">
+              <div class="avatar-preview" :class="{ 'avatar-preview--empty': !avatarUrl }">
+                <img v-if="avatarUrl" :src="avatarUrl" alt="当前头像" />
+                <span v-else>{{ avatarInitial }}</span>
+              </div>
+              <div class="avatar-actions">
+                <input
+                  ref="avatarInputRef"
+                  class="avatar-input"
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  @change="onAvatarPicked"
+                />
+                <div class="avatar-buttons">
+                  <ElButton :loading="avatarBusy" @click="avatarInputRef?.click()">
+                    {{ account.avatar_asset_id ? '更换头像' : '上传头像' }}
+                  </ElButton>
+                  <ElButton
+                    v-if="account.avatar_asset_id && !avatarBusy"
+                    text
+                    @click="removeAvatar"
+                  >
+                    移除
+                  </ElButton>
+                  <ElButton v-if="upload.state.phase === 'failed'" text @click="retryAvatar">
+                    重试
+                  </ElButton>
+                </div>
+                <ElProgress
+                  v-if="upload.state.phase === 'uploading'"
+                  :percentage="Math.round(upload.state.progress * 100)"
+                  :stroke-width="6"
+                />
+                <span v-if="avatarHint" class="account-hint avatar-hint">{{ avatarHint }}</span>
+              </div>
+            </div>
           </ElFormItem>
           <ElFormItem label="昵称" prop="nickname">
             <ElInput v-model="profile.nickname" maxlength="64" />
@@ -261,7 +394,12 @@ onMounted(async () => {
         <template #header>
           <div class="account-card-header">
             <span>登录设备</span>
-            <ElButton size="small" :loading="loadingSessions" @click="loadSessions">刷新</ElButton>
+            <IconAction
+              icon="refresh"
+              label="刷新登录设备"
+              :loading="loadingSessions"
+              @click="loadSessions"
+            />
           </div>
         </template>
         <div :aria-busy="loadingSessions">
@@ -354,6 +492,66 @@ onMounted(async () => {
   margin-left: 12px;
   font-size: 12px;
   color: var(--tf-text-3);
+}
+
+.avatar-field {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.avatar-preview {
+  flex: none;
+  width: 72px;
+  height: 72px;
+  overflow: hidden;
+  border-radius: 50%;
+  background: var(--tf-surface-2);
+  border: 1px solid var(--tf-line-soft);
+}
+
+.avatar-preview img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.avatar-preview--empty {
+  display: grid;
+  place-items: center;
+  font-size: 28px;
+  color: var(--tf-text-3);
+}
+
+.avatar-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.avatar-buttons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 原生文件输入不可见，由按钮触发；保留在 DOM 中以便键盘与辅助技术访问。 */
+.avatar-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.avatar-hint {
+  margin-left: 0;
 }
 
 .account-card-header {

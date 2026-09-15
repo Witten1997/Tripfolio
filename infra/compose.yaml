@@ -78,6 +78,12 @@ services:
       TRIPFOLIO_HTTP_ADDR: ':8080'
       TRIPFOLIO_DATABASE_URL: postgres://tripfolio:tripfolio@postgres:5432/tripfolio?sslmode=disable
       TRIPFOLIO_CORS_ORIGINS: http://localhost:5173,https://localhost
+      # 两套高德凭证隔离：Web 服务 Key 只给 API；JS 安全密钥只给 Caddy。
+      TRIPFOLIO_AMAP_WEB_SERVICE_KEY: ${TRIPFOLIO_AMAP_WEB_SERVICE_KEY:-}
+      TRIPFOLIO_GEO_PER_ACCOUNT_PER_MINUTE: ${TRIPFOLIO_GEO_PER_ACCOUNT_PER_MINUTE:-60}
+      TRIPFOLIO_GEO_GLOBAL_DAILY_LIMIT: ${TRIPFOLIO_GEO_GLOBAL_DAILY_LIMIT:-0}
+      TRIPFOLIO_GEO_CACHE_TTL: ${TRIPFOLIO_GEO_CACHE_TTL:-24h}
+      TRIPFOLIO_GEO_TIMEOUT: ${TRIPFOLIO_GEO_TIMEOUT:-5s}
     depends_on:
       postgres:
         condition: service_healthy

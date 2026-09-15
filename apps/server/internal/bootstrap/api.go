@@ -11,9 +11,11 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"tripfolio/server/internal/adapters/geo"
+	"tripfolio/server/internal/adapters/imaging"
 	"tripfolio/server/internal/adapters/mail"
 	"tripfolio/server/internal/adapters/objectstore"
 	accountpg "tripfolio/server/internal/adapters/postgres/account"
+	assetspg "tripfolio/server/internal/adapters/postgres/assets"
 	financepg "tripfolio/server/internal/adapters/postgres/finance"
 	"tripfolio/server/internal/adapters/postgres/pgcore"
 	travelpg "tripfolio/server/internal/adapters/postgres/travel"
@@ -23,7 +25,9 @@ import (
 	"tripfolio/server/internal/config"
 	"tripfolio/server/internal/foundation/clock"
 	"tripfolio/server/internal/modules/account"
+	"tripfolio/server/internal/modules/assets"
 	"tripfolio/server/internal/modules/finance"
+	geoservice "tripfolio/server/internal/modules/geo"
 	"tripfolio/server/internal/modules/metadata"
 	"tripfolio/server/internal/modules/travel/itinerary"
 	"tripfolio/server/internal/modules/travel/packing"
@@ -44,10 +48,13 @@ type Services struct {
 	Todos      *todo.Service
 	Ledger     *finance.LedgerService
 	Statistics *finance.StatisticsService
-	// ObjectStore 与 Geo 是外部依赖适配器，未配置时为 nil，
-	// 由使用方的处理器返回 503 DEPENDENCY_UNAVAILABLE。
+	// Assets 始终装配；对象存储未配置时其授权类用例返回 503，读取类用例照常工作。
+	Assets *assets.Service
+	// AssetVerifier 是 worker 侧校验器；对象存储未配置时为 nil，校验任务被推迟。
+	AssetVerifier *assets.Verifier
+	// ObjectStore 未配置时为 nil；Geo 服务在没有供应商时返回 503。
 	ObjectStore *objectstore.S3Store
-	Geo         *geo.AmapClient
+	Geo         *geoservice.Service
 }
 
 // BuildServices 用连接池装配服务。mailer 为 nil 时按配置创建。
@@ -67,7 +74,6 @@ func BuildServices(pool *pgxpool.Pool, cfg config.Config, logger *slog.Logger, m
 		Store: store, Sessions: sessions, Hasher: security.NewPasswordHasher(cfg.PasswordHashConcurrency), Keyring: keyring,
 		Mailer: mailer, Limiter: ratelimit.New(), Clock: clk, Policy: policy, Logger: logger,
 	})
-	profile := account.NewProfileService(store, nil, clk)
 
 	insertOnly, err := queue.NewInsertOnlyClient(pool, logger)
 	if err != nil {
@@ -92,12 +98,44 @@ func BuildServices(pool *pgxpool.Pool, cfg config.Config, logger *slog.Logger, m
 	if err != nil {
 		return Services{}, err
 	}
+	geoSvc := geoservice.NewService(nil)
+	if places != nil {
+		geoSvc = geoservice.NewService(places)
+	}
+
+	// 对象键推导、授权与 worker 读写都由同一个 S3Store 经 AssetsStore 适配提供；
+	// 未配置时保持接口为 nil（不能把 nil 指针赋给接口），服务按 503 降级、校验任务被推迟。
+	limits := uploadLimits(metadata.Current().UploadLimits)
+	assetDeps := assets.Deps{
+		UnitOfWork: assetspg.NewUnitOfWork(writer), Reader: assetspg.NewReader(pool),
+		Cursors: cursors, Clock: clk, Limits: limits,
+	}
+	var verifier *assets.Verifier
+	if objects != nil {
+		adapted := objectstore.NewAssetsStore(objects)
+		assetDeps.Keys, assetDeps.Objects = adapted, adapted
+		verifier = assets.NewVerifier(assets.VerifierDeps{
+			UnitOfWork: assetDeps.UnitOfWork, Reader: assetDeps.Reader, Keys: adapted, Objects: adapted,
+			Images: imaging.AssetsProcessor{}, Limits: limits, Clock: clk, Logger: logger,
+		})
+	}
+	assetSvc := assets.NewService(assetDeps)
+	// 头像校验由 assets 提供：资料服务必须在资产服务之后装配。
+	profile := account.NewProfileService(store, assetSvc, clk)
 
 	return Services{
 		Identity: identity, Sessions: sessions, Profile: profile, Categories: categories,
 		Trips: trips, Itinerary: itineraries, Packing: packings, Todos: todos, Ledger: ledger, Statistics: statistics,
-		ObjectStore: objects, Geo: places,
+		Assets: assetSvc, AssetVerifier: verifier, ObjectStore: objects, Geo: geoSvc,
 	}, nil
+}
+
+// uploadLimits 把 metadata 的上传限制转为 assets 模块的类型：两者字段一致，只是避免模块反向依赖 metadata。
+func uploadLimits(l metadata.UploadLimits) assets.UploadLimits {
+	return assets.UploadLimits{
+		ImageMaxBytes: l.ImageMaxBytes, PDFMaxBytes: l.PDFMaxBytes,
+		ImageMediaTypes: l.ImageMediaTypes, PDFMediaTypes: l.PDFMediaTypes,
+	}
 }
 
 // buildObjectStore 按配置创建对象存储客户端。未配置时返回 nil：
@@ -193,7 +231,7 @@ func RunAPI(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		Cookies:  httpapi.CookieSettings{Secure: cfg.CookieSecure},
 		Identity: services.Identity, Sessions: services.Sessions, Profile: services.Profile, Categories: services.Categories,
 		Trips: services.Trips, Itinerary: services.Itinerary, Packing: services.Packing, Todos: services.Todos,
-		Ledger: services.Ledger, Statistics: services.Statistics,
+		Ledger: services.Ledger, Statistics: services.Statistics, Assets: services.Assets, Geo: services.Geo,
 	})
 	srv := httpapi.NewServer(cfg.HTTPAddr, router)
 	logger.Info("api 启动", "env", cfg.Env, "addr", cfg.HTTPAddr, "cors_origins", cfg.CORSOrigins, "cookie_secure", cfg.CookieSecure, "mail_driver", cfg.Mail.Driver)

@@ -16,6 +16,8 @@
   /* 现有小浮层没有模糊层，保留更实的阅读底；对话框由装饰层独立透色。 */
   --tf-surface-raised: rgb(255 255 255 / 0.94);
   --tf-surface-sunken: rgb(255 255 255 / 0.54);
+  /* 已有玻璃面板内的列表条目只需轻填充，不再叠加浮层白底或模糊。 */
+  --tf-surface-inset: rgb(255 255 255 / 0.24);
   --tf-text-1: #1c201e;
   --tf-text-2: #39483f;
   --tf-text-3: #435347;
@@ -58,6 +60,13 @@
     --tf-surface: #edf2ed;
     --tf-surface-raised: #edf2ed;
     --tf-surface-sunken: #edf2ed;
+    --tf-surface-inset: #edf2ed;
+  }
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  [data-theme='glass'] {
+    --tf-surface-inset: #edf2ed;
   }
 }
 

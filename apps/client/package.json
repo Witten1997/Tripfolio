@@ -15,12 +15,14 @@
     "cap:open": "cap open android"
   },
   "dependencies": {
+    "@amap/amap-jsapi-loader": "1.0.1",
     "@aparajita/capacitor-secure-storage": "8.0.0",
     "@capacitor-community/sqlite": "8.1.1",
     "@capacitor/app": "8.1.1",
     "@capacitor/core": "8.5.2",
     "@capacitor/network": "8.0.1",
     "@capacitor/preferences": "8.0.1",
+    "@lucide/vue": "1.46.0",
     "@vue/devtools-api": "^8.1.5",
     "echarts": "^6.1.0",
     "element-plus": "2.14.5",

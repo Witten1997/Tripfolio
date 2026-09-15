@@ -46,11 +46,12 @@ func (m *captureMailer) last() string {
 }
 
 type apiFixture struct {
-	t      *testing.T
-	server *httptest.Server
-	mailer *captureMailer
-	origin string
-	pool   *pgxpool.Pool
+	t        *testing.T
+	server   *httptest.Server
+	mailer   *captureMailer
+	origin   string
+	pool     *pgxpool.Pool
+	services bootstrap.Services
 }
 
 func newAPIFixture(t *testing.T) *apiFixture {
@@ -61,6 +62,8 @@ func newAPIFixture(t *testing.T) *apiFixture {
 		DatabaseURL: url, DBMaxConns: 4, CORSOrigins: []string{"http://localhost:5173"},
 		PasswordHashConcurrency: 2, CookieSecure: false, Mail: config.MailConfig{Driver: "log"},
 	}
+	// 设置了对象存储端点时接入真实 MinIO，资产用例据此决定是否跳过。
+	cfg.ObjectStore = testObjectStoreConfig()
 	if err := bootstrap.RunMigrate(ctx, cfg, quietLogger(), []string{"up"}); err != nil {
 		t.Fatalf("migrate up: %v", err)
 	}
@@ -80,11 +83,11 @@ func newAPIFixture(t *testing.T) *apiFixture {
 		CORSOrigins: cfg.CORSOrigins, Cookies: httpapi.CookieSettings{Secure: false},
 		Identity: services.Identity, Sessions: services.Sessions, Profile: services.Profile, Categories: services.Categories,
 		Trips: services.Trips, Itinerary: services.Itinerary, Packing: services.Packing, Todos: services.Todos,
-		Ledger: services.Ledger, Statistics: services.Statistics,
+		Ledger: services.Ledger, Statistics: services.Statistics, Assets: services.Assets,
 	})
 	srv := httptest.NewServer(router)
 	t.Cleanup(srv.Close)
-	return &apiFixture{t: t, server: srv, mailer: mailer, origin: cfg.CORSOrigins[0], pool: pool}
+	return &apiFixture{t: t, server: srv, mailer: mailer, origin: cfg.CORSOrigins[0], pool: pool, services: services}
 }
 
 // testWriter 把服务端日志转发到 t.Log，便于定位 500。

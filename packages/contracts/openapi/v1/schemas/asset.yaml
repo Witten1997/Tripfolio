@@ -1,0 +1,367 @@
+AssetScope:
+  type: string
+  description: 资产范围；trip 属于某次旅行，avatar 是账号头像
+  enum: [trip, avatar]
+
+AssetStatus:
+  type: string
+  description: |
+    上传与校验状态（数据库设计第 14 节）。状态机：
+    uploading →（确认）processing →（worker 校验）ready 或 failed；
+    failed 与已过期的 uploading →（新尝试）uploading。
+    删除只用 deleted_at 表达，不在此枚举内。
+  enum: [uploading, processing, ready, failed]
+
+ThumbnailStatus:
+  type: string
+  description: 缩略图状态；缩略图失败不影响原图可用性，分别展示
+  enum: [none, processing, ready, failed]
+
+Sha256:
+  type: string
+  description: 64 位小写十六进制的 SHA-256 摘要
+  pattern: '^[0-9a-f]{64}$'
+
+Asset:
+  type: object
+  description: |
+    私有文件资产的规范资源（接口设计 3.7）；同一结构也是同步日志与快照中的表示。
+    暂存键、最终对象键与回收字段不进入公开模型。
+    exif_* 是 worker 从图片提取的建议值（WGS-84 原始坐标），不自动写入任何业务记录。
+  x-go-type: assets.Resource
+  x-go-type-import:
+    path: tripfolio/server/internal/modules/assets
+  required:
+    [
+      id,
+      trip_id,
+      scope,
+      original_name,
+      status,
+      upload_attempt,
+      upload_expires_at,
+      media_type,
+      byte_size,
+      sha256,
+      width,
+      height,
+      exif_taken_at_local,
+      exif_latitude,
+      exif_longitude,
+      thumbnail_status,
+      error_code,
+      version,
+      created_at,
+      updated_at,
+      deleted_at,
+    ]
+  properties:
+    id:
+      type: string
+      format: uuid
+    trip_id:
+      type: string
+      format: uuid
+      nullable: true
+      description: trip 范围必有旅行；avatar 范围为 null
+    scope:
+      $ref: '#/AssetScope'
+    original_name:
+      type: string
+      maxLength: 255
+      description: 原始文件名，仅展示，不参与对象路径拼接
+    status:
+      $ref: '#/AssetStatus'
+    upload_attempt:
+      type: integer
+      minimum: 1
+      description: 当前上传尝试序号，重试递增
+    upload_expires_at:
+      type: string
+      format: date-time
+      nullable: true
+      description: 当前尝试的确认截止时间；非 uploading 时为 null
+    media_type:
+      type: string
+      maxLength: 100
+      nullable: true
+      description: 服务端识别后的 MIME；校验完成前为 null
+    byte_size:
+      type: integer
+      minimum: 0
+      nullable: true
+      description: 已校验字节数；校验完成前为 null
+    sha256:
+      type: string
+      pattern: '^[0-9a-f]{64}$'
+      nullable: true
+      description: 服务端计算的摘要；校验完成前为 null
+    width:
+      type: integer
+      minimum: 1
+      nullable: true
+    height:
+      type: integer
+      minimum: 1
+      nullable: true
+    exif_taken_at_local:
+      type: string
+      pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$'
+      nullable: true
+      description: EXIF 拍摄时间，按原样保存，仅供客户端建议
+    exif_latitude:
+      type: number
+      format: double
+      minimum: -90
+      maximum: 90
+      nullable: true
+      description: EXIF 纬度，WGS-84 原始值；采用前需由客户端转换为 GCJ-02
+    exif_longitude:
+      type: number
+      format: double
+      minimum: -180
+      maximum: 180
+      nullable: true
+      description: EXIF 经度，与 exif_latitude 成对
+    thumbnail_status:
+      $ref: '#/ThumbnailStatus'
+    error_code:
+      type: string
+      maxLength: 64
+      nullable: true
+      description: 可公开的上传或处理错误代码
+    version:
+      $ref: ./write.yaml#/Version
+    created_at:
+      $ref: ./write.yaml#/Instant
+    updated_at:
+      $ref: ./write.yaml#/Instant
+    deleted_at:
+      type: string
+      format: date-time
+      nullable: true
+
+AssetCreate:
+  type: object
+  description: |
+    登记资产与首次上传尝试。不接受对象键：键由服务端按账号、资产与尝试序号推导。
+    scope=trip 时 trip_id 必填，avatar 时不允许 trip_id。
+  required: [id, scope, original_name, expected_size, declared_media_type]
+  properties:
+    id:
+      type: string
+      format: uuid
+    scope:
+      $ref: '#/AssetScope'
+    trip_id:
+      type: string
+      format: uuid
+      description: scope=trip 时必填
+    original_name:
+      type: string
+      minLength: 1
+      maxLength: 255
+    expected_size:
+      type: integer
+      minimum: 1
+      description: 客户端声明的字节数；超出上限直接拒绝，不签发授权
+    declared_media_type:
+      type: string
+      minLength: 1
+      maxLength: 100
+      description: 客户端声明类型，不作为最终判定；worker 嗅探实际内容
+    client_sha256:
+      allOf:
+        - $ref: '#/Sha256'
+      description: 可选客户端摘要；提供时 worker 校验不一致即判定失败
+
+AssetConfirm:
+  type: object
+  description: 确认当前尝试已上传完成并入队校验；不信任客户端的成功声明
+  required: [upload_attempt]
+  properties:
+    upload_attempt:
+      type: integer
+      minimum: 1
+      description: 必须等于资产当前尝试序号，否则 409 UPLOAD_NOT_ALLOWED
+
+UploadAuthorization:
+  type: object
+  description: 暂存对象的直传授权；只授权当前尝试
+  required: [upload_attempt, method, url, required_headers, expires_at]
+  properties:
+    upload_attempt:
+      type: integer
+      minimum: 1
+    method:
+      type: string
+      enum: [PUT]
+    url:
+      type: string
+      format: uri
+      description: 预签名地址，直传对象存储，不经过 API
+    required_headers:
+      type: object
+      additionalProperties:
+        type: string
+      description: 必须原样发送的请求头；缺失或改动会被存储端拒绝
+    expires_at:
+      $ref: ./write.yaml#/Instant
+
+AssetWriteResult:
+  type: object
+  description: 资产写响应；内嵌上传授权，客户端无需再请求一次
+  required: [operation_id, primary, upload_authorization]
+  properties:
+    operation_id:
+      type: string
+      format: uuid
+    primary:
+      $ref: ./write.yaml#/EntityRef
+    affected:
+      type: array
+      items:
+        $ref: ./write.yaml#/EntityRef
+    commit_cursor:
+      type: string
+      nullable: true
+    warnings:
+      type: array
+      items:
+        type: string
+    replayed:
+      type: boolean
+    data:
+      type: object
+      nullable: true
+      allOf:
+        - $ref: '#/Asset'
+    upload_authorization:
+      type: object
+      nullable: true
+      allOf:
+        - $ref: '#/UploadAuthorization'
+      description: 签发新授权时非空；ready 资产不再签发
+
+DownloadVariant:
+  type: string
+  description: 下载的对象变体
+  enum: [original, thumbnail]
+
+DownloadDisposition:
+  type: string
+  description: 响应的 Content-Disposition；签名固定该值
+  enum: [inline, attachment]
+
+DownloadAuthorization:
+  type: object
+  description: |
+    单个资产的下载授权。仅 ready 且所请求变体可用时 url 非空。
+    原图与 PDF 有效 60 秒，缩略图 15 分钟；响应带 Cache-Control: no-store。
+  required: [asset_id, status, thumbnail_status, url, expires_at, file_name, media_type, byte_size]
+  properties:
+    asset_id:
+      type: string
+      format: uuid
+    status:
+      $ref: '#/AssetStatus'
+    thumbnail_status:
+      $ref: '#/ThumbnailStatus'
+    url:
+      type: string
+      format: uri
+      nullable: true
+      description: 非 ready 或变体不可用时为 null
+    expires_at:
+      type: string
+      format: date-time
+      nullable: true
+    file_name:
+      type: string
+      description: 建议的保存文件名，已按 RFC 5987 编码进签名
+    media_type:
+      type: string
+      nullable: true
+    byte_size:
+      type: integer
+      minimum: 0
+      nullable: true
+
+DownloadAuthorizationRequest:
+  type: object
+  required: [asset_id]
+  properties:
+    asset_id:
+      type: string
+      format: uuid
+    variant:
+      allOf:
+        - $ref: '#/DownloadVariant'
+      default: original
+
+AssetDownloadBatch:
+  type: object
+  description: 批量下载授权；任一资产非本人时整批 404
+  required: [items]
+  properties:
+    items:
+      type: array
+      minItems: 1
+      maxItems: 100
+      items:
+        $ref: '#/DownloadAuthorizationRequest'
+    disposition:
+      allOf:
+        - $ref: '#/DownloadDisposition'
+      default: inline
+
+DownloadAuthorizationBatch:
+  type: object
+  description: 批量授权结果，顺序与请求一致
+  required: [items]
+  properties:
+    items:
+      type: array
+      items:
+        $ref: '#/DownloadAuthorization'
+
+AssetResponse:
+  type: object
+  required: [data]
+  properties:
+    data:
+      $ref: '#/Asset'
+
+AssetWriteResponse:
+  type: object
+  required: [data]
+  properties:
+    data:
+      $ref: '#/AssetWriteResult'
+
+DownloadAuthorizationResponse:
+  type: object
+  required: [data]
+  properties:
+    data:
+      $ref: '#/DownloadAuthorization'
+
+DownloadAuthorizationBatchResponse:
+  type: object
+  required: [data]
+  properties:
+    data:
+      $ref: '#/DownloadAuthorizationBatch'
+
+AssetPage:
+  type: object
+  description: 旅行资产分页
+  required: [items, next_cursor]
+  properties:
+    items:
+      type: array
+      items:
+        $ref: '#/Asset'
+    next_cursor:
+      type: string
+      nullable: true

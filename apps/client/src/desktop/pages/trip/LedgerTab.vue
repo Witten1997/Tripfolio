@@ -18,6 +18,8 @@ import { computed, onMounted, reactive, ref, shallowRef, watch } from 'vue'
 
 import CategorySharePie from '@/desktop/components/CategorySharePie.vue'
 import DailyNetBar from '@/desktop/components/DailyNetBar.vue'
+import ActionIcon from '@/desktop/components/ActionIcon.vue'
+import IconAction from '@/desktop/components/IconAction.vue'
 import LedgerEntryDialog from '@/desktop/components/LedgerEntryDialog.vue'
 import { ApiError } from '@/shared/api/auth'
 import { listCategories, type ExpenseCategory } from '@/shared/api/categories'
@@ -39,6 +41,7 @@ import {
 } from '@/shared/api/writes'
 import { canonicalizeAmount } from '@/shared/money'
 import {
+  categoryAmountRows,
   dailyBars,
   formatMoney,
   formatShare,
@@ -114,12 +117,8 @@ const budget = computed(() => statistics.value?.trip_budget ?? null)
 const slices = computed(() => pieSlices(statistics.value?.by_category ?? []))
 const bars = computed(() => dailyBars(statistics.value?.daily.items ?? []))
 const dailyTruncated = computed(() => !!statistics.value?.daily.next_cursor)
-/** 分类明细表：按净额降序，保留被引用的已删除分类。 */
-const categoryRows = computed(() =>
-  [...(statistics.value?.by_category ?? [])].sort(
-    (a, b) => toNumber(b.net_amount) - toNumber(a.net_amount),
-  ),
-)
+/** 只显示当前范围内有账目的分类，保留全额退款与被引用的已删除分类。 */
+const categoryRows = computed(() => categoryAmountRows(statistics.value?.by_category ?? []))
 const overspent = computed(() => toNumber(budget.value?.overspent_amount ?? '0') > 0)
 
 /* ---- 总预算在统计框中直接编辑（TR-04） ---- */
@@ -266,6 +265,11 @@ onMounted(async () => {
   <div class="ledger-tab">
     <!-- 统计框：净支出、预算对比，总预算可直接编辑 -->
     <ElCard shadow="never" class="stats-card">
+      <template #header>
+        <div class="chart-header">
+          <h2>支出统计</h2>
+        </div>
+      </template>
       <ElSkeleton v-if="statsLoading && !statistics" :rows="3" animated />
       <ElAlert v-else-if="statsError" :title="statsError" type="error" :closable="false" show-icon>
         <ElButton size="small" class="retry-button" @click="reloadStatistics">重新加载</ElButton>
@@ -307,11 +311,17 @@ onMounted(async () => {
               >取消</ElButton
             >
           </div>
-          <button v-else type="button" class="budget-value" @click="startBudgetEdit">
+          <button
+            v-else
+            type="button"
+            class="budget-value"
+            :aria-label="`编辑总预算：${budget.budget_amount ? formatMoney(budget.budget_amount) : '未设置'}`"
+            @click="startBudgetEdit"
+          >
             <strong class="stat-value stat-value--small">{{
               budget.budget_amount ? formatMoney(budget.budget_amount) : '未设置'
             }}</strong>
-            <span class="budget-edit-hint">编辑</span>
+            <ActionIcon name="edit" class="budget-edit-icon" />
           </button>
           <span v-if="budgetError" class="budget-error">{{ budgetError }}</span>
         </div>
@@ -358,14 +368,19 @@ onMounted(async () => {
         </ElRadioGroup>
         <ElButton v-if="hasFilter" size="small" text @click="clearFilters">清除筛选</ElButton>
       </div>
-      <div class="tab-actions">
-        <ElButton size="small" :loading="statsLoading || page.loading.value" @click="reloadAll"
-          >刷新</ElButton
-        >
-        <ElButton size="small" @click="dialog?.open(undefined, 'refund')">记录退款</ElButton>
-        <ElButton size="small" type="primary" @click="dialog?.open(undefined, 'expense')"
-          >记一笔</ElButton
-        >
+      <div class="tab-actions tf-actions">
+        <IconAction
+          icon="refresh"
+          label="刷新账单"
+          :loading="statsLoading || page.loading.value"
+          @click="reloadAll"
+        />
+        <IconAction
+          icon="receipt"
+          label="记一笔"
+          type="primary"
+          @click="dialog?.open(undefined, 'expense')"
+        />
       </div>
     </div>
 
@@ -470,9 +485,13 @@ onMounted(async () => {
     <ElCard v-else-if="!page.items.value.length" shadow="never">
       <ElEmpty :description="hasFilter ? '筛选范围内没有账目' : '还没有账目，记下第一笔花费'">
         <ElButton v-if="hasFilter" @click="clearFilters">清除筛选</ElButton>
-        <ElButton v-else type="primary" @click="dialog?.open(undefined, 'expense')"
-          >记一笔</ElButton
-        >
+        <IconAction
+          v-else
+          icon="receipt"
+          label="记一笔"
+          type="primary"
+          @click="dialog?.open(undefined, 'expense')"
+        />
       </ElEmpty>
     </ElCard>
     <template v-else>
@@ -503,19 +522,23 @@ onMounted(async () => {
             {{ entry.kind === 'refund' ? '−' : '' }}{{ formatMoney(entry.amount) }}
             <span class="entry-currency">{{ entry.currency_code }}</span>
           </div>
-          <div class="entry-actions">
-            <ElButton size="small" text :disabled="!!busy" @click="dialog?.open(entry)"
-              >编辑</ElButton
-            >
-            <ElButton
-              size="small"
+          <div class="entry-actions tf-actions">
+            <IconAction
+              icon="edit"
+              :label="`编辑${categoryName(entry.category_id)}账目（${formatMoney(entry.amount)} ${entry.currency_code}）`"
+              text
+              :disabled="!!busy"
+              @click="dialog?.open(entry)"
+            />
+            <IconAction
+              icon="trash"
+              :label="`删除${categoryName(entry.category_id)}账目（${formatMoney(entry.amount)} ${entry.currency_code}）`"
               text
               type="danger"
               :disabled="!!busy"
               :loading="busy === entry.id"
               @click="remove(entry)"
-              >删除</ElButton
-            >
+            />
           </div>
         </li>
       </ul>
@@ -585,7 +608,8 @@ onMounted(async () => {
 }
 .budget-value {
   display: flex;
-  align-items: baseline;
+  align-items: center;
+  min-height: var(--tf-control-size);
   gap: 8px;
   background: none;
   border: 0;
@@ -594,12 +618,11 @@ onMounted(async () => {
   font: inherit;
   text-align: left;
 }
-.budget-edit-hint {
-  font-size: 12px;
+.budget-edit-icon {
   color: var(--tf-accent);
 }
-.budget-value:hover .budget-edit-hint {
-  text-decoration: underline;
+.budget-value:focus-visible {
+  outline-offset: 2px;
 }
 .budget-edit {
   display: flex;
@@ -640,6 +663,7 @@ onMounted(async () => {
 }
 .tab-actions {
   display: flex;
+  align-items: center;
   gap: 8px;
 }
 .tab-actions .el-button {
@@ -652,7 +676,7 @@ onMounted(async () => {
 }
 .chart-header {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
 }
@@ -782,6 +806,26 @@ onMounted(async () => {
 @media (max-width: 960px) {
   .charts {
     grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 600px) {
+  .entry {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .entry-main {
+    grid-column: 1 / -1;
+  }
+  .entry-meta {
+    flex-wrap: wrap;
+    gap: 6px 14px;
+  }
+  .entry-amount {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .entry-actions {
+    justify-self: end;
   }
 }
 </style>

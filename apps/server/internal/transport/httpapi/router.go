@@ -8,7 +8,9 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"tripfolio/server/internal/modules/account"
+	"tripfolio/server/internal/modules/assets"
 	"tripfolio/server/internal/modules/finance"
+	"tripfolio/server/internal/modules/geo"
 	"tripfolio/server/internal/modules/metadata"
 	"tripfolio/server/internal/modules/travel/itinerary"
 	"tripfolio/server/internal/modules/travel/packing"
@@ -36,6 +38,8 @@ type Deps struct {
 	// 任一服务为 nil 时对应接口返回 503 DEPENDENCY_UNAVAILABLE。
 	Ledger     *finance.LedgerService
 	Statistics *finance.StatisticsService
+	Assets     *assets.Service
+	Geo        *geo.Service
 }
 
 // publicPaths 是不要求身份的业务路径（接口设计 1.1）。带令牌访问时仍会解析身份。
@@ -77,7 +81,7 @@ func NewRouter(d Deps) http.Handler {
 	handler := &Handler{
 		logger: d.Logger, metadata: d.Metadata, identity: d.Identity, sessions: d.Sessions, profile: d.Profile,
 		categories: d.Categories, trips: d.Trips, itinerary: d.Itinerary, packing: d.Packing, todos: d.Todos,
-		ledger: d.Ledger, statistics: d.Statistics,
+		ledger: d.Ledger, statistics: d.Statistics, assets: d.Assets, geo: d.Geo,
 		cookies: d.Cookies, corsOrigins: d.CORSOrigins,
 	}
 	strict := generated.NewStrictHandlerWithOptions(handler, nil, generated.StrictHTTPServerOptions{

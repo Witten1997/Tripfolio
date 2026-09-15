@@ -1,0 +1,121 @@
+reverse-geocode:
+  get:
+    tags: [geo]
+    operationId: reverseGeocode
+    summary: 将 GCJ-02 坐标解析为地点名与地址
+    parameters:
+      - name: latitude
+        in: query
+        required: true
+        schema: { type: number, format: double, minimum: -90, maximum: 90 }
+      - name: longitude
+        in: query
+        required: true
+        schema: { type: number, format: double, minimum: -180, maximum: 180 }
+    responses:
+      '200':
+        description: 地点；返回坐标始终为本次请求位置
+        content:
+          application/json:
+            schema:
+              $ref: ../openapi.yaml#/components/schemas/GeoPlaceResponse
+      '400':
+        $ref: ../openapi.yaml#/components/responses/BadRequest
+      '401':
+        $ref: ../openapi.yaml#/components/responses/Unauthorized
+      '404':
+        $ref: ../openapi.yaml#/components/responses/NotFound
+      '422':
+        $ref: ../openapi.yaml#/components/responses/ValidationFailed
+      '429':
+        $ref: ../openapi.yaml#/components/responses/RateLimited
+      '503':
+        $ref: ../openapi.yaml#/components/responses/DependencyUnavailable
+
+places:
+  get:
+    tags: [geo]
+    operationId: searchPlaces
+    summary: 搜索高德兴趣点，最多 20 个可定位结果
+    parameters:
+      - name: q
+        in: query
+        required: true
+        schema: { type: string, minLength: 1, maxLength: 50 }
+      - name: city
+        in: query
+        schema: { type: string, maxLength: 40 }
+      - name: latitude
+        in: query
+        description: 与 longitude 同时提供时，结果就近排序
+        schema: { type: number, format: double, minimum: -90, maximum: 90 }
+      - name: longitude
+        in: query
+        schema: { type: number, format: double, minimum: -180, maximum: 180 }
+    responses:
+      '200':
+        description: 可选兴趣点
+        content:
+          application/json:
+            schema:
+              $ref: ../openapi.yaml#/components/schemas/GeoPlacesResponse
+      '400':
+        $ref: ../openapi.yaml#/components/responses/BadRequest
+      '401':
+        $ref: ../openapi.yaml#/components/responses/Unauthorized
+      '404':
+        $ref: ../openapi.yaml#/components/responses/NotFound
+      '422':
+        $ref: ../openapi.yaml#/components/responses/ValidationFailed
+      '429':
+        $ref: ../openapi.yaml#/components/responses/RateLimited
+      '503':
+        $ref: ../openapi.yaml#/components/responses/DependencyUnavailable
+
+routes:
+  get:
+    tags: [geo]
+    operationId: calculateRoute
+    summary: 计算两点间的道路距离、预计时长和路线
+    description: 驾车、步行、骑行使用高德路径规划 2.0；成功结果按有序坐标和模式缓存 5 分钟，无路线返回 404。按 Key 平滑请求；短时限流 429 和可恢复的 503 带 Retry-After，未配置或配额不足的 503 不自动重试。
+    parameters:
+      - name: origin_latitude
+        in: query
+        required: true
+        schema: { type: number, format: double, minimum: -90, maximum: 90 }
+      - name: origin_longitude
+        in: query
+        required: true
+        schema: { type: number, format: double, minimum: -180, maximum: 180 }
+      - name: destination_latitude
+        in: query
+        required: true
+        schema: { type: number, format: double, minimum: -90, maximum: 90 }
+      - name: destination_longitude
+        in: query
+        required: true
+        schema: { type: number, format: double, minimum: -180, maximum: 180 }
+      - name: mode
+        in: query
+        required: true
+        schema:
+          $ref: ../openapi.yaml#/components/schemas/GeoTravelMode
+    responses:
+      '200':
+        description: 首选路线；距离为米，时长为秒
+        content:
+          application/json:
+            schema:
+              $ref: ../openapi.yaml#/components/schemas/GeoRouteResponse
+      '400':
+        $ref: ../openapi.yaml#/components/responses/BadRequest
+      '401':
+        $ref: ../openapi.yaml#/components/responses/Unauthorized
+      '404':
+        $ref: ../openapi.yaml#/components/responses/NotFound
+      '422':
+        $ref: ../openapi.yaml#/components/responses/ValidationFailed
+      '429':
+        $ref: ../openapi.yaml#/components/responses/RateLimited
+      '503':
+        $ref: ../openapi.yaml#/components/responses/DependencyUnavailable

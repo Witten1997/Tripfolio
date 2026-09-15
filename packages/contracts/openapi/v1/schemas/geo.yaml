@@ -1,0 +1,100 @@
+GeoCoordinate:
+  type: object
+  x-go-type: geo.Coordinate
+  x-go-type-import:
+    path: tripfolio/server/internal/modules/geo
+  required: [latitude, longitude]
+  properties:
+    latitude:
+      type: number
+      format: double
+      minimum: -90
+      maximum: 90
+    longitude:
+      type: number
+      format: double
+      minimum: -180
+      maximum: 180
+
+GeoPlace:
+  type: object
+  x-go-type: geo.Place
+  x-go-type-import:
+    path: tripfolio/server/internal/modules/geo
+  required: [name, address, latitude, longitude, adcode, poi_id, provider]
+  properties:
+    name:
+      type: string
+    address:
+      type: string
+    latitude:
+      type: number
+      format: double
+    longitude:
+      type: number
+      format: double
+    adcode:
+      type: string
+      nullable: true
+    poi_id:
+      type: string
+      nullable: true
+    provider:
+      type: string
+      enum: [amap]
+
+GeoTravelMode:
+  type: string
+  enum: [driving, walking, cycling]
+
+GeoRoute:
+  type: object
+  x-go-type: geo.Route
+  x-go-type-import:
+    path: tripfolio/server/internal/modules/geo
+  required: [mode, distance_meters, duration_seconds, path, provider]
+  properties:
+    mode:
+      $ref: '#/GeoTravelMode'
+    distance_meters:
+      type: integer
+      format: int64
+      minimum: 0
+      description: 高德道路里程，单位米，不是直线距离
+    duration_seconds:
+      type: integer
+      format: int64
+      minimum: 0
+      description: 预计交通时长，单位秒，不含停留
+    path:
+      type: array
+      minItems: 2
+      items:
+        $ref: '#/GeoCoordinate'
+    provider:
+      type: string
+      enum: [amap]
+
+GeoPlaceResponse:
+  type: object
+  required: [data]
+  properties:
+    data:
+      $ref: '#/GeoPlace'
+
+GeoPlacesResponse:
+  type: object
+  required: [data]
+  properties:
+    data:
+      type: array
+      maxItems: 20
+      items:
+        $ref: '#/GeoPlace'
+
+GeoRouteResponse:
+  type: object
+  required: [data]
+  properties:
+    data:
+      $ref: '#/GeoRoute'

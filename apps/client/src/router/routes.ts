@@ -71,6 +71,10 @@ const pages = {
     desktop: () => import('@/desktop/pages/trip/LedgerTab.vue'),
     mobile: () => import('@/desktop/pages/trip/LedgerTab.vue'),
   },
+  tripMap: {
+    desktop: () => import('@/desktop/pages/trip/TripMapTab.vue'),
+    mobile: () => import('@/desktop/pages/trip/TripMapTab.vue'),
+  },
   tripPlaceholder: {
     desktop: () => import('@/desktop/pages/trip/PlaceholderTab.vue'),
     mobile: () => import('@/desktop/pages/trip/PlaceholderTab.vue'),
@@ -109,6 +113,7 @@ export function buildRoutes(shell: Shell): RouteRecordRaw[] {
       children: [
         { path: 'itinerary', name: 'trip-itinerary', component: pick(pages.tripItinerary) },
         { path: 'ledger', name: 'trip-ledger', component: pick(pages.tripLedger) },
+        { path: 'map', name: 'trip-map', component: pick(pages.tripMap) },
         { path: 'packing', name: 'trip-packing', component: pick(pages.tripPacking) },
         {
           path: 'album',

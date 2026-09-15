@@ -15,7 +15,9 @@ import (
 
 	"tripfolio/server/internal/foundation/write"
 	"tripfolio/server/internal/modules/account"
+	"tripfolio/server/internal/modules/assets"
 	"tripfolio/server/internal/modules/finance"
+	"tripfolio/server/internal/modules/geo"
 	"tripfolio/server/internal/modules/travel/itinerary"
 	"tripfolio/server/internal/modules/travel/packing"
 	"tripfolio/server/internal/modules/travel/todo"
@@ -26,6 +28,48 @@ import (
 	"github.com/oapi-codegen/runtime"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
+
+// Defines values for AssetScope.
+const (
+	AssetScopeAvatar AssetScope = "avatar"
+	AssetScopeTrip   AssetScope = "trip"
+)
+
+// Valid indicates whether the value is a known member of the AssetScope enum.
+func (e AssetScope) Valid() bool {
+	switch e {
+	case AssetScopeAvatar:
+		return true
+	case AssetScopeTrip:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AssetStatus.
+const (
+	AssetStatusFailed     AssetStatus = "failed"
+	AssetStatusProcessing AssetStatus = "processing"
+	AssetStatusReady      AssetStatus = "ready"
+	AssetStatusUploading  AssetStatus = "uploading"
+)
+
+// Valid indicates whether the value is a known member of the AssetStatus enum.
+func (e AssetStatus) Valid() bool {
+	switch e {
+	case AssetStatusFailed:
+		return true
+	case AssetStatusProcessing:
+		return true
+	case AssetStatusReady:
+		return true
+	case AssetStatusUploading:
+		return true
+	default:
+		return false
+	}
+}
 
 // Defines values for AuthResultTokenType.
 const (
@@ -63,6 +107,42 @@ func (e ClientInfoKind) Valid() bool {
 	}
 }
 
+// Defines values for DownloadDisposition.
+const (
+	Attachment DownloadDisposition = "attachment"
+	Inline     DownloadDisposition = "inline"
+)
+
+// Valid indicates whether the value is a known member of the DownloadDisposition enum.
+func (e DownloadDisposition) Valid() bool {
+	switch e {
+	case Attachment:
+		return true
+	case Inline:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DownloadVariant.
+const (
+	Original  DownloadVariant = "original"
+	Thumbnail DownloadVariant = "thumbnail"
+)
+
+// Valid indicates whether the value is a known member of the DownloadVariant enum.
+func (e DownloadVariant) Valid() bool {
+	switch e {
+	case Original:
+		return true
+	case Thumbnail:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for EmailChallengeRequestPurpose.
 const (
 	Register      EmailChallengeRequestPurpose = "register"
@@ -75,6 +155,27 @@ func (e EmailChallengeRequestPurpose) Valid() bool {
 	case Register:
 		return true
 	case ResetPassword:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GeoTravelMode.
+const (
+	Cycling GeoTravelMode = "cycling"
+	Driving GeoTravelMode = "driving"
+	Walking GeoTravelMode = "walking"
+)
+
+// Valid indicates whether the value is a known member of the GeoTravelMode enum.
+func (e GeoTravelMode) Valid() bool {
+	switch e {
+	case Cycling:
+		return true
+	case Driving:
+		return true
+	case Walking:
 		return true
 	default:
 		return false
@@ -246,6 +347,30 @@ func (e PackingStatus) Valid() bool {
 	}
 }
 
+// Defines values for ThumbnailStatus.
+const (
+	ThumbnailStatusFailed     ThumbnailStatus = "failed"
+	ThumbnailStatusNone       ThumbnailStatus = "none"
+	ThumbnailStatusProcessing ThumbnailStatus = "processing"
+	ThumbnailStatusReady      ThumbnailStatus = "ready"
+)
+
+// Valid indicates whether the value is a known member of the ThumbnailStatus enum.
+func (e ThumbnailStatus) Valid() bool {
+	switch e {
+	case ThumbnailStatusFailed:
+		return true
+	case ThumbnailStatusNone:
+		return true
+	case ThumbnailStatusProcessing:
+		return true
+	case ThumbnailStatusReady:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for TodoState.
 const (
 	TodoStateAll       TodoState = "all"
@@ -264,6 +389,21 @@ func (e TodoState) Valid() bool {
 	case TodoStateOverdue:
 		return true
 	case TodoStatePending:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for UploadAuthorizationMethod.
+const (
+	PUT UploadAuthorizationMethod = "PUT"
+)
+
+// Valid indicates whether the value is a known member of the UploadAuthorizationMethod enum.
+func (e UploadAuthorizationMethod) Valid() bool {
+	switch e {
+	case PUT:
 		return true
 	default:
 		return false
@@ -349,6 +489,87 @@ type AccountResponse struct {
 type ArchiveRequest struct {
 	// Archived true 归档，false 取消归档；已处于目标状态时原样成功
 	Archived bool `json:"archived"`
+}
+
+// Asset 私有文件资产的规范资源（接口设计 3.7）；同一结构也是同步日志与快照中的表示。
+// 暂存键、最终对象键与回收字段不进入公开模型。
+// exif_* 是 worker 从图片提取的建议值（WGS-84 原始坐标），不自动写入任何业务记录。
+type Asset = assets.Resource
+
+// AssetConfirm 确认当前尝试已上传完成并入队校验；不信任客户端的成功声明
+type AssetConfirm struct {
+	// UploadAttempt 必须等于资产当前尝试序号，否则 409 UPLOAD_NOT_ALLOWED
+	UploadAttempt int `json:"upload_attempt"`
+}
+
+// AssetCreate 登记资产与首次上传尝试。不接受对象键：键由服务端按账号、资产与尝试序号推导。
+// scope=trip 时 trip_id 必填，avatar 时不允许 trip_id。
+type AssetCreate struct {
+	// ClientSha256 可选客户端摘要；提供时 worker 校验不一致即判定失败
+	ClientSha256 *Sha256 `json:"client_sha256,omitempty"`
+
+	// DeclaredMediaType 客户端声明类型，不作为最终判定；worker 嗅探实际内容
+	DeclaredMediaType string `json:"declared_media_type"`
+
+	// ExpectedSize 客户端声明的字节数；超出上限直接拒绝，不签发授权
+	ExpectedSize int                `json:"expected_size"`
+	Id           openapi_types.UUID `json:"id"`
+	OriginalName string             `json:"original_name"`
+
+	// Scope 资产范围；trip 属于某次旅行，avatar 是账号头像
+	Scope AssetScope `json:"scope"`
+
+	// TripId scope=trip 时必填
+	TripId *openapi_types.UUID `json:"trip_id,omitempty"`
+}
+
+// AssetDownloadBatch 批量下载授权；任一资产非本人时整批 404
+type AssetDownloadBatch struct {
+	Disposition *DownloadDisposition           `json:"disposition,omitempty"`
+	Items       []DownloadAuthorizationRequest `json:"items"`
+}
+
+// AssetPage 旅行资产分页
+type AssetPage struct {
+	Items      []Asset                   `json:"items"`
+	NextCursor nullable.Nullable[string] `json:"next_cursor"`
+}
+
+// AssetResponse defines model for AssetResponse.
+type AssetResponse struct {
+	// Data 私有文件资产的规范资源（接口设计 3.7）；同一结构也是同步日志与快照中的表示。
+	// 暂存键、最终对象键与回收字段不进入公开模型。
+	// exif_* 是 worker 从图片提取的建议值（WGS-84 原始坐标），不自动写入任何业务记录。
+	Data Asset `json:"data"`
+}
+
+// AssetScope 资产范围；trip 属于某次旅行，avatar 是账号头像
+type AssetScope string
+
+// AssetStatus 上传与校验状态（数据库设计第 14 节）。状态机：
+// uploading →（确认）processing →（worker 校验）ready 或 failed；
+// failed 与已过期的 uploading →（新尝试）uploading。
+// 删除只用 deleted_at 表达，不在此枚举内。
+type AssetStatus string
+
+// AssetWriteResponse defines model for AssetWriteResponse.
+type AssetWriteResponse struct {
+	// Data 资产写响应；内嵌上传授权，客户端无需再请求一次
+	Data AssetWriteResult `json:"data"`
+}
+
+// AssetWriteResult 资产写响应；内嵌上传授权，客户端无需再请求一次
+type AssetWriteResult struct {
+	Affected     *[]EntityRef              `json:"affected,omitempty"`
+	CommitCursor nullable.Nullable[string] `json:"commit_cursor,omitempty"`
+	Data         nullable.Nullable[Asset]  `json:"data,omitempty"`
+	OperationId  openapi_types.UUID        `json:"operation_id"`
+	Primary      EntityRef                 `json:"primary"`
+	Replayed     *bool                     `json:"replayed,omitempty"`
+
+	// UploadAuthorization 签发新授权时非空；ready 资产不再签发
+	UploadAuthorization nullable.Nullable[UploadAuthorization] `json:"upload_authorization"`
+	Warnings            *[]string                              `json:"warnings,omitempty"`
 }
 
 // AuthResponse defines model for AuthResponse.
@@ -484,6 +705,60 @@ type DailyTotalsPage struct {
 // Example: 2026-10-01
 type Date = string
 
+// DownloadAuthorization 单个资产的下载授权。仅 ready 且所请求变体可用时 url 非空。
+// 原图与 PDF 有效 60 秒，缩略图 15 分钟；响应带 Cache-Control: no-store。
+type DownloadAuthorization struct {
+	AssetId   openapi_types.UUID           `json:"asset_id"`
+	ByteSize  nullable.Nullable[int]       `json:"byte_size"`
+	ExpiresAt nullable.Nullable[time.Time] `json:"expires_at"`
+
+	// FileName 建议的保存文件名，已按 RFC 5987 编码进签名
+	FileName  string                    `json:"file_name"`
+	MediaType nullable.Nullable[string] `json:"media_type"`
+
+	// Status 上传与校验状态（数据库设计第 14 节）。状态机：
+	// uploading →（确认）processing →（worker 校验）ready 或 failed；
+	// failed 与已过期的 uploading →（新尝试）uploading。
+	// 删除只用 deleted_at 表达，不在此枚举内。
+	Status AssetStatus `json:"status"`
+
+	// ThumbnailStatus 缩略图状态；缩略图失败不影响原图可用性，分别展示
+	ThumbnailStatus ThumbnailStatus `json:"thumbnail_status"`
+
+	// Url 非 ready 或变体不可用时为 null
+	Url nullable.Nullable[string] `json:"url"`
+}
+
+// DownloadAuthorizationBatch 批量授权结果，顺序与请求一致
+type DownloadAuthorizationBatch struct {
+	Items []DownloadAuthorization `json:"items"`
+}
+
+// DownloadAuthorizationBatchResponse defines model for DownloadAuthorizationBatchResponse.
+type DownloadAuthorizationBatchResponse struct {
+	// Data 批量授权结果，顺序与请求一致
+	Data DownloadAuthorizationBatch `json:"data"`
+}
+
+// DownloadAuthorizationRequest defines model for DownloadAuthorizationRequest.
+type DownloadAuthorizationRequest struct {
+	AssetId openapi_types.UUID `json:"asset_id"`
+	Variant *DownloadVariant   `json:"variant,omitempty"`
+}
+
+// DownloadAuthorizationResponse defines model for DownloadAuthorizationResponse.
+type DownloadAuthorizationResponse struct {
+	// Data 单个资产的下载授权。仅 ready 且所请求变体可用时 url 非空。
+	// 原图与 PDF 有效 60 秒，缩略图 15 分钟；响应带 Cache-Control: no-store。
+	Data DownloadAuthorization `json:"data"`
+}
+
+// DownloadDisposition 响应的 Content-Disposition；签名固定该值
+type DownloadDisposition string
+
+// DownloadVariant 下载的对象变体
+type DownloadVariant string
+
 // EmailChallengeRequest defines model for EmailChallengeRequest.
 type EmailChallengeRequest struct {
 	Email   string                       `json:"email"`
@@ -555,6 +830,33 @@ type FieldError struct {
 	// Message 面向用户的说明，可直接展示
 	Message string `json:"message"`
 }
+
+// GeoCoordinate defines model for GeoCoordinate.
+type GeoCoordinate = geo.Coordinate
+
+// GeoPlace defines model for GeoPlace.
+type GeoPlace = geo.Place
+
+// GeoPlaceResponse defines model for GeoPlaceResponse.
+type GeoPlaceResponse struct {
+	Data GeoPlace `json:"data"`
+}
+
+// GeoPlacesResponse defines model for GeoPlacesResponse.
+type GeoPlacesResponse struct {
+	Data []GeoPlace `json:"data"`
+}
+
+// GeoRoute defines model for GeoRoute.
+type GeoRoute = geo.Route
+
+// GeoRouteResponse defines model for GeoRouteResponse.
+type GeoRouteResponse struct {
+	Data GeoRoute `json:"data"`
+}
+
+// GeoTravelMode defines model for GeoTravelMode.
+type GeoTravelMode string
 
 // Instant RFC 3339 UTC 时间点，例如 2026-09-11T08:30:00Z
 type Instant = time.Time
@@ -1002,6 +1304,9 @@ type SessionListResponse struct {
 	Data []Session `json:"data"`
 }
 
+// Sha256 64 位小写十六进制的 SHA-256 摘要
+type Sha256 = string
+
 // SignedMoney 可带负号的十进制字符串，仅用于统计里的净额、剩余预算等派生金额；格式其余同 Money。
 // 净额 = 支出 − 退款，独立退款可使退款超过支出而为负。
 //
@@ -1040,6 +1345,9 @@ type StatisticsTotals struct {
 	// Example: 128.50
 	RefundAmount Money `json:"refund_amount"`
 }
+
+// ThumbnailStatus 缩略图状态；缩略图失败不影响原图可用性，分别展示
+type ThumbnailStatus string
 
 // Todo 待办的规范资源（接口设计 3.4）；同一结构也是同步日志与快照中的表示
 type Todo = todo.Resource
@@ -1197,6 +1505,23 @@ type TripStatisticsResponse struct {
 	Data TripStatistics `json:"data"`
 }
 
+// UploadAuthorization 暂存对象的直传授权；只授权当前尝试
+type UploadAuthorization struct {
+	// ExpiresAt RFC 3339 UTC 时间点，例如 2026-09-11T08:30:00Z
+	ExpiresAt Instant                   `json:"expires_at"`
+	Method    UploadAuthorizationMethod `json:"method"`
+
+	// RequiredHeaders 必须原样发送的请求头；缺失或改动会被存储端拒绝
+	RequiredHeaders map[string]string `json:"required_headers"`
+	UploadAttempt   int               `json:"upload_attempt"`
+
+	// Url 预签名地址，直传对象存储，不经过 API
+	Url string `json:"url"`
+}
+
+// UploadAuthorizationMethod defines model for UploadAuthorization.Method.
+type UploadAuthorizationMethod string
+
 // UploadLimits defines model for UploadLimits.
 type UploadLimits struct {
 	// ImageMaxBytes 单张图片上限，初始 20 MiB
@@ -1253,6 +1578,9 @@ type BadRequest = Problem
 // Conflict 统一错误响应，媒体类型 application/problem+json；代码清单见接口设计 1.4
 type Conflict = Problem
 
+// DependencyUnavailable 统一错误响应，媒体类型 application/problem+json；代码清单见接口设计 1.4
+type DependencyUnavailable = Problem
+
 // Forbidden 统一错误响应，媒体类型 application/problem+json；代码清单见接口设计 1.4
 type Forbidden = Problem
 
@@ -1289,6 +1617,30 @@ type UpdateAccountParams struct {
 	IfMatch *IfMatch `json:"If-Match,omitempty"`
 }
 
+// CreateAssetParams defines parameters for CreateAsset.
+type CreateAssetParams struct {
+	// IdempotencyKey 写请求的操作编号（UUID）；相同成功操作重试复用同一键
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
+// ConfirmAssetUploadParams defines parameters for ConfirmAssetUpload.
+type ConfirmAssetUploadParams struct {
+	// IdempotencyKey 写请求的操作编号（UUID）；相同成功操作重试复用同一键
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
+// AuthorizeAssetDownloadParams defines parameters for AuthorizeAssetDownload.
+type AuthorizeAssetDownloadParams struct {
+	Variant     *DownloadVariant     `form:"variant,omitempty" json:"variant,omitempty"`
+	Disposition *DownloadDisposition `form:"disposition,omitempty" json:"disposition,omitempty"`
+}
+
+// AuthorizeAssetUploadParams defines parameters for AuthorizeAssetUpload.
+type AuthorizeAssetUploadParams struct {
+	// IdempotencyKey 写请求的操作编号（UUID）；相同成功操作重试复用同一键
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
 // CreateExpenseCategoryParams defines parameters for CreateExpenseCategory.
 type CreateExpenseCategoryParams struct {
 	// IdempotencyKey 写请求的操作编号（UUID）；相同成功操作重试复用同一键
@@ -1311,6 +1663,31 @@ type UpdateExpenseCategoryParams struct {
 
 	// IfMatch 客户端所基于的资源版本，形如 "7"（带引号）
 	IfMatch *IfMatch `json:"If-Match,omitempty"`
+}
+
+// SearchPlacesParams defines parameters for SearchPlaces.
+type SearchPlacesParams struct {
+	Q    string  `form:"q" json:"q"`
+	City *string `form:"city,omitempty" json:"city,omitempty"`
+
+	// Latitude 与 longitude 同时提供时，结果就近排序
+	Latitude  *float64 `form:"latitude,omitempty" json:"latitude,omitempty"`
+	Longitude *float64 `form:"longitude,omitempty" json:"longitude,omitempty"`
+}
+
+// ReverseGeocodeParams defines parameters for ReverseGeocode.
+type ReverseGeocodeParams struct {
+	Latitude  float64 `form:"latitude" json:"latitude"`
+	Longitude float64 `form:"longitude" json:"longitude"`
+}
+
+// CalculateRouteParams defines parameters for CalculateRoute.
+type CalculateRouteParams struct {
+	OriginLatitude       float64       `form:"origin_latitude" json:"origin_latitude"`
+	OriginLongitude      float64       `form:"origin_longitude" json:"origin_longitude"`
+	DestinationLatitude  float64       `form:"destination_latitude" json:"destination_latitude"`
+	DestinationLongitude float64       `form:"destination_longitude" json:"destination_longitude"`
+	Mode                 GeoTravelMode `form:"mode" json:"mode"`
 }
 
 // ListTrashedTripsParams defines parameters for ListTrashedTrips.
@@ -1396,6 +1773,16 @@ type SetTripArchivedParams struct {
 
 	// IfMatch 客户端所基于的资源版本，形如 "7"（带引号）
 	IfMatch *IfMatch `json:"If-Match,omitempty"`
+}
+
+// ListTripAssetsParams defines parameters for ListTripAssets.
+type ListTripAssetsParams struct {
+	Status *AssetStatus `form:"status,omitempty" json:"status,omitempty"`
+
+	// Ids 最多 100 个 UUID，逗号分隔
+	Ids    *string `form:"ids,omitempty" json:"ids,omitempty"`
+	Limit  *int    `form:"limit,omitempty" json:"limit,omitempty"`
+	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
 }
 
 // ListItineraryItemsParams defines parameters for ListItineraryItems.
@@ -1571,6 +1958,15 @@ type UpdateAccountJSONRequestBody = AccountPatch
 // ChangePasswordJSONRequestBody defines body for ChangePassword for application/json ContentType.
 type ChangePasswordJSONRequestBody = ChangePasswordRequest
 
+// CreateAssetJSONRequestBody defines body for CreateAsset for application/json ContentType.
+type CreateAssetJSONRequestBody = AssetCreate
+
+// AuthorizeAssetDownloadsJSONRequestBody defines body for AuthorizeAssetDownloads for application/json ContentType.
+type AuthorizeAssetDownloadsJSONRequestBody = AssetDownloadBatch
+
+// ConfirmAssetUploadJSONRequestBody defines body for ConfirmAssetUpload for application/json ContentType.
+type ConfirmAssetUploadJSONRequestBody = AssetConfirm
+
 // RequestEmailChallengeJSONRequestBody defines body for RequestEmailChallenge for application/json ContentType.
 type RequestEmailChallengeJSONRequestBody = EmailChallengeRequest
 
@@ -1654,6 +2050,24 @@ type ServerInterface interface {
 	// RevokeSession 撤销本人指定会话；重复撤销仍成功
 	// (DELETE /account/sessions/{session_id})
 	RevokeSession(w http.ResponseWriter, r *http.Request, sessionId openapi_types.UUID)
+	// CreateAsset 登记私有资产与首次上传尝试，直接返回暂存对象的 PUT 授权；不接受用户指定对象键
+	// (POST /assets)
+	CreateAsset(w http.ResponseWriter, r *http.Request, params CreateAssetParams)
+	// AuthorizeAssetDownloads 一次最多 100 个资产；返回各自状态，仅 ready 的带 URL
+	// (POST /assets/download-authorizations)
+	AuthorizeAssetDownloads(w http.ResponseWriter, r *http.Request)
+	// GetAsset 公开处理状态与已校验元数据；不含对象键与下载地址
+	// (GET /assets/{asset_id})
+	GetAsset(w http.ResponseWriter, r *http.Request, assetId openapi_types.UUID)
+	// ConfirmAssetUpload 按尝试序号确认上传并事务入队校验任务；不能直接宣称 ready
+	// (POST /assets/{asset_id}/confirm)
+	ConfirmAssetUpload(w http.ResponseWriter, r *http.Request, assetId openapi_types.UUID, params ConfirmAssetUploadParams)
+	// AuthorizeAssetDownload 校验归属后签发短期下载授权；仅 ready 资产
+	// (GET /assets/{asset_id}/download)
+	AuthorizeAssetDownload(w http.ResponseWriter, r *http.Request, assetId openapi_types.UUID, params AuthorizeAssetDownloadParams)
+	// AuthorizeAssetUpload 续签当前尝试，或在失败/过期后创建新尝试并返回授权
+	// (POST /assets/{asset_id}/upload-authorization)
+	AuthorizeAssetUpload(w http.ResponseWriter, r *http.Request, assetId openapi_types.UUID, params AuthorizeAssetUploadParams)
 	// RequestEmailChallenge 申请注册或找回密码的邮箱验证码
 	// (POST /auth/email-challenges)
 	RequestEmailChallenge(w http.ResponseWriter, r *http.Request)
@@ -1690,6 +2104,15 @@ type ServerInterface interface {
 	// UpdateExpenseCategory 改名、改图标或排序
 	// (PATCH /expense-categories/{category_id})
 	UpdateExpenseCategory(w http.ResponseWriter, r *http.Request, categoryId openapi_types.UUID, params UpdateExpenseCategoryParams)
+	// SearchPlaces 搜索高德兴趣点，最多 20 个可定位结果
+	// (GET /geo/places)
+	SearchPlaces(w http.ResponseWriter, r *http.Request, params SearchPlacesParams)
+	// ReverseGeocode 将 GCJ-02 坐标解析为地点名与地址
+	// (GET /geo/reverse-geocode)
+	ReverseGeocode(w http.ResponseWriter, r *http.Request, params ReverseGeocodeParams)
+	// CalculateRoute 计算两点间的道路距离、预计时长和路线
+	// (GET /geo/routes)
+	CalculateRoute(w http.ResponseWriter, r *http.Request, params CalculateRouteParams)
 	// GetMetadata 公开固定枚举、币种精度、上传上限与协议版本
 	// (GET /metadata)
 	GetMetadata(w http.ResponseWriter, r *http.Request)
@@ -1726,6 +2149,9 @@ type ServerInterface interface {
 	// SetTripArchived 归档或取消归档；归档后仍允许修正；要求版本相等
 	// (POST /trips/{trip_id}/archive)
 	SetTripArchived(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, params SetTripArchivedParams)
+	// ListTripAssets 按状态或 ID 集合查询本旅行资产，供恢复上传状态与批量核对
+	// (GET /trips/{trip_id}/assets)
+	ListTripAssets(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, params ListTripAssetsParams)
 	// ListItineraryItems 旅行的行程项目列表；按日期区间与状态筛选，键集分页
 	// (GET /trips/{trip_id}/itinerary-items)
 	ListItineraryItems(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, params ListItineraryItemsParams)
@@ -1831,6 +2257,42 @@ func (_ Unimplemented) RevokeSession(w http.ResponseWriter, r *http.Request, ses
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// CreateAsset 登记私有资产与首次上传尝试，直接返回暂存对象的 PUT 授权；不接受用户指定对象键
+// (POST /assets)
+func (_ Unimplemented) CreateAsset(w http.ResponseWriter, r *http.Request, params CreateAssetParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// AuthorizeAssetDownloads 一次最多 100 个资产；返回各自状态，仅 ready 的带 URL
+// (POST /assets/download-authorizations)
+func (_ Unimplemented) AuthorizeAssetDownloads(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetAsset 公开处理状态与已校验元数据；不含对象键与下载地址
+// (GET /assets/{asset_id})
+func (_ Unimplemented) GetAsset(w http.ResponseWriter, r *http.Request, assetId openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// ConfirmAssetUpload 按尝试序号确认上传并事务入队校验任务；不能直接宣称 ready
+// (POST /assets/{asset_id}/confirm)
+func (_ Unimplemented) ConfirmAssetUpload(w http.ResponseWriter, r *http.Request, assetId openapi_types.UUID, params ConfirmAssetUploadParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// AuthorizeAssetDownload 校验归属后签发短期下载授权；仅 ready 资产
+// (GET /assets/{asset_id}/download)
+func (_ Unimplemented) AuthorizeAssetDownload(w http.ResponseWriter, r *http.Request, assetId openapi_types.UUID, params AuthorizeAssetDownloadParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// AuthorizeAssetUpload 续签当前尝试，或在失败/过期后创建新尝试并返回授权
+// (POST /assets/{asset_id}/upload-authorization)
+func (_ Unimplemented) AuthorizeAssetUpload(w http.ResponseWriter, r *http.Request, assetId openapi_types.UUID, params AuthorizeAssetUploadParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // RequestEmailChallenge 申请注册或找回密码的邮箱验证码
 // (POST /auth/email-challenges)
 func (_ Unimplemented) RequestEmailChallenge(w http.ResponseWriter, r *http.Request) {
@@ -1903,6 +2365,24 @@ func (_ Unimplemented) UpdateExpenseCategory(w http.ResponseWriter, r *http.Requ
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// SearchPlaces 搜索高德兴趣点，最多 20 个可定位结果
+// (GET /geo/places)
+func (_ Unimplemented) SearchPlaces(w http.ResponseWriter, r *http.Request, params SearchPlacesParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// ReverseGeocode 将 GCJ-02 坐标解析为地点名与地址
+// (GET /geo/reverse-geocode)
+func (_ Unimplemented) ReverseGeocode(w http.ResponseWriter, r *http.Request, params ReverseGeocodeParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// CalculateRoute 计算两点间的道路距离、预计时长和路线
+// (GET /geo/routes)
+func (_ Unimplemented) CalculateRoute(w http.ResponseWriter, r *http.Request, params CalculateRouteParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // GetMetadata 公开固定枚举、币种精度、上传上限与协议版本
 // (GET /metadata)
 func (_ Unimplemented) GetMetadata(w http.ResponseWriter, r *http.Request) {
@@ -1972,6 +2452,12 @@ func (_ Unimplemented) UpdateTrip(w http.ResponseWriter, r *http.Request, tripId
 // SetTripArchived 归档或取消归档；归档后仍允许修正；要求版本相等
 // (POST /trips/{trip_id}/archive)
 func (_ Unimplemented) SetTripArchived(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, params SetTripArchivedParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// ListTripAssets 按状态或 ID 集合查询本旅行资产，供恢复上传状态与批量核对
+// (GET /trips/{trip_id}/assets)
+func (_ Unimplemented) ListTripAssets(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, params ListTripAssetsParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -2245,6 +2731,254 @@ func (siw *ServerInterfaceWrapper) RevokeSession(w http.ResponseWriter, r *http.
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.RevokeSession(w, r, sessionId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateAsset operation middleware
+func (siw *ServerInterfaceWrapper) CreateAsset(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateAssetParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateAsset(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AuthorizeAssetDownloads operation middleware
+func (siw *ServerInterfaceWrapper) AuthorizeAssetDownloads(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AuthorizeAssetDownloads(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetAsset operation middleware
+func (siw *ServerInterfaceWrapper) GetAsset(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "asset_id" -------------
+	var assetId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "asset_id", chi.URLParam(r, "asset_id"), &assetId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "asset_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetAsset(w, r, assetId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ConfirmAssetUpload operation middleware
+func (siw *ServerInterfaceWrapper) ConfirmAssetUpload(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "asset_id" -------------
+	var assetId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "asset_id", chi.URLParam(r, "asset_id"), &assetId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "asset_id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ConfirmAssetUploadParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ConfirmAssetUpload(w, r, assetId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AuthorizeAssetDownload operation middleware
+func (siw *ServerInterfaceWrapper) AuthorizeAssetDownload(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "asset_id" -------------
+	var assetId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "asset_id", chi.URLParam(r, "asset_id"), &assetId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "asset_id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params AuthorizeAssetDownloadParams
+
+	// ------------- Optional query parameter "variant" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "variant", r.URL.Query(), &params.Variant, runtime.BindQueryParameterOptions{Type: "", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "variant"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "variant", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "disposition" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "disposition", r.URL.Query(), &params.Disposition, runtime.BindQueryParameterOptions{Type: "", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "disposition"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "disposition", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AuthorizeAssetDownload(w, r, assetId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AuthorizeAssetUpload operation middleware
+func (siw *ServerInterfaceWrapper) AuthorizeAssetUpload(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "asset_id" -------------
+	var assetId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "asset_id", chi.URLParam(r, "asset_id"), &assetId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "asset_id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params AuthorizeAssetUploadParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AuthorizeAssetUpload(w, r, assetId, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -2574,6 +3308,209 @@ func (siw *ServerInterfaceWrapper) UpdateExpenseCategory(w http.ResponseWriter, 
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.UpdateExpenseCategory(w, r, categoryId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SearchPlaces operation middleware
+func (siw *ServerInterfaceWrapper) SearchPlaces(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params SearchPlacesParams
+
+	// ------------- Required query parameter "q" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "q", r.URL.Query(), &params.Q, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "q"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "q", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "city" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "city", r.URL.Query(), &params.City, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "city"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "city", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "latitude" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "latitude", r.URL.Query(), &params.Latitude, runtime.BindQueryParameterOptions{Type: "number", Format: "double"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "latitude"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "latitude", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "longitude" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "longitude", r.URL.Query(), &params.Longitude, runtime.BindQueryParameterOptions{Type: "number", Format: "double"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "longitude"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "longitude", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SearchPlaces(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ReverseGeocode operation middleware
+func (siw *ServerInterfaceWrapper) ReverseGeocode(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ReverseGeocodeParams
+
+	// ------------- Required query parameter "latitude" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "latitude", r.URL.Query(), &params.Latitude, runtime.BindQueryParameterOptions{Type: "number", Format: "double"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "latitude"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "latitude", Err: err})
+		}
+		return
+	}
+
+	// ------------- Required query parameter "longitude" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "longitude", r.URL.Query(), &params.Longitude, runtime.BindQueryParameterOptions{Type: "number", Format: "double"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "longitude"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "longitude", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ReverseGeocode(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CalculateRoute operation middleware
+func (siw *ServerInterfaceWrapper) CalculateRoute(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CalculateRouteParams
+
+	// ------------- Required query parameter "origin_latitude" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "origin_latitude", r.URL.Query(), &params.OriginLatitude, runtime.BindQueryParameterOptions{Type: "number", Format: "double"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "origin_latitude"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "origin_latitude", Err: err})
+		}
+		return
+	}
+
+	// ------------- Required query parameter "origin_longitude" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "origin_longitude", r.URL.Query(), &params.OriginLongitude, runtime.BindQueryParameterOptions{Type: "number", Format: "double"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "origin_longitude"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "origin_longitude", Err: err})
+		}
+		return
+	}
+
+	// ------------- Required query parameter "destination_latitude" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "destination_latitude", r.URL.Query(), &params.DestinationLatitude, runtime.BindQueryParameterOptions{Type: "number", Format: "double"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "destination_latitude"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "destination_latitude", Err: err})
+		}
+		return
+	}
+
+	// ------------- Required query parameter "destination_longitude" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "destination_longitude", r.URL.Query(), &params.DestinationLongitude, runtime.BindQueryParameterOptions{Type: "number", Format: "double"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "destination_longitude"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "destination_longitude", Err: err})
+		}
+		return
+	}
+
+	// ------------- Required query parameter "mode" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "mode", r.URL.Query(), &params.Mode, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "mode"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "mode", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CalculateRoute(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -3208,6 +4145,87 @@ func (siw *ServerInterfaceWrapper) SetTripArchived(w http.ResponseWriter, r *htt
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.SetTripArchived(w, r, tripId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListTripAssets operation middleware
+func (siw *ServerInterfaceWrapper) ListTripAssets(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "trip_id" -------------
+	var tripId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "trip_id", chi.URLParam(r, "trip_id"), &tripId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "trip_id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListTripAssetsParams
+
+	// ------------- Optional query parameter "status" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "status", r.URL.Query(), &params.Status, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "status"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "status", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "ids" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "ids", r.URL.Query(), &params.Ids, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "ids"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "ids", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListTripAssets(w, r, tripId, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -4908,6 +5926,15 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	}
 
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/geo/reverse-geocode", wrapper.ReverseGeocode)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/geo/places", wrapper.SearchPlaces)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/geo/routes", wrapper.CalculateRoute)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/metadata", wrapper.GetMetadata)
 	})
 	r.Group(func(r chi.Router) {
@@ -5063,6 +6090,27 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/trips/{trip_id}/statistics", wrapper.GetTripStatistics)
 	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/assets", wrapper.CreateAsset)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/assets/download-authorizations", wrapper.AuthorizeAssetDownloads)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/assets/{asset_id}", wrapper.GetAsset)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/assets/{asset_id}/upload-authorization", wrapper.AuthorizeAssetUpload)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/assets/{asset_id}/confirm", wrapper.ConfirmAssetUpload)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/assets/{asset_id}/download", wrapper.AuthorizeAssetDownload)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/trips/{trip_id}/assets", wrapper.ListTripAssets)
+	})
 
 	return r
 }
@@ -5070,6 +6118,15 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 type BadRequestApplicationProblemPlusJSONResponse Problem
 
 type ConflictApplicationProblemPlusJSONResponse Problem
+
+type DependencyUnavailableResponseHeaders struct {
+	RetryAfter *int
+}
+type DependencyUnavailableApplicationProblemPlusJSONResponse struct {
+	Body Problem
+
+	Headers DependencyUnavailableResponseHeaders
+}
 
 type ForbiddenApplicationProblemPlusJSONResponse Problem
 
@@ -5343,6 +6400,653 @@ func (response RevokeSession401ApplicationProblemPlusJSONResponse) VisitRevokeSe
 	}
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateAssetRequestObject struct {
+	Params CreateAssetParams
+	Body   *CreateAssetJSONRequestBody
+}
+
+type CreateAssetResponseObject interface {
+	VisitCreateAssetResponse(w http.ResponseWriter) error
+}
+
+type CreateAsset201JSONResponse AssetWriteResponse
+
+func (response CreateAsset201JSONResponse) VisitCreateAssetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateAsset401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response CreateAsset401ApplicationProblemPlusJSONResponse) VisitCreateAssetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateAsset404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response CreateAsset404ApplicationProblemPlusJSONResponse) VisitCreateAssetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateAsset409ApplicationProblemPlusJSONResponse struct {
+	ConflictApplicationProblemPlusJSONResponse
+}
+
+func (response CreateAsset409ApplicationProblemPlusJSONResponse) VisitCreateAssetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateAsset410ApplicationProblemPlusJSONResponse struct {
+	GoneApplicationProblemPlusJSONResponse
+}
+
+func (response CreateAsset410ApplicationProblemPlusJSONResponse) VisitCreateAssetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(410)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateAsset413ApplicationProblemPlusJSONResponse Problem
+
+func (response CreateAsset413ApplicationProblemPlusJSONResponse) VisitCreateAssetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(413)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateAsset415ApplicationProblemPlusJSONResponse Problem
+
+func (response CreateAsset415ApplicationProblemPlusJSONResponse) VisitCreateAssetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(415)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateAsset422ApplicationProblemPlusJSONResponse struct {
+	ValidationFailedApplicationProblemPlusJSONResponse
+}
+
+func (response CreateAsset422ApplicationProblemPlusJSONResponse) VisitCreateAssetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateAsset503ApplicationProblemPlusJSONResponse struct {
+	DependencyUnavailableApplicationProblemPlusJSONResponse
+}
+
+func (response CreateAsset503ApplicationProblemPlusJSONResponse) VisitCreateAssetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AuthorizeAssetDownloadsRequestObject struct {
+	Body *AuthorizeAssetDownloadsJSONRequestBody
+}
+
+type AuthorizeAssetDownloadsResponseObject interface {
+	VisitAuthorizeAssetDownloadsResponse(w http.ResponseWriter) error
+}
+
+type AuthorizeAssetDownloads200ResponseHeaders struct {
+	CacheControl *string
+}
+
+type AuthorizeAssetDownloads200JSONResponse struct {
+	Body    DownloadAuthorizationBatchResponse
+	Headers AuthorizeAssetDownloads200ResponseHeaders
+}
+
+func (response AuthorizeAssetDownloads200JSONResponse) VisitAuthorizeAssetDownloadsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.CacheControl != nil {
+		w.Header().Set("Cache-Control", fmt.Sprint(*response.Headers.CacheControl))
+	}
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AuthorizeAssetDownloads401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response AuthorizeAssetDownloads401ApplicationProblemPlusJSONResponse) VisitAuthorizeAssetDownloadsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AuthorizeAssetDownloads404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response AuthorizeAssetDownloads404ApplicationProblemPlusJSONResponse) VisitAuthorizeAssetDownloadsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AuthorizeAssetDownloads422ApplicationProblemPlusJSONResponse struct {
+	ValidationFailedApplicationProblemPlusJSONResponse
+}
+
+func (response AuthorizeAssetDownloads422ApplicationProblemPlusJSONResponse) VisitAuthorizeAssetDownloadsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AuthorizeAssetDownloads503ApplicationProblemPlusJSONResponse struct {
+	DependencyUnavailableApplicationProblemPlusJSONResponse
+}
+
+func (response AuthorizeAssetDownloads503ApplicationProblemPlusJSONResponse) VisitAuthorizeAssetDownloadsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetAssetRequestObject struct {
+	AssetId openapi_types.UUID `json:"asset_id"`
+}
+
+type GetAssetResponseObject interface {
+	VisitGetAssetResponse(w http.ResponseWriter) error
+}
+
+type GetAsset200ResponseHeaders struct {
+	ETag *string
+}
+
+type GetAsset200JSONResponse struct {
+	Body    AssetResponse
+	Headers GetAsset200ResponseHeaders
+}
+
+func (response GetAsset200JSONResponse) VisitGetAssetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.ETag != nil {
+		w.Header().Set("ETag", fmt.Sprint(*response.Headers.ETag))
+	}
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetAsset401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response GetAsset401ApplicationProblemPlusJSONResponse) VisitGetAssetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetAsset404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response GetAsset404ApplicationProblemPlusJSONResponse) VisitGetAssetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetAsset410ApplicationProblemPlusJSONResponse struct {
+	GoneApplicationProblemPlusJSONResponse
+}
+
+func (response GetAsset410ApplicationProblemPlusJSONResponse) VisitGetAssetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(410)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ConfirmAssetUploadRequestObject struct {
+	AssetId openapi_types.UUID `json:"asset_id"`
+	Params  ConfirmAssetUploadParams
+	Body    *ConfirmAssetUploadJSONRequestBody
+}
+
+type ConfirmAssetUploadResponseObject interface {
+	VisitConfirmAssetUploadResponse(w http.ResponseWriter) error
+}
+
+type ConfirmAssetUpload202JSONResponse WriteResponse
+
+func (response ConfirmAssetUpload202JSONResponse) VisitConfirmAssetUploadResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(202)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ConfirmAssetUpload401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response ConfirmAssetUpload401ApplicationProblemPlusJSONResponse) VisitConfirmAssetUploadResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ConfirmAssetUpload404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response ConfirmAssetUpload404ApplicationProblemPlusJSONResponse) VisitConfirmAssetUploadResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ConfirmAssetUpload409ApplicationProblemPlusJSONResponse Problem
+
+func (response ConfirmAssetUpload409ApplicationProblemPlusJSONResponse) VisitConfirmAssetUploadResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ConfirmAssetUpload410ApplicationProblemPlusJSONResponse Problem
+
+func (response ConfirmAssetUpload410ApplicationProblemPlusJSONResponse) VisitConfirmAssetUploadResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(410)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ConfirmAssetUpload422ApplicationProblemPlusJSONResponse struct {
+	ValidationFailedApplicationProblemPlusJSONResponse
+}
+
+func (response ConfirmAssetUpload422ApplicationProblemPlusJSONResponse) VisitConfirmAssetUploadResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AuthorizeAssetDownloadRequestObject struct {
+	AssetId openapi_types.UUID `json:"asset_id"`
+	Params  AuthorizeAssetDownloadParams
+}
+
+type AuthorizeAssetDownloadResponseObject interface {
+	VisitAuthorizeAssetDownloadResponse(w http.ResponseWriter) error
+}
+
+type AuthorizeAssetDownload200ResponseHeaders struct {
+	CacheControl *string
+}
+
+type AuthorizeAssetDownload200JSONResponse struct {
+	Body    DownloadAuthorizationResponse
+	Headers AuthorizeAssetDownload200ResponseHeaders
+}
+
+func (response AuthorizeAssetDownload200JSONResponse) VisitAuthorizeAssetDownloadResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.CacheControl != nil {
+		w.Header().Set("Cache-Control", fmt.Sprint(*response.Headers.CacheControl))
+	}
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AuthorizeAssetDownload401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response AuthorizeAssetDownload401ApplicationProblemPlusJSONResponse) VisitAuthorizeAssetDownloadResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AuthorizeAssetDownload404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response AuthorizeAssetDownload404ApplicationProblemPlusJSONResponse) VisitAuthorizeAssetDownloadResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AuthorizeAssetDownload409ApplicationProblemPlusJSONResponse Problem
+
+func (response AuthorizeAssetDownload409ApplicationProblemPlusJSONResponse) VisitAuthorizeAssetDownloadResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AuthorizeAssetDownload410ApplicationProblemPlusJSONResponse struct {
+	GoneApplicationProblemPlusJSONResponse
+}
+
+func (response AuthorizeAssetDownload410ApplicationProblemPlusJSONResponse) VisitAuthorizeAssetDownloadResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(410)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AuthorizeAssetDownload503ApplicationProblemPlusJSONResponse struct {
+	DependencyUnavailableApplicationProblemPlusJSONResponse
+}
+
+func (response AuthorizeAssetDownload503ApplicationProblemPlusJSONResponse) VisitAuthorizeAssetDownloadResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AuthorizeAssetUploadRequestObject struct {
+	AssetId openapi_types.UUID `json:"asset_id"`
+	Params  AuthorizeAssetUploadParams
+}
+
+type AuthorizeAssetUploadResponseObject interface {
+	VisitAuthorizeAssetUploadResponse(w http.ResponseWriter) error
+}
+
+type AuthorizeAssetUpload200JSONResponse AssetWriteResponse
+
+func (response AuthorizeAssetUpload200JSONResponse) VisitAuthorizeAssetUploadResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AuthorizeAssetUpload401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response AuthorizeAssetUpload401ApplicationProblemPlusJSONResponse) VisitAuthorizeAssetUploadResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AuthorizeAssetUpload404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response AuthorizeAssetUpload404ApplicationProblemPlusJSONResponse) VisitAuthorizeAssetUploadResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AuthorizeAssetUpload409ApplicationProblemPlusJSONResponse Problem
+
+func (response AuthorizeAssetUpload409ApplicationProblemPlusJSONResponse) VisitAuthorizeAssetUploadResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AuthorizeAssetUpload410ApplicationProblemPlusJSONResponse struct {
+	GoneApplicationProblemPlusJSONResponse
+}
+
+func (response AuthorizeAssetUpload410ApplicationProblemPlusJSONResponse) VisitAuthorizeAssetUploadResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(410)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AuthorizeAssetUpload503ApplicationProblemPlusJSONResponse struct {
+	DependencyUnavailableApplicationProblemPlusJSONResponse
+}
+
+func (response AuthorizeAssetUpload503ApplicationProblemPlusJSONResponse) VisitAuthorizeAssetUploadResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(503)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -6103,6 +7807,378 @@ func (response UpdateExpenseCategory428ApplicationProblemPlusJSONResponse) Visit
 	}
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(428)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SearchPlacesRequestObject struct {
+	Params SearchPlacesParams
+}
+
+type SearchPlacesResponseObject interface {
+	VisitSearchPlacesResponse(w http.ResponseWriter) error
+}
+
+type SearchPlaces200JSONResponse GeoPlacesResponse
+
+func (response SearchPlaces200JSONResponse) VisitSearchPlacesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SearchPlaces400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response SearchPlaces400ApplicationProblemPlusJSONResponse) VisitSearchPlacesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SearchPlaces401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response SearchPlaces401ApplicationProblemPlusJSONResponse) VisitSearchPlacesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SearchPlaces404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response SearchPlaces404ApplicationProblemPlusJSONResponse) VisitSearchPlacesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SearchPlaces422ApplicationProblemPlusJSONResponse struct {
+	ValidationFailedApplicationProblemPlusJSONResponse
+}
+
+func (response SearchPlaces422ApplicationProblemPlusJSONResponse) VisitSearchPlacesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SearchPlaces429ApplicationProblemPlusJSONResponse struct {
+	RateLimitedApplicationProblemPlusJSONResponse
+}
+
+func (response SearchPlaces429ApplicationProblemPlusJSONResponse) VisitSearchPlacesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SearchPlaces503ApplicationProblemPlusJSONResponse struct {
+	DependencyUnavailableApplicationProblemPlusJSONResponse
+}
+
+func (response SearchPlaces503ApplicationProblemPlusJSONResponse) VisitSearchPlacesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReverseGeocodeRequestObject struct {
+	Params ReverseGeocodeParams
+}
+
+type ReverseGeocodeResponseObject interface {
+	VisitReverseGeocodeResponse(w http.ResponseWriter) error
+}
+
+type ReverseGeocode200JSONResponse GeoPlaceResponse
+
+func (response ReverseGeocode200JSONResponse) VisitReverseGeocodeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReverseGeocode400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response ReverseGeocode400ApplicationProblemPlusJSONResponse) VisitReverseGeocodeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReverseGeocode401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response ReverseGeocode401ApplicationProblemPlusJSONResponse) VisitReverseGeocodeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReverseGeocode404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response ReverseGeocode404ApplicationProblemPlusJSONResponse) VisitReverseGeocodeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReverseGeocode422ApplicationProblemPlusJSONResponse struct {
+	ValidationFailedApplicationProblemPlusJSONResponse
+}
+
+func (response ReverseGeocode422ApplicationProblemPlusJSONResponse) VisitReverseGeocodeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReverseGeocode429ApplicationProblemPlusJSONResponse struct {
+	RateLimitedApplicationProblemPlusJSONResponse
+}
+
+func (response ReverseGeocode429ApplicationProblemPlusJSONResponse) VisitReverseGeocodeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReverseGeocode503ApplicationProblemPlusJSONResponse struct {
+	DependencyUnavailableApplicationProblemPlusJSONResponse
+}
+
+func (response ReverseGeocode503ApplicationProblemPlusJSONResponse) VisitReverseGeocodeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CalculateRouteRequestObject struct {
+	Params CalculateRouteParams
+}
+
+type CalculateRouteResponseObject interface {
+	VisitCalculateRouteResponse(w http.ResponseWriter) error
+}
+
+type CalculateRoute200JSONResponse GeoRouteResponse
+
+func (response CalculateRoute200JSONResponse) VisitCalculateRouteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CalculateRoute400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response CalculateRoute400ApplicationProblemPlusJSONResponse) VisitCalculateRouteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CalculateRoute401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response CalculateRoute401ApplicationProblemPlusJSONResponse) VisitCalculateRouteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CalculateRoute404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response CalculateRoute404ApplicationProblemPlusJSONResponse) VisitCalculateRouteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CalculateRoute422ApplicationProblemPlusJSONResponse struct {
+	ValidationFailedApplicationProblemPlusJSONResponse
+}
+
+func (response CalculateRoute422ApplicationProblemPlusJSONResponse) VisitCalculateRouteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CalculateRoute429ApplicationProblemPlusJSONResponse struct {
+	RateLimitedApplicationProblemPlusJSONResponse
+}
+
+func (response CalculateRoute429ApplicationProblemPlusJSONResponse) VisitCalculateRouteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CalculateRoute503ApplicationProblemPlusJSONResponse struct {
+	DependencyUnavailableApplicationProblemPlusJSONResponse
+}
+
+func (response CalculateRoute503ApplicationProblemPlusJSONResponse) VisitCalculateRouteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(503)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -7114,6 +9190,109 @@ func (response SetTripArchived428ApplicationProblemPlusJSONResponse) VisitSetTri
 	}
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(428)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListTripAssetsRequestObject struct {
+	TripId openapi_types.UUID `json:"trip_id"`
+	Params ListTripAssetsParams
+}
+
+type ListTripAssetsResponseObject interface {
+	VisitListTripAssetsResponse(w http.ResponseWriter) error
+}
+
+type ListTripAssets200JSONResponse AssetPage
+
+func (response ListTripAssets200JSONResponse) VisitListTripAssetsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListTripAssets400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response ListTripAssets400ApplicationProblemPlusJSONResponse) VisitListTripAssetsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListTripAssets401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response ListTripAssets401ApplicationProblemPlusJSONResponse) VisitListTripAssetsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListTripAssets404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response ListTripAssets404ApplicationProblemPlusJSONResponse) VisitListTripAssetsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListTripAssets410ApplicationProblemPlusJSONResponse struct {
+	GoneApplicationProblemPlusJSONResponse
+}
+
+func (response ListTripAssets410ApplicationProblemPlusJSONResponse) VisitListTripAssetsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(410)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListTripAssets422ApplicationProblemPlusJSONResponse struct {
+	ValidationFailedApplicationProblemPlusJSONResponse
+}
+
+func (response ListTripAssets422ApplicationProblemPlusJSONResponse) VisitListTripAssetsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(422)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -9510,6 +11689,24 @@ type StrictServerInterface interface {
 	// RevokeSession 撤销本人指定会话；重复撤销仍成功
 	// (DELETE /account/sessions/{session_id})
 	RevokeSession(ctx context.Context, request RevokeSessionRequestObject) (RevokeSessionResponseObject, error)
+	// CreateAsset 登记私有资产与首次上传尝试，直接返回暂存对象的 PUT 授权；不接受用户指定对象键
+	// (POST /assets)
+	CreateAsset(ctx context.Context, request CreateAssetRequestObject) (CreateAssetResponseObject, error)
+	// AuthorizeAssetDownloads 一次最多 100 个资产；返回各自状态，仅 ready 的带 URL
+	// (POST /assets/download-authorizations)
+	AuthorizeAssetDownloads(ctx context.Context, request AuthorizeAssetDownloadsRequestObject) (AuthorizeAssetDownloadsResponseObject, error)
+	// GetAsset 公开处理状态与已校验元数据；不含对象键与下载地址
+	// (GET /assets/{asset_id})
+	GetAsset(ctx context.Context, request GetAssetRequestObject) (GetAssetResponseObject, error)
+	// ConfirmAssetUpload 按尝试序号确认上传并事务入队校验任务；不能直接宣称 ready
+	// (POST /assets/{asset_id}/confirm)
+	ConfirmAssetUpload(ctx context.Context, request ConfirmAssetUploadRequestObject) (ConfirmAssetUploadResponseObject, error)
+	// AuthorizeAssetDownload 校验归属后签发短期下载授权；仅 ready 资产
+	// (GET /assets/{asset_id}/download)
+	AuthorizeAssetDownload(ctx context.Context, request AuthorizeAssetDownloadRequestObject) (AuthorizeAssetDownloadResponseObject, error)
+	// AuthorizeAssetUpload 续签当前尝试，或在失败/过期后创建新尝试并返回授权
+	// (POST /assets/{asset_id}/upload-authorization)
+	AuthorizeAssetUpload(ctx context.Context, request AuthorizeAssetUploadRequestObject) (AuthorizeAssetUploadResponseObject, error)
 	// RequestEmailChallenge 申请注册或找回密码的邮箱验证码
 	// (POST /auth/email-challenges)
 	RequestEmailChallenge(ctx context.Context, request RequestEmailChallengeRequestObject) (RequestEmailChallengeResponseObject, error)
@@ -9546,6 +11743,15 @@ type StrictServerInterface interface {
 	// UpdateExpenseCategory 改名、改图标或排序
 	// (PATCH /expense-categories/{category_id})
 	UpdateExpenseCategory(ctx context.Context, request UpdateExpenseCategoryRequestObject) (UpdateExpenseCategoryResponseObject, error)
+	// SearchPlaces 搜索高德兴趣点，最多 20 个可定位结果
+	// (GET /geo/places)
+	SearchPlaces(ctx context.Context, request SearchPlacesRequestObject) (SearchPlacesResponseObject, error)
+	// ReverseGeocode 将 GCJ-02 坐标解析为地点名与地址
+	// (GET /geo/reverse-geocode)
+	ReverseGeocode(ctx context.Context, request ReverseGeocodeRequestObject) (ReverseGeocodeResponseObject, error)
+	// CalculateRoute 计算两点间的道路距离、预计时长和路线
+	// (GET /geo/routes)
+	CalculateRoute(ctx context.Context, request CalculateRouteRequestObject) (CalculateRouteResponseObject, error)
 	// GetMetadata 公开固定枚举、币种精度、上传上限与协议版本
 	// (GET /metadata)
 	GetMetadata(ctx context.Context, request GetMetadataRequestObject) (GetMetadataResponseObject, error)
@@ -9582,6 +11788,9 @@ type StrictServerInterface interface {
 	// SetTripArchived 归档或取消归档；归档后仍允许修正；要求版本相等
 	// (POST /trips/{trip_id}/archive)
 	SetTripArchived(ctx context.Context, request SetTripArchivedRequestObject) (SetTripArchivedResponseObject, error)
+	// ListTripAssets 按状态或 ID 集合查询本旅行资产，供恢复上传状态与批量核对
+	// (GET /trips/{trip_id}/assets)
+	ListTripAssets(ctx context.Context, request ListTripAssetsRequestObject) (ListTripAssetsResponseObject, error)
 	// ListItineraryItems 旅行的行程项目列表；按日期区间与状态筛选，键集分页
 	// (GET /trips/{trip_id}/itinerary-items)
 	ListItineraryItems(ctx context.Context, request ListItineraryItemsRequestObject) (ListItineraryItemsResponseObject, error)
@@ -9823,6 +12032,184 @@ func (sh *strictHandler) RevokeSession(w http.ResponseWriter, r *http.Request, s
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(RevokeSessionResponseObject); ok {
 		if err := validResponse.VisitRevokeSessionResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateAsset operation middleware
+func (sh *strictHandler) CreateAsset(w http.ResponseWriter, r *http.Request, params CreateAssetParams) {
+	var request CreateAssetRequestObject
+
+	request.Params = params
+
+	var body CreateAssetJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateAsset(ctx, request.(CreateAssetRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateAsset")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateAssetResponseObject); ok {
+		if err := validResponse.VisitCreateAssetResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AuthorizeAssetDownloads operation middleware
+func (sh *strictHandler) AuthorizeAssetDownloads(w http.ResponseWriter, r *http.Request) {
+	var request AuthorizeAssetDownloadsRequestObject
+
+	var body AuthorizeAssetDownloadsJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AuthorizeAssetDownloads(ctx, request.(AuthorizeAssetDownloadsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AuthorizeAssetDownloads")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AuthorizeAssetDownloadsResponseObject); ok {
+		if err := validResponse.VisitAuthorizeAssetDownloadsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetAsset operation middleware
+func (sh *strictHandler) GetAsset(w http.ResponseWriter, r *http.Request, assetId openapi_types.UUID) {
+	var request GetAssetRequestObject
+
+	request.AssetId = assetId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetAsset(ctx, request.(GetAssetRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetAsset")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetAssetResponseObject); ok {
+		if err := validResponse.VisitGetAssetResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ConfirmAssetUpload operation middleware
+func (sh *strictHandler) ConfirmAssetUpload(w http.ResponseWriter, r *http.Request, assetId openapi_types.UUID, params ConfirmAssetUploadParams) {
+	var request ConfirmAssetUploadRequestObject
+
+	request.AssetId = assetId
+	request.Params = params
+
+	var body ConfirmAssetUploadJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ConfirmAssetUpload(ctx, request.(ConfirmAssetUploadRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ConfirmAssetUpload")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ConfirmAssetUploadResponseObject); ok {
+		if err := validResponse.VisitConfirmAssetUploadResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AuthorizeAssetDownload operation middleware
+func (sh *strictHandler) AuthorizeAssetDownload(w http.ResponseWriter, r *http.Request, assetId openapi_types.UUID, params AuthorizeAssetDownloadParams) {
+	var request AuthorizeAssetDownloadRequestObject
+
+	request.AssetId = assetId
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AuthorizeAssetDownload(ctx, request.(AuthorizeAssetDownloadRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AuthorizeAssetDownload")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AuthorizeAssetDownloadResponseObject); ok {
+		if err := validResponse.VisitAuthorizeAssetDownloadResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AuthorizeAssetUpload operation middleware
+func (sh *strictHandler) AuthorizeAssetUpload(w http.ResponseWriter, r *http.Request, assetId openapi_types.UUID, params AuthorizeAssetUploadParams) {
+	var request AuthorizeAssetUploadRequestObject
+
+	request.AssetId = assetId
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AuthorizeAssetUpload(ctx, request.(AuthorizeAssetUploadRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AuthorizeAssetUpload")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AuthorizeAssetUploadResponseObject); ok {
+		if err := validResponse.VisitAuthorizeAssetUploadResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -10187,6 +12574,84 @@ func (sh *strictHandler) UpdateExpenseCategory(w http.ResponseWriter, r *http.Re
 	}
 }
 
+// SearchPlaces operation middleware
+func (sh *strictHandler) SearchPlaces(w http.ResponseWriter, r *http.Request, params SearchPlacesParams) {
+	var request SearchPlacesRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SearchPlaces(ctx, request.(SearchPlacesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SearchPlaces")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SearchPlacesResponseObject); ok {
+		if err := validResponse.VisitSearchPlacesResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ReverseGeocode operation middleware
+func (sh *strictHandler) ReverseGeocode(w http.ResponseWriter, r *http.Request, params ReverseGeocodeParams) {
+	var request ReverseGeocodeRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ReverseGeocode(ctx, request.(ReverseGeocodeRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ReverseGeocode")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ReverseGeocodeResponseObject); ok {
+		if err := validResponse.VisitReverseGeocodeResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CalculateRoute operation middleware
+func (sh *strictHandler) CalculateRoute(w http.ResponseWriter, r *http.Request, params CalculateRouteParams) {
+	var request CalculateRouteRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CalculateRoute(ctx, request.(CalculateRouteRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CalculateRoute")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CalculateRouteResponseObject); ok {
+		if err := validResponse.VisitCalculateRouteResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // GetMetadata operation middleware
 func (sh *strictHandler) GetMetadata(w http.ResponseWriter, r *http.Request) {
 	var request GetMetadataRequestObject
@@ -10521,6 +12986,33 @@ func (sh *strictHandler) SetTripArchived(w http.ResponseWriter, r *http.Request,
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(SetTripArchivedResponseObject); ok {
 		if err := validResponse.VisitSetTripArchivedResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListTripAssets operation middleware
+func (sh *strictHandler) ListTripAssets(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, params ListTripAssetsParams) {
+	var request ListTripAssetsRequestObject
+
+	request.TripId = tripId
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListTripAssets(ctx, request.(ListTripAssetsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListTripAssets")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListTripAssetsResponseObject); ok {
+		if err := validResponse.VisitListTripAssetsResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

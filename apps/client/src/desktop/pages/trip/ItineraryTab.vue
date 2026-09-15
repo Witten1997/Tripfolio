@@ -1,10 +1,24 @@
 <script setup lang="ts">
-import { ElAlert, ElButton, ElCard, ElEmpty, ElMessageBox, ElSkeleton, ElTag } from 'element-plus'
+import {
+  ElAlert,
+  ElButton,
+  ElCard,
+  ElEmpty,
+  ElMessageBox,
+  ElRadioButton,
+  ElRadioGroup,
+  ElSkeleton,
+  ElTag,
+} from 'element-plus'
 import { computed, onMounted, ref, watch } from 'vue'
 import { VueDraggable, type DraggableEvent } from 'vue-draggable-plus'
 
+import IconAction from '@/desktop/components/IconAction.vue'
 import ItineraryItemDialog from '@/desktop/components/ItineraryItemDialog.vue'
 import { ApiError } from '@/shared/api/auth'
+import { travelModeLabels, type TravelMode } from '@/shared/api/geo'
+import { formatDistance, formatDuration } from '@/shared/geo/itineraryRoute'
+import { useItineraryRoutes } from '@/shared/geo/useItineraryRoutes'
 import {
   deleteItineraryItem,
   itineraryKindLabels,
@@ -27,6 +41,10 @@ const board = useItineraryBoard(context.tripId, () => ({
   end: trip.value?.end_date ?? '',
 }))
 const { days, loading, error, reordering, actionFailure, feedback } = board
+const transportMode = ref<TravelMode>('driving')
+const transportModes = Object.keys(travelModeLabels) as TravelMode[]
+const routes = useItineraryRoutes(() => board.items.value, transportMode)
+const { byOrigin, points: locatedPoints, failedCount: routeFailures } = routes
 const dialog = ref<InstanceType<typeof ItineraryItemDialog>>()
 const busy = ref<string | null>(null)
 const notice = ref<string[]>([])
@@ -149,15 +167,43 @@ onMounted(async () => {
         共 {{ total }} 条行程 · 拖动卡片调整顺序或移到其他日期
         <template v-if="reordering">，正在保存排序…</template>
       </span>
-      <div class="tab-actions">
+      <div class="tab-actions tf-actions">
+        <IconAction
+          icon="globe"
+          label="地图视图"
+          :to="{
+            name: 'trip-map',
+            params: { tripId: context.tripId },
+            query: { mode: transportMode },
+          }"
+        />
         <ElButton v-if="days.some((d) => isToday(d.date))" size="small" @click="jumpToToday"
           >今日行程</ElButton
         >
-        <ElButton size="small" :loading="loading" @click="reloadAll">刷新</ElButton>
-        <ElButton size="small" type="primary" @click="dialog?.open(undefined, trip?.start_date)"
-          >新建行程</ElButton
-        >
+        <IconAction icon="refresh" label="刷新行程" :loading="loading" @click="reloadAll" />
+        <IconAction
+          icon="plus"
+          label="新建行程"
+          type="primary"
+          @click="dialog?.open(undefined, trip?.start_date)"
+        />
       </div>
+    </div>
+    <div v-if="locatedPoints.length > 1" class="route-options">
+      <span>相邻地点路程</span>
+      <ElRadioGroup v-model="transportMode" size="small" aria-label="行程距离计算方式">
+        <ElRadioButton v-for="mode in transportModes" :key="mode" :value="mode">{{
+          travelModeLabels[mode]
+        }}</ElRadioButton>
+      </ElRadioGroup>
+      <span class="route-options-hint">按排列顺序估算，不含停留时间</span>
+      <ElButton
+        v-if="routeFailures"
+        size="small"
+        :loading="routes.loading.value"
+        @click="routes.refresh"
+        >重新计算未完成路段</ElButton
+      >
     </div>
     <ElAlert
       v-if="notice.length"
@@ -187,13 +233,13 @@ onMounted(async () => {
             <ElTag v-if="day.outside" type="warning" size="small" effect="plain">旅行日期外</ElTag>
           </h2>
           <span class="day-count">{{ day.items.length }} 项</span>
-          <ElButton
-            size="small"
+          <IconAction
+            icon="plus"
+            :label="`为 ${day.title} 添加行程`"
             text
             :disabled="reordering"
             @click="dialog?.open(undefined, day.date)"
-            >添加</ElButton
-          >
+          />
         </header>
         <VueDraggable
           v-model="lists[day.date]"
@@ -241,24 +287,40 @@ onMounted(async () => {
                 预计 {{ item.currency_code }} {{ item.estimated_amount }}
               </p>
               <p v-if="item.notes" class="item-notes">{{ item.notes }}</p>
+              <p v-if="byOrigin.get(item.id)" class="item-route" role="status">
+                <span>下一站 · {{ byOrigin.get(item.id)?.to.title }}</span>
+                <template v-if="byOrigin.get(item.id)?.route"
+                  >{{ travelModeLabels[transportMode] }}
+                  {{ formatDistance(byOrigin.get(item.id)!.route!.distance_meters) }} ·
+                  {{ formatDuration(byOrigin.get(item.id)!.route!.duration_seconds) }}</template
+                >
+                <template v-else-if="byOrigin.get(item.id)?.status === 'loading'"
+                  >正在计算路程…</template
+                >
+                <template v-else>{{ byOrigin.get(item.id)?.message }}</template>
+                <span v-if="byOrigin.get(item.id)?.crossDay">（跨日接续）</span>
+                <span v-if="byOrigin.get(item.id)?.missingBetween"
+                  >（中间 {{ byOrigin.get(item.id)?.missingBetween }} 项尚未定位）</span
+                >
+              </p>
             </div>
-            <div class="item-actions">
-              <ElButton
-                size="small"
+            <div class="item-actions tf-actions">
+              <IconAction
+                icon="edit"
+                :label="`编辑行程：${item.title}`"
                 text
                 :disabled="!!busy || reordering"
                 @click="dialog?.open(item)"
-                >编辑</ElButton
-              >
-              <ElButton
-                size="small"
+              />
+              <IconAction
+                icon="trash"
+                :label="`删除行程：${item.title}`"
                 text
                 type="danger"
                 :loading="busy === item.id"
                 :disabled="(!!busy && busy !== item.id) || reordering"
                 @click="remove(item)"
-                >删除</ElButton
-              >
+              />
             </div>
           </article>
         </VueDraggable>
@@ -275,6 +337,29 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+.route-options {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+  color: var(--tf-text-2);
+}
+.route-options-hint {
+  font-size: 12px;
+}
+.item-route {
+  margin: 10px 0 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--tf-line-soft);
+  font-size: 12px;
+  color: var(--tf-text-2);
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+}
+.item-route > span:first-child {
+  margin-right: 10px;
+}
 .itinerary-tab {
   display: flex;
   flex-direction: column;
@@ -293,6 +378,7 @@ onMounted(async () => {
 }
 .tab-actions {
   display: flex;
+  align-items: center;
   gap: 8px;
 }
 .tab-actions .el-button {
@@ -312,7 +398,6 @@ onMounted(async () => {
   gap: 16px;
 }
 .day-list--busy {
-  opacity: 0.7;
   pointer-events: none;
 }
 .day {
@@ -356,19 +441,17 @@ onMounted(async () => {
   padding: 10px 12px;
   border: 1px solid var(--tf-line-soft);
   border-radius: var(--tf-radius-control);
-  background: var(--tf-surface-raised);
+  background: var(--tf-surface-inset);
 }
-.item--completed {
-  opacity: 0.75;
-}
-.item--skipped {
-  opacity: 0.6;
+.item--completed .item-title strong,
+.item--skipped .item-title strong {
+  color: var(--tf-text-2);
 }
 .item--skipped .item-title strong {
   text-decoration: line-through;
 }
 .item--ghost {
-  opacity: 0.4;
+  background: var(--tf-accent-soft);
   border-style: dashed;
   border-color: var(--tf-accent);
 }
@@ -427,5 +510,15 @@ onMounted(async () => {
 }
 .day-empty :deep(.el-empty__description) {
   margin-top: 4px;
+}
+@media (max-width: 600px) {
+  .item {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .item-actions {
+    grid-column: 2;
+    justify-self: end;
+  }
 }
 </style>

@@ -7,7 +7,9 @@ import (
 
 	"tripfolio/server/internal/foundation/apperr"
 	"tripfolio/server/internal/modules/account"
+	"tripfolio/server/internal/modules/assets"
 	"tripfolio/server/internal/modules/finance"
+	"tripfolio/server/internal/modules/geo"
 	"tripfolio/server/internal/modules/metadata"
 	"tripfolio/server/internal/modules/travel/itinerary"
 	"tripfolio/server/internal/modules/travel/packing"
@@ -28,6 +30,8 @@ type Handler struct {
 	categories  *finance.CategoryService
 	ledger      *finance.LedgerService
 	statistics  *finance.StatisticsService
+	assets      *assets.Service
+	geo         *geo.Service
 	trips       *trip.Service
 	itinerary   *itinerary.Service
 	packing     *packing.Service

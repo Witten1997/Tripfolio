@@ -33,9 +33,19 @@ tags:
     description: 账单分类、账目与统计
   - name: travel
     description: 旅行、回收站与旅行内容
+  - name: assets
+    description: 私有文件资产的上传授权、确认与下载授权
+  - name: geo
+    description: 高德地点搜索、选点与交通路线
 security:
   - bearerAuth: []
 paths:
+  /geo/reverse-geocode:
+    $ref: ./paths/geo.yaml#/reverse-geocode
+  /geo/places:
+    $ref: ./paths/geo.yaml#/places
+  /geo/routes:
+    $ref: ./paths/geo.yaml#/routes
   /metadata:
     $ref: ./paths/metadata.yaml
   /auth/email-challenges:
@@ -102,6 +112,20 @@ paths:
     $ref: ./paths/ledger-entries.yaml#/item
   /trips/{trip_id}/statistics:
     $ref: ./paths/statistics.yaml#/statistics
+  /assets:
+    $ref: ./paths/assets.yaml#/collection
+  /assets/download-authorizations:
+    $ref: ./paths/assets.yaml#/downloadBatch
+  /assets/{asset_id}:
+    $ref: ./paths/assets.yaml#/item
+  /assets/{asset_id}/upload-authorization:
+    $ref: ./paths/assets.yaml#/uploadAuthorization
+  /assets/{asset_id}/confirm:
+    $ref: ./paths/assets.yaml#/confirm
+  /assets/{asset_id}/download:
+    $ref: ./paths/assets.yaml#/download
+  /trips/{trip_id}/assets:
+    $ref: ./paths/assets.yaml#/tripCollection
 components:
   securitySchemes:
     bearerAuth:
@@ -115,6 +139,20 @@ components:
     IfMatch:
       $ref: ./schemas/write.yaml#/IfMatch
   schemas:
+    GeoCoordinate:
+      $ref: ./schemas/geo.yaml#/GeoCoordinate
+    GeoPlace:
+      $ref: ./schemas/geo.yaml#/GeoPlace
+    GeoTravelMode:
+      $ref: ./schemas/geo.yaml#/GeoTravelMode
+    GeoRoute:
+      $ref: ./schemas/geo.yaml#/GeoRoute
+    GeoPlaceResponse:
+      $ref: ./schemas/geo.yaml#/GeoPlaceResponse
+    GeoPlacesResponse:
+      $ref: ./schemas/geo.yaml#/GeoPlacesResponse
+    GeoRouteResponse:
+      $ref: ./schemas/geo.yaml#/GeoRouteResponse
     Problem:
       $ref: ./schemas/common.yaml#/Problem
     FieldError:
@@ -311,6 +349,46 @@ components:
       $ref: ./schemas/statistics.yaml#/TripStatistics
     TripStatisticsResponse:
       $ref: ./schemas/statistics.yaml#/TripStatisticsResponse
+    AssetScope:
+      $ref: ./schemas/asset.yaml#/AssetScope
+    AssetStatus:
+      $ref: ./schemas/asset.yaml#/AssetStatus
+    ThumbnailStatus:
+      $ref: ./schemas/asset.yaml#/ThumbnailStatus
+    Sha256:
+      $ref: ./schemas/asset.yaml#/Sha256
+    Asset:
+      $ref: ./schemas/asset.yaml#/Asset
+    AssetResponse:
+      $ref: ./schemas/asset.yaml#/AssetResponse
+    AssetCreate:
+      $ref: ./schemas/asset.yaml#/AssetCreate
+    AssetConfirm:
+      $ref: ./schemas/asset.yaml#/AssetConfirm
+    UploadAuthorization:
+      $ref: ./schemas/asset.yaml#/UploadAuthorization
+    AssetWriteResult:
+      $ref: ./schemas/asset.yaml#/AssetWriteResult
+    AssetWriteResponse:
+      $ref: ./schemas/asset.yaml#/AssetWriteResponse
+    DownloadVariant:
+      $ref: ./schemas/asset.yaml#/DownloadVariant
+    DownloadDisposition:
+      $ref: ./schemas/asset.yaml#/DownloadDisposition
+    DownloadAuthorization:
+      $ref: ./schemas/asset.yaml#/DownloadAuthorization
+    DownloadAuthorizationResponse:
+      $ref: ./schemas/asset.yaml#/DownloadAuthorizationResponse
+    DownloadAuthorizationRequest:
+      $ref: ./schemas/asset.yaml#/DownloadAuthorizationRequest
+    AssetDownloadBatch:
+      $ref: ./schemas/asset.yaml#/AssetDownloadBatch
+    DownloadAuthorizationBatch:
+      $ref: ./schemas/asset.yaml#/DownloadAuthorizationBatch
+    DownloadAuthorizationBatchResponse:
+      $ref: ./schemas/asset.yaml#/DownloadAuthorizationBatchResponse
+    AssetPage:
+      $ref: ./schemas/asset.yaml#/AssetPage
   responses:
     BadRequest:
       description: 请求无法解析、含未知字段或游标无效（MALFORMED_REQUEST、INVALID_CURSOR）
@@ -378,6 +456,16 @@ components:
             $ref: '#/components/schemas/Problem'
     InternalError:
       description: 服务端错误（INTERNAL_ERROR）或依赖不可用（DEPENDENCY_UNAVAILABLE）
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    DependencyUnavailable:
+      description: 503 DEPENDENCY_UNAVAILABLE，对象存储或地点服务不可用、未配置或超时
+      headers:
+        Retry-After:
+          description: 地点服务短时不可用时给出建议等待秒数；未配置、权限或配额不足时不提供，不自动重试
+          schema: { type: integer, minimum: 1 }
       content:
         application/problem+json:
           schema:

@@ -1,5 +1,5 @@
 {
-  "include": ["vite.config.*", "vitest.config.*", "capacitor.config.*"],
+  "include": ["vite.config.*", "vitest.config.*", "capacitor.config.*", "amap-proxy*.ts"],
   "compilerOptions": {
     "composite": true,
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo",

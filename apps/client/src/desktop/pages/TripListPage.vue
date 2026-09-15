@@ -14,6 +14,7 @@ import {
 import { computed, onMounted, reactive, ref } from 'vue'
 
 import CategoryManagerDialog from '@/desktop/components/CategoryManagerDialog.vue'
+import IconAction from '@/desktop/components/IconAction.vue'
 import TripEditorDialog from '@/desktop/components/TripEditorDialog.vue'
 import { ApiError } from '@/shared/api/auth'
 import {
@@ -159,7 +160,7 @@ onMounted(() => {
         <h1>我的旅行</h1>
         <p>每一次出发，都值得好好记录。</p>
       </div>
-      <div class="heading-actions">
+      <div class="heading-actions tf-actions">
         <ElButton @click="categoryManager?.open()">账单分类</ElButton
         ><ElButton type="primary" @click="editor?.open()">新建旅行</ElButton>
       </div>
@@ -221,7 +222,7 @@ onMounted(() => {
     <ElAlert v-if="actionFailure" type="error" :title="actionFailure" :closable="false" show-icon />
     <div class="list-toolbar">
       <span>阶段按各旅行的时区计算，归档不改变阶段。</span
-      ><ElButton size="small" :loading="loading" @click="reload">刷新列表</ElButton>
+      ><IconAction icon="refresh" label="刷新旅行列表" :loading="loading" @click="reload" />
     </div>
     <ElSkeleton v-if="loading" :rows="7" animated class="list-skeleton" />
     <ElCard v-else-if="error" shadow="never"
@@ -279,26 +280,33 @@ onMounted(() => {
                   : `${trip.currency_code} ${trip.budget_amount}`
               }}</strong>
             </div>
-            <div class="trip-actions">
+            <div class="trip-actions tf-actions">
               <RouterLink :to="{ name: 'trip-detail', params: { tripId: trip.id } }"
                 ><ElButton size="small" type="primary" plain :disabled="!!busy"
                   >查看详情</ElButton
                 ></RouterLink
-              ><ElButton size="small" :disabled="!!busy" @click="editor?.open(trip)">编辑</ElButton
-              ><ElButton
+              >
+              <IconAction
+                icon="edit"
+                :label="`编辑旅行：${trip.name}`"
+                :disabled="!!busy"
+                @click="editor?.open(trip)"
+              />
+              <ElButton
                 size="small"
                 :disabled="!!busy && busy !== trip.id"
                 :loading="busy === trip.id"
                 @click="mutate(trip, 'archive')"
                 >{{ trip.archived_at ? '取消归档' : '归档' }}</ElButton
-              ><ElButton
-                size="small"
+              >
+              <IconAction
+                icon="trash"
+                :label="`移入回收站：${trip.name}`"
                 type="danger"
                 plain
                 :disabled="!!busy"
                 @click="confirmTrash(trip)"
-                >移入回收站</ElButton
-              >
+              />
             </div>
           </ElCard>
         </div>

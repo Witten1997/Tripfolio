@@ -15,6 +15,7 @@ import {
 } from 'element-plus'
 import { computed } from 'vue'
 
+import IconAction from '@/desktop/components/IconAction.vue'
 import {
   createPackingItem,
   getPackingItem,
@@ -220,10 +221,14 @@ defineExpose({ open })
             </tr>
           </tbody>
         </table>
-        <div class="conflict-actions">
-          <ElButton :loading="loadingLatest" :disabled="saving" @click="editor.loadLatest"
-            >刷新最新内容</ElButton
-          >
+        <div class="conflict-actions tf-actions">
+          <IconAction
+            icon="refresh"
+            label="刷新物品最新内容"
+            :loading="loadingLatest"
+            :disabled="saving"
+            @click="editor.loadLatest"
+          />
           <ElButton :disabled="!latest || saving" @click="adoptLatest"
             >放弃输入，载入最新版本</ElButton
           >
@@ -304,6 +309,7 @@ defineExpose({ open })
 }
 .conflict-actions {
   display: flex;
+  align-items: center;
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 12px;

@@ -3,6 +3,7 @@ import {
   ElAlert,
   ElButton,
   ElCard,
+  ElCheckbox,
   ElEmpty,
   ElMessageBox,
   ElOption,
@@ -11,14 +12,16 @@ import {
   ElSkeleton,
   ElTag,
 } from 'element-plus'
-import { computed, onMounted, reactive, ref, shallowRef } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, shallowRef } from 'vue'
 
+import IconAction from '@/desktop/components/IconAction.vue'
 import PackingItemDialog from '@/desktop/components/PackingItemDialog.vue'
 import PackingLibraryDialog from '@/desktop/components/PackingLibraryDialog.vue'
 import { ApiError } from '@/shared/api/auth'
 import {
   deletePackingItem,
   listAllPackingItems,
+  normalizePackingStatus,
   packingCategoryLabels,
   packingCategoryOrder,
   packingStatusLabels,
@@ -27,7 +30,7 @@ import {
   type PackingBatchResult,
   type PackingCategory,
   type PackingItem,
-  type PackingStatus,
+  type PreparedPackingStatus,
 } from '@/shared/api/packing'
 import {
   actionError,
@@ -36,6 +39,7 @@ import {
   type WriteOutcome,
 } from '@/shared/api/writes'
 import { useTripContext } from '@/shared/travel/tripContext'
+import { packingGroups, packingProgress } from '@/shared/travel/packingView'
 
 const context = useTripContext()
 const items = shallowRef<PackingItem[]>([])
@@ -45,32 +49,18 @@ const busy = ref<string | null>(null)
 const actionFailure = ref<string | null>(null)
 const notice = ref<string[]>([])
 const noticeType = ref<'success' | 'warning'>('success')
-const filters = reactive({ category: '' as '' | PackingCategory, status: '' as '' | PackingStatus })
+const filters = reactive({
+  category: '' as '' | PackingCategory,
+  status: '' as '' | PreparedPackingStatus,
+})
 const dialog = ref<InstanceType<typeof PackingItemDialog>>()
 const library = ref<InstanceType<typeof PackingLibraryDialog>>()
 const intents = new Map<string, ReturnType<typeof createWriteIntent>>()
 let generation = 0
 
-const progress = computed(() => {
-  const total = items.value.length
-  const ready = items.value.filter((i) => i.status !== 'pending').length
-  const packed = items.value.filter((i) => i.status === 'packed').length
-  return { total, ready, packed, percent: total ? Math.round((packed / total) * 100) : 0 }
-})
+const progress = computed(() => packingProgress(items.value))
 
-const groups = computed(() =>
-  packingCategoryOrder
-    .filter((category) => !filters.category || filters.category === category)
-    .map((category) => ({
-      category,
-      label: packingCategoryLabels[category],
-      items: items.value.filter(
-        (i) => i.category === category && (!filters.status || i.status === filters.status),
-      ),
-    }))
-    .filter((g) => g.items.length || (!filters.status && !filters.category)),
-)
-const isFiltered = computed(() => !!filters.category || !!filters.status)
+const groups = computed(() => packingGroups(items.value, filters))
 
 async function reload() {
   const request = ++generation
@@ -93,8 +83,8 @@ function intentFor(slot: string) {
   return existing
 }
 
-async function setStatus(item: PackingItem, status: PackingStatus) {
-  if (busy.value || item.status === status) return
+async function setStatus(item: PackingItem, status: PreparedPackingStatus) {
+  if (busy.value || loading.value || normalizePackingStatus(item.status) === status) return
   busy.value = item.id
   actionFailure.value = null
   const intent = intentFor(`status:${item.id}`)
@@ -124,6 +114,29 @@ async function setStatus(item: PackingItem, status: PackingStatus) {
       await reload()
   } finally {
     busy.value = null
+  }
+}
+
+async function togglePrepared(item: PackingItem, checked: boolean, event?: Event) {
+  const input = event?.target instanceof HTMLInputElement ? event.target : null
+  const restoreFocus = input === document.activeElement
+  const scope = input?.closest('.packing-tab')
+  // 受控组件不更新 modelValue 时，原生 input 仍会先翻转。等待服务端确认期间
+  // 恢复原生状态；失败时也不会留下“看似已准备、实际未保存”的勾选。
+  if (input) input.checked = normalizePackingStatus(item.status) === 'ready'
+  await setStatus(item, checked ? 'ready' : 'pending')
+  await nextTick()
+  // 原生 disabled 会使焦点落回 body；仅恢复这次交互，不打断用户已做的导航。
+  if (
+    restoreFocus &&
+    scope?.isConnected &&
+    (document.activeElement === document.body || document.activeElement === input)
+  ) {
+    const target = input?.isConnected
+      ? input
+      : (scope.querySelector<HTMLInputElement>('.tf-round-check input:not(:disabled)') ??
+        scope.querySelector<HTMLInputElement>('.tf-filter-controls input[aria-label="状态"]'))
+    if (target && !target.disabled) target.focus({ preventScroll: true })
   }
 }
 
@@ -184,17 +197,6 @@ async function added(result: PackingBatchResult) {
   await reload()
 }
 
-function nextStatus(status: PackingStatus): PackingStatus | null {
-  const index = packingStatusOrder.indexOf(status)
-  return packingStatusOrder[index + 1] ?? null
-}
-function prevStatus(status: PackingStatus): PackingStatus | null {
-  const index = packingStatusOrder.indexOf(status)
-  return index > 0 ? packingStatusOrder[index - 1]! : null
-}
-const statusType = (status: PackingStatus) =>
-  status === 'packed' ? 'success' : status === 'ready' ? 'primary' : 'info'
-
 onMounted(reload)
 </script>
 
@@ -203,21 +205,21 @@ onMounted(reload)
     <ElCard shadow="never" class="progress-card">
       <div class="progress-row">
         <div class="progress-text">
-          <strong>已装包 {{ progress.packed }} / {{ progress.total }}</strong>
-          <span>已备齐（含已装包）{{ progress.ready }} 件 · 按条目计数</span>
+          <strong>已准备 {{ progress.ready }} / {{ progress.total }}</strong>
+          <span>待准备 {{ progress.total - progress.ready }} 件 · 按条目计数</span>
         </div>
-        <ElProgress :percentage="progress.percent" :stroke-width="10" class="progress-bar" />
+        <ElProgress
+          :percentage="progress.percent"
+          :stroke-width="10"
+          class="progress-bar"
+          aria-label="行李准备进度"
+          :aria-valuetext="`已准备 ${progress.ready} / ${progress.total} 件`"
+        />
       </div>
     </ElCard>
     <div class="tab-toolbar">
-      <div class="tab-filters">
-        <ElSelect
-          v-model="filters.category"
-          aria-label="分类"
-          placeholder="全部分类"
-          clearable
-          size="small"
-        >
+      <div class="tab-filters tf-filter-controls">
+        <ElSelect v-model="filters.category" aria-label="分类" placeholder="全部分类" clearable>
           <ElOption
             v-for="c in packingCategoryOrder"
             :key="c"
@@ -225,13 +227,7 @@ onMounted(reload)
             :value="c"
           />
         </ElSelect>
-        <ElSelect
-          v-model="filters.status"
-          aria-label="状态"
-          placeholder="全部状态"
-          clearable
-          size="small"
-        >
+        <ElSelect v-model="filters.status" aria-label="状态" placeholder="全部状态" clearable>
           <ElOption
             v-for="s in packingStatusOrder"
             :key="s"
@@ -240,8 +236,14 @@ onMounted(reload)
           />
         </ElSelect>
       </div>
-      <div class="tab-actions">
-        <ElButton size="small" :loading="loading" @click="reload">刷新</ElButton>
+      <div class="tab-actions tf-actions">
+        <IconAction
+          icon="refresh"
+          label="刷新行李清单"
+          :loading="loading"
+          :disabled="!!busy"
+          @click="reload"
+        />
         <ElButton size="small" @click="library?.open(items)">从物品库添加</ElButton>
         <ElButton size="small" type="primary" @click="dialog?.open()">自定义物品</ElButton>
       </div>
@@ -274,56 +276,57 @@ onMounted(reload)
         <header class="group-header">
           <h2>{{ group.label }}</h2>
           <span class="group-count">{{ group.items.length }} 件</span>
-          <ElButton
-            size="small"
+          <IconAction
+            icon="plus"
+            :label="`向${group.label}添加物品`"
             text
             :disabled="!!busy"
             @click="dialog?.open(undefined, group.category)"
-            >添加</ElButton
-          >
+          />
         </header>
-        <ElEmpty v-if="!group.items.length" description="暂无物品" :image-size="40" />
-        <ul v-else class="item-list">
+        <ul class="item-list">
           <li
             v-for="item in group.items"
             :key="item.id"
             class="item"
-            :class="`item--${item.status}`"
+            :class="{ 'item--prepared': normalizePackingStatus(item.status) === 'ready' }"
+            :aria-busy="busy === item.id"
           >
+            <ElCheckbox
+              class="tf-round-check"
+              :model-value="normalizePackingStatus(item.status) === 'ready'"
+              :disabled="!!busy || loading"
+              :aria-label="`已准备：${item.name}`"
+              :label="`已准备：${item.name}`"
+              @change="(checked: unknown, event?: Event) => togglePrepared(item, !!checked, event)"
+            />
             <div class="item-main">
               <strong>{{ item.name }}</strong>
               <span v-if="item.quantity > 1" class="item-qty">×{{ item.quantity }}</span>
-              <ElTag size="small" :type="statusType(item.status)" effect="plain">{{
-                packingStatusLabels[item.status]
-              }}</ElTag>
+              <ElTag
+                size="small"
+                :type="normalizePackingStatus(item.status) === 'ready' ? 'success' : 'info'"
+                effect="plain"
+                >{{ packingStatusLabels[item.status] }}</ElTag
+              >
               <p v-if="item.notes" class="item-notes">{{ item.notes }}</p>
             </div>
-            <div class="item-actions">
-              <ElButton
-                v-if="prevStatus(item.status)"
-                size="small"
+            <div class="item-actions tf-actions">
+              <IconAction
+                icon="edit"
+                :label="`编辑物品：${item.name}`"
                 text
-                :disabled="!!busy && busy !== item.id"
-                :loading="busy === item.id"
-                @click="setStatus(item, prevStatus(item.status)!)"
-                >改回{{ packingStatusLabels[prevStatus(item.status)!] }}</ElButton
-              >
-              <ElButton
-                v-if="nextStatus(item.status)"
-                size="small"
-                :type="statusType(nextStatus(item.status)!)"
-                plain
-                :disabled="!!busy && busy !== item.id"
-                :loading="busy === item.id"
-                @click="setStatus(item, nextStatus(item.status)!)"
-                >{{ packingStatusLabels[nextStatus(item.status)!] }}</ElButton
-              >
-              <ElButton size="small" text :disabled="!!busy" @click="dialog?.open(item)"
-                >编辑</ElButton
-              >
-              <ElButton size="small" text type="danger" :disabled="!!busy" @click="remove(item)"
-                >删除</ElButton
-              >
+                :disabled="!!busy"
+                @click="dialog?.open(item)"
+              />
+              <IconAction
+                icon="trash"
+                :label="`删除物品：${item.name}`"
+                text
+                type="danger"
+                :disabled="!!busy"
+                @click="remove(item)"
+              />
             </div>
           </li>
         </ul>
@@ -368,12 +371,14 @@ onMounted(reload)
 .tab-filters {
   display: flex;
   gap: 8px;
+  flex-wrap: wrap;
 }
 .tab-filters .el-select {
   width: 140px;
 }
 .tab-actions {
   display: flex;
+  align-items: center;
   gap: 8px;
 }
 .tab-actions .el-button {
@@ -419,18 +424,20 @@ onMounted(reload)
 }
 .item {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
   gap: 12px;
   padding: 8px 0;
   border-top: 1px solid var(--tf-line-soft);
 }
-.item--packed .item-main strong {
+.item--prepared .item-main strong {
   color: var(--tf-text-3);
   text-decoration: line-through;
 }
 .item-main {
   display: flex;
+  flex: 1 1 160px;
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
@@ -455,6 +462,8 @@ onMounted(reload)
   flex-shrink: 0;
   flex-wrap: wrap;
   justify-content: flex-end;
+  max-width: 100%;
+  margin-inline-start: auto;
 }
 .item-actions .el-button {
   margin-left: 0;
@@ -462,6 +471,22 @@ onMounted(reload)
 @media (max-width: 600px) {
   .group-list {
     grid-template-columns: 1fr;
+  }
+  .item {
+    display: grid;
+    grid-template-columns: var(--tf-control-size) minmax(0, 1fr);
+  }
+  .item-actions {
+    grid-column: 2;
+    justify-self: end;
+  }
+  .tab-actions {
+    flex-wrap: wrap;
+  }
+  .progress-row {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 12px;
   }
 }
 </style>

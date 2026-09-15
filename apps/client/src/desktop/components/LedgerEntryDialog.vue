@@ -16,6 +16,7 @@ import {
 } from 'element-plus'
 import { computed, ref, watch } from 'vue'
 
+import IconAction from '@/desktop/components/IconAction.vue'
 import type { ExpenseCategory } from '@/shared/api/categories'
 import {
   createLedgerEntry,
@@ -40,7 +41,10 @@ import { useTripContext } from '@/shared/travel/tripContext'
 import { useItemEditor } from '@/shared/travel/useItemEditor'
 
 const props = defineProps<{ categories: ExpenseCategory[] }>()
-const emit = defineEmits<{ saved: [outcome: WriteOutcome<LedgerEntry>] }>()
+const emit = defineEmits<{
+  saved: [outcome: WriteOutcome<LedgerEntry>]
+  'update:opened': [opened: boolean]
+}>()
 const context = useTripContext()
 const currency = computed(() => context.trip.value?.currency_code ?? 'CNY')
 
@@ -78,6 +82,7 @@ const {
 } = editor
 
 const kinds = Object.keys(ledgerKindLabels) as LedgerKind[]
+watch(opened, (value) => emit('update:opened', value), { flush: 'sync' })
 
 /** 可关联的原支出：同旅行有效支出，退款时按需拉取一次。 */
 const expenses = ref<LedgerEntry[]>([])
@@ -193,11 +198,15 @@ async function save(againstLatest = false) {
   if (outcome) emit('saved', outcome)
 }
 
-/** 新建时默认实际日期为旅行时区今天，可预设类型（记账/退款入口）。 */
-function open(entry?: LedgerEntry, kind?: LedgerKind) {
+/** 地点入口可以预填日期与备注；编辑既有账目时不覆盖原值。 */
+function open(
+  entry?: LedgerEntry,
+  kind?: LedgerKind,
+  presets: Partial<Pick<LedgerDraft, 'occurred_on' | 'notes'>> = {},
+) {
   return editor.open(
     entry,
-    entry ? {} : { occurred_on: context.today.value, kind: kind ?? 'expense' },
+    entry ? {} : { occurred_on: context.today.value, kind: kind ?? 'expense', ...presets },
   )
 }
 
@@ -212,6 +221,7 @@ defineExpose({ open })
     :close-on-click-modal="false"
     :close-on-press-escape="!saving"
     :before-close="requestClose"
+    append-to-body
     destroy-on-close
   >
     <ElSkeleton v-if="loading" :rows="6" animated />
@@ -329,10 +339,14 @@ defineExpose({ open })
             </tr>
           </tbody>
         </table>
-        <div class="conflict-actions">
-          <ElButton :loading="loadingLatest" :disabled="saving" @click="editor.loadLatest"
-            >刷新最新内容</ElButton
-          >
+        <div class="conflict-actions tf-actions">
+          <IconAction
+            icon="refresh"
+            label="刷新账目最新内容"
+            :loading="loadingLatest"
+            :disabled="saving"
+            @click="editor.loadLatest"
+          />
           <ElButton :disabled="!latest || saving" @click="adoptLatest"
             >放弃输入，载入最新版本</ElButton
           >
@@ -416,6 +430,7 @@ defineExpose({ open })
 }
 .conflict-actions {
   display: flex;
+  align-items: center;
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 12px;
