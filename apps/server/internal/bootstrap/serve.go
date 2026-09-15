@@ -148,7 +148,7 @@ func RunServe(ctx context.Context, cfg config.Config, logger *slog.Logger) error
 
 	worker, err := startWorker(ctx, pool, cfg, services, logger)
 	if err != nil {
-		return &StartupError{Phase: PhaseWorker, Cause: err, Hints: servicesHints(cfg)}
+		return &StartupError{Phase: PhaseWorker, Cause: err, Hints: workerHints(workerDiagnosis(ctx, pool))}
 	}
 	defer stopWorker(worker, cfg, logger)
 
@@ -238,15 +238,140 @@ func startWorker(ctx context.Context, pool *pgxpool.Pool, cfg config.Config, ser
 		deps.AssetVerifier = services.AssetVerifier
 	}
 	riverjobs.RegisterWorkers(workers, deps)
-	client, err := queue.NewWorkerClient(pool, logger, workers, cfg.WorkerMaxJobs)
+
+	// 每次尝试都新建客户端：构造不碰数据库，而失败过的客户端交给下一个尝试复用没有意义。
+	var client *river.Client[pgx.Tx]
+	err := retryStart(ctx, workerStartAttempts, workerStartBackoff, logger, func(attemptCtx context.Context) error {
+		created, err := queue.NewWorkerClient(pool, logger, workers, cfg.WorkerMaxJobs)
+		if err != nil {
+			return fmt.Errorf("创建任务客户端: %w", err)
+		}
+		if err := created.Start(attemptCtx); err != nil {
+			return err
+		}
+		client = created
+		return nil
+	})
 	if err != nil {
-		return nil, fmt.Errorf("创建任务客户端: %w", err)
-	}
-	if err := client.Start(ctx); err != nil {
 		return nil, fmt.Errorf("启动任务消费: %w", err)
 	}
 	logger.Info("后台任务已启动", "phase", string(PhaseWorker), "max_jobs", cfg.WorkerMaxJobs)
 	return client, nil
+}
+
+// workerStartAttempts 与 workerStartBackoff 是启动任务消费的重试策略。
+// River 拉取队列设置的超时是它内部写死的 10 秒（producer.StartWorkContext），而这一步是对
+// river_queue 的 INSERT ... ON CONFLICT (name) DO UPDATE：远端或跨网数据库抖动一下、或被同一行的
+// 行锁挡住一会儿，单次尝试就会失败。容器因此退出再由编排重启的代价远大于原地重试几次。
+const (
+	workerStartAttempts = 3
+	workerStartBackoff  = 2 * time.Second
+)
+
+// workerDiagnosisTimeout 是失败后现场取证的预算：取证只是为了让报错更具体，不能拖慢失败退出。
+const workerDiagnosisTimeout = 5 * time.Second
+
+// retryStart 反复调用 start 直到成功、用尽尝试次数或收到退出信号。返回最后一次的原始错误，
+// 不包装——调用方要保留 River 自己的措辞（例如 10 秒超时）以便排障。
+func retryStart(
+	ctx context.Context,
+	attempts int,
+	backoff time.Duration,
+	logger *slog.Logger,
+	start func(context.Context) error,
+) error {
+	if attempts < 1 {
+		attempts = 1
+	}
+	var lastErr error
+	for attempt := 1; attempt <= attempts; attempt++ {
+		if err := ctx.Err(); err != nil {
+			if lastErr != nil {
+				return lastErr
+			}
+			return err
+		}
+		lastErr = start(ctx)
+		if lastErr == nil {
+			if attempt > 1 {
+				logger.Info("任务消费启动成功", "phase", string(PhaseWorker), "attempt", attempt)
+			}
+			return nil
+		}
+		if attempt == attempts {
+			break
+		}
+		logger.Warn("任务消费启动失败，稍后重试", "phase", string(PhaseWorker),
+			"attempt", attempt, "attempts", attempts, "error", lastErr)
+		select {
+		case <-ctx.Done():
+			return lastErr
+		case <-time.After(backoff * time.Duration(attempt)):
+		}
+	}
+	return lastErr
+}
+
+// workerDiagnosis 在任务消费重试都失败后现场取证，把「数据库到底怎么了」写进失败块：
+// River 卡住的那条语句要拿 river_queue 的行锁，所以「库本身很慢」和「别的事务占着锁」会表现成
+// 同一句超时，只有探测才能区分。探测自身失败也不能影响报错，因此这里从不返回错误。
+func workerDiagnosis(ctx context.Context, pool *pgxpool.Pool) []string {
+	if pool == nil {
+		return nil
+	}
+	probeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), workerDiagnosisTimeout)
+	defer cancel()
+
+	notes := make([]string, 0, 2)
+	start := time.Now()
+	if err := pool.Ping(probeCtx); err != nil {
+		notes = append(notes, fmt.Sprintf("数据库探测失败（耗时 %v）：%v", time.Since(start).Round(time.Millisecond), err))
+	} else {
+		notes = append(notes, fmt.Sprintf("数据库探测正常，往返耗时 %v；连接本身没问题，超时更可能是锁等待或瞬时抖动",
+			time.Since(start).Round(time.Millisecond)))
+	}
+
+	rows, err := pool.Query(probeCtx, `
+		SELECT pid,
+		       state,
+		       coalesce(wait_event_type, ''),
+		       coalesce(wait_event, ''),
+		       coalesce(round(extract(epoch FROM now() - xact_start))::bigint, 0),
+		       left(regexp_replace(coalesce(query, ''), '\s+', ' ', 'g'), 70)
+		FROM pg_stat_activity
+		WHERE datname = current_database()
+		  AND pid <> pg_backend_pid()
+		  AND (xact_start IS NOT NULL OR state <> 'idle')
+		ORDER BY xact_start NULLS LAST
+		LIMIT 3`)
+	if err != nil {
+		notes = append(notes, fmt.Sprintf("无法读取其它会话状态：%v", err))
+		return notes
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var (
+			pid                       int
+			state, waitType, waitName string
+			xactAge                   int64
+			query                     string
+		)
+		if err := rows.Scan(&pid, &state, &waitType, &waitName, &xactAge, &query); err != nil {
+			notes = append(notes, fmt.Sprintf("读取会话状态失败：%v", err))
+			break
+		}
+		waiting := ""
+		if waitName != "" {
+			waiting = fmt.Sprintf("，等待 %s", waitName)
+		}
+		notes = append(notes, fmt.Sprintf("另一会话 pid=%d 状态 %s%s，事务已开 %ds，SQL：%s",
+			pid, state, waiting, xactAge, query))
+	}
+	if err := rows.Err(); err != nil {
+		notes = append(notes, fmt.Sprintf("读取会话状态中断：%v", err))
+	}
+	return notes
 }
 
 // stopWorker 在退出时等待在途任务结束，超时则取消剩余任务。
@@ -301,6 +426,30 @@ func servicesHints(cfg config.Config) []string {
 		"确认对象存储端点、桶名、AK/SK 与 TRIPFOLIO_OBJECTSTORE_USE_PATH_STYLE 匹配（OSS 用 false）",
 		fmt.Sprintf("当前邮件驱动为 %q；不使用邮件可设为 disabled，生产不允许 log", cfg.Mail.Driver),
 	}
+}
+
+// workerHints 是「启动后台任务」阶段的排查建议。它与装配失败完全是两回事，所以不再复用
+// servicesHints——那套讲的是签名密钥与对象存储，对着「拉取队列设置超时」只会把排查带偏。
+func workerHints(diagnosis []string) []string {
+	hints := make([]string, 0, 5)
+	if len(diagnosis) > 0 {
+		hints = append(hints, "现场信息（失败后探测到的数据库状态）：")
+		for _, note := range diagnosis {
+			hints = append(hints, "  - "+note)
+		}
+	}
+	return append(hints,
+		fmt.Sprintf("River 拉取队列设置的超时是它内部写死的 10 秒（不是 TRIPFOLIO_* 配置项）；本次已重试 %d 次仍失败",
+			workerStartAttempts),
+		"报 lock timeout（SQLSTATE 55P03）说明确实被锁挡住——连接池设了 lock_timeout=5s，所以 5 秒就返回："+
+			"执行 SELECT pid, state, now()-xact_start AS xact_age, left(query,80) FROM pg_stat_activity "+
+			"WHERE datname = current_database() ORDER BY xact_start NULLS LAST; 找到长时间未提交的事务，"+
+			"确认无用后 SELECT pg_terminate_backend(pid) 结束它",
+		"报 context deadline exceeded（满 10 秒才失败）说明这 10 秒数据库根本没响应，不是锁等待："+
+			"对照上面的现场信息——探测耗时正常多半是一次网络抖动，重启容器即可；探测也慢或失败则查数据库与网络本身",
+		"远端或跨网数据库：阶段 3、4 已通过说明网络本身是通的，再看这段时间数据库有没有在做备份或大查询",
+		"任务消费失败不会降级启动——没有 worker 时资产确认、旅行清理等后台任务不会执行，带着残缺能力运行比直接报错更难查",
+	)
 }
 
 func httpHints(cfg config.Config) []string {
