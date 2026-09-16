@@ -65,8 +65,7 @@ function createTrip() {
       </main>
       <nav
         v-if="showBottomBar"
-        class="mobile-bottom-bar"
-        :class="{ 'mobile-bottom-bar--trips': travelActive }"
+        class="mobile-bottom-bar mobile-bottom-bar--trips"
         aria-label="主要导航"
       >
         <RouterLink

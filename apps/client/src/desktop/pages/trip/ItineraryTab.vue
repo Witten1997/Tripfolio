@@ -84,6 +84,9 @@ const routeModes = Object.keys(modeMeta) as RouteLegMode[]
 const byOrigin = computed(
   () => new Map((routePlan.value?.legs ?? []).map((leg) => [leg.from_item_id, leg])),
 )
+const byDestination = computed(
+  () => new Map((routePlan.value?.legs ?? []).map((leg) => [leg.to_item_id, leg])),
+)
 const itemById = computed(() => new Map(board.items.value.map((item) => [item.id, item])))
 const selectedLeg = computed(
   () => routePlan.value?.legs.find((leg) => leg.id === selectedLegId.value) ?? null,
@@ -150,6 +153,42 @@ function legDescription(leg: RouteLeg) {
     return `${formatDistance(leg.route_distance_meters)} · ${formatDuration(leg.route_duration_seconds)}`
   if (leg.status === 'failed') return '路线暂未算出'
   return '正在计算路线'
+}
+
+function compactLegDescription(leg: RouteLeg) {
+  if (
+    leg.status === 'ready' &&
+    leg.route_distance_meters != null &&
+    leg.route_duration_seconds != null
+  ) {
+    const distance =
+      leg.route_distance_meters < 1000
+        ? `${Math.round(leg.route_distance_meters)}m`
+        : `${(leg.route_distance_meters / 1000).toFixed(1)}km`
+    const minutes = Math.ceil(leg.route_duration_seconds / 60)
+    const duration =
+      minutes === 0
+        ? '0min'
+        : minutes < 60
+        ? `${minutes}min`
+        : `${Math.floor(minutes / 60)}h${minutes % 60 ? `${minutes % 60}min` : ''}`
+    return `${distance} · ${duration}`
+  }
+  if (leg.status === 'failed') return '路线暂未算出'
+  return '正在计算路线'
+}
+
+function isCrossDayLeg(leg: RouteLeg) {
+  return (
+    itemById.value.get(leg.from_item_id)?.scheduled_on !==
+    itemById.value.get(leg.to_item_id)?.scheduled_on
+  )
+}
+
+function routeAriaLabel(leg: RouteLeg) {
+  const from = itemById.value.get(leg.from_item_id)?.title ?? '上一站'
+  const to = itemById.value.get(leg.to_item_id)?.title ?? '下一站'
+  return `查看从 ${from} 到 ${to} 的路线`
 }
 
 function openRouteLeg(leg: RouteLeg) {
@@ -406,12 +445,30 @@ onUnmounted(() => {
           ghost-class="item--ghost"
           @end="onDragEnd"
         >
-          <article
+          <div
             v-for="item in lists[day.date] ?? []"
             :key="item.id"
-            class="item"
-            :class="`item--${item.status}`"
+            class="item-group"
           >
+            <button
+              v-if="byDestination.get(item.id) && isCrossDayLeg(byDestination.get(item.id)!)"
+              type="button"
+              class="route-connector route-connector--cross-day"
+              :aria-label="routeAriaLabel(byDestination.get(item.id)!)"
+              @click="openRouteLeg(byDestination.get(item.id)!)"
+            >
+              <component
+                :is="modeMeta[byDestination.get(item.id)!.mode].icon"
+                aria-hidden="true"
+              />
+              <span>{{ modeMeta[byDestination.get(item.id)!.mode].label }}</span>
+              <strong>{{ compactLegDescription(byDestination.get(item.id)!) }}</strong>
+              <ChevronRight aria-hidden="true" />
+            </button>
+            <article
+              class="item"
+              :class="[`item--${item.status}`, `item--kind-${item.kind}`]"
+            >
             <button
               type="button"
               class="drag-handle"
@@ -440,23 +497,6 @@ onUnmounted(() => {
                 预计 {{ item.currency_code }} {{ item.estimated_amount }}
               </p>
               <p v-if="item.notes" class="item-notes">{{ item.notes }}</p>
-              <button
-                v-if="byOrigin.get(item.id)"
-                type="button"
-                class="item-route"
-                :aria-label="`查看从 ${item.title} 到 ${itemById.get(byOrigin.get(item.id)!.to_item_id)?.title ?? '下一站'} 的交通方式`"
-                @click="openRouteLeg(byOrigin.get(item.id)!)"
-              >
-                <component :is="modeMeta[byOrigin.get(item.id)!.mode].icon" aria-hidden="true" />
-                <span class="item-route-copy">
-                  <strong>{{ modeMeta[byOrigin.get(item.id)!.mode].label }}</strong>
-                  <span>{{ legDescription(byOrigin.get(item.id)!) }}</span>
-                </span>
-                <span class="item-route-destination">
-                  到 {{ itemById.get(byOrigin.get(item.id)!.to_item_id)?.title ?? '下一站' }}
-                </span>
-                <ChevronRight aria-hidden="true" />
-              </button>
             </div>
             <div class="item-actions tf-actions">
               <IconAction
@@ -476,7 +516,20 @@ onUnmounted(() => {
                 @click="remove(item)"
               />
             </div>
-          </article>
+            </article>
+            <button
+              v-if="byOrigin.get(item.id) && !isCrossDayLeg(byOrigin.get(item.id)!)"
+              type="button"
+              class="route-connector"
+              :aria-label="routeAriaLabel(byOrigin.get(item.id)!)"
+              @click="openRouteLeg(byOrigin.get(item.id)!)"
+            >
+              <component :is="modeMeta[byOrigin.get(item.id)!.mode].icon" aria-hidden="true" />
+              <span>{{ modeMeta[byOrigin.get(item.id)!.mode].label }}</span>
+              <strong>{{ compactLegDescription(byOrigin.get(item.id)!) }}</strong>
+              <ChevronRight aria-hidden="true" />
+            </button>
+          </div>
         </VueDraggable>
         <ElEmpty
           v-if="!lists[day.date]?.length"
@@ -590,53 +643,52 @@ onUnmounted(() => {
   flex: 0 0 auto;
   color: var(--tf-accent);
 }
-.item-route {
+.route-connector {
   display: grid;
-  grid-template-columns: 20px auto minmax(80px, 1fr) 16px;
+  grid-template-columns: 18px auto minmax(80px, 1fr) 16px;
   align-items: center;
-  gap: 9px;
+  column-gap: 0;
   width: 100%;
-  margin: 10px 0 0;
-  padding: 10px 0 0;
+  min-height: 40px;
+  margin: 0;
+  padding: 6px 8px 6px 0;
   border: 0;
-  border-top: 1px solid var(--tf-line-soft);
   background: transparent;
   color: var(--tf-text-2);
   font-size: 12px;
   text-align: left;
   cursor: pointer;
 }
-.item-route:hover strong,
-.item-route:focus-visible strong {
+.route-connector:hover strong,
+.route-connector:focus-visible strong {
   color: var(--tf-accent);
 }
-.item-route:focus-visible {
+.route-connector:focus-visible {
   outline: 2px solid var(--tf-accent);
   outline-offset: 4px;
 }
-.item-route > svg {
+.route-connector > svg {
   width: 18px;
   height: 18px;
   color: var(--tf-accent);
 }
-.item-route > svg:last-child {
+.route-connector > svg:last-child {
   width: 15px;
+  margin-left: 4px;
   color: var(--tf-text-3);
 }
-.item-route-copy {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  line-height: 1.45;
-}
-.item-route-copy strong {
+.route-connector strong {
+  margin-left: 12px;
   color: var(--tf-text-1);
-  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  white-space: nowrap;
 }
-.item-route-destination {
-  min-width: 0;
-  text-align: right;
-  overflow-wrap: anywhere;
+.route-connector--cross-day {
+  margin-bottom: 2px;
+  border-top: 1px dashed var(--tf-line);
+  border-bottom: 1px dashed var(--tf-line-soft);
+  background: color-mix(in srgb, var(--tf-accent-soft) 55%, transparent);
 }
 .itinerary-tab {
   display: flex;
@@ -709,18 +761,36 @@ onUnmounted(() => {
 .day-items {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 0;
   min-height: 12px;
+}
+.item-group {
+  display: flex;
+  flex-direction: column;
+}
+.item-group.item--ghost {
+  background: var(--tf-accent-soft);
+  border-radius: var(--tf-radius-control);
+  outline: 1px dashed var(--tf-accent);
+  outline-offset: -1px;
 }
 .item {
   display: flex;
   gap: 10px;
   align-items: flex-start;
-  padding: 10px 12px;
-  border: 1px solid var(--tf-line-soft);
+  padding: 9px 12px;
+  border: 1px solid color-mix(in srgb, var(--item-kind, var(--tf-line)) 24%, var(--tf-line-soft));
   border-radius: var(--tf-radius-control);
-  background: var(--tf-surface-inset);
+  background: color-mix(in srgb, var(--item-kind, var(--tf-surface-inset)) 12%, var(--tf-surface));
+  box-shadow: inset 4px 0 0 var(--item-kind, transparent);
+  transition: transform var(--tf-duration-fast) var(--tf-ease), box-shadow var(--tf-duration-fast) var(--tf-ease);
 }
+.item--kind-transport { --item-kind: var(--tf-chart-4); }
+.item--kind-attraction { --item-kind: var(--tf-chart-6); }
+.item--kind-lodging { --item-kind: var(--tf-chart-2); }
+.item--kind-dining { --item-kind: var(--tf-chart-5); }
+.item--kind-other { --item-kind: var(--tf-info); }
+.item:hover { transform: translateY(-1px); box-shadow: inset 4px 0 0 var(--item-kind, transparent), var(--tf-shadow-1); }
 .item--completed .item-title strong,
 .item--skipped .item-title strong {
   color: var(--tf-text-2);
@@ -932,28 +1002,8 @@ onUnmounted(() => {
   .route-options {
     align-items: flex-start;
   }
-  .item-route {
-    grid-template-columns: 20px minmax(0, 1fr) 16px;
-  }
-  .item-route > svg:first-child {
-    grid-column: 1;
-    grid-row: 1 / span 2;
-  }
-  .item-route-copy {
-    grid-column: 2;
-    grid-row: 1;
-  }
-  .item-route-destination {
-    grid-column: 2;
-    grid-row: 2;
-    overflow: visible;
-    white-space: normal;
-    text-align: left;
-    overflow-wrap: anywhere;
-  }
-  .item-route > svg:last-child {
-    grid-column: 3;
-    grid-row: 1 / span 2;
+  .route-connector {
+    min-height: 44px;
   }
   :global(.route-drawer.el-drawer) {
     border-radius: 16px 16px 0 0;

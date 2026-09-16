@@ -1,10 +1,12 @@
 import type { GeoCoordinate, GeoRoute, TravelMode } from '@/shared/api/geo'
 import type { ItineraryItem } from '@/shared/api/itinerary'
+import type { ItineraryKind } from '@/shared/travel/itineraryKinds'
 
 export interface MapPoint extends GeoCoordinate {
   id: string
   title: string
   number: number
+  kind?: ItineraryKind
 }
 
 export type RoutableItem = Pick<
@@ -65,6 +67,7 @@ export function itineraryWaypoints<T extends RoutableItem>(items: T[]): Waypoint
             latitude: item.latitude,
             longitude: item.longitude,
             number: sourceIndex + 1,
+            kind: 'kind' in item ? (item.kind as ItineraryKind) : undefined,
             sourceIndex,
             item,
           },

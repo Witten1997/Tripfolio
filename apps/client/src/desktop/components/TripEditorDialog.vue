@@ -12,8 +12,10 @@ import {
   ElSelect,
   ElSkeleton,
 } from 'element-plus'
-import { computed } from 'vue'
+import { ChevronDown, MapPin } from '@lucide/vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 
+import DestinationPickerDialog from '@/desktop/components/DestinationPickerDialog.vue'
 import type { Trip } from '@/shared/api/trips'
 import type { WriteOutcome } from '@/shared/api/writes'
 import { useMetadataStore } from '@/shared/stores/metadata'
@@ -23,6 +25,13 @@ import { useTripEditor } from '@/shared/travel/useTripEditor'
 const emit = defineEmits<{ saved: [outcome: WriteOutcome<Trip>] }>()
 const metadata = useMetadataStore()
 const editor = useTripEditor()
+const destinationPicker = ref<InstanceType<typeof DestinationPickerDialog>>()
+const isMobile = ref(false)
+let mobileMediaQuery: MediaQueryList | undefined
+
+function syncMobileState() {
+  isMobile.value = mobileMediaQuery?.matches ?? false
+}
 const {
   opened,
   loading,
@@ -53,8 +62,21 @@ const conflictRows = computed(() => {
     }))
 })
 
-function setDate(field: 'start_date' | 'end_date', value: unknown) {
-  draft[field] = typeof value === 'string' ? value : ''
+const dateRange = computed<[string, string] | null>({
+  get: () =>
+    draft.start_date && draft.end_date
+      ? ([draft.start_date, draft.end_date] as [string, string])
+      : null,
+  set: (value: [string, string] | null) => {
+    draft.start_date = value?.[0] ?? ''
+    draft.end_date = value?.[1] ?? ''
+  },
+})
+const dateError = computed(() => errors.value.start_date || errors.value.end_date)
+const budgetError = computed(() => errors.value.budget_amount || errors.value.currency_code)
+
+function setDestination(value: string) {
+  draft.destination = value
 }
 
 async function requestClose(done?: () => void) {
@@ -98,6 +120,17 @@ async function save(againstLatest = false) {
   if (outcome) emit('saved', outcome)
 }
 
+onMounted(() => {
+  if (typeof window === 'undefined' || !window.matchMedia) return
+  mobileMediaQuery = window.matchMedia('(max-width: 767px)')
+  syncMobileState()
+  mobileMediaQuery.addEventListener('change', syncMobileState)
+})
+
+onUnmounted(() => {
+  mobileMediaQuery?.removeEventListener('change', syncMobileState)
+})
+
 defineExpose({ open: editor.open })
 </script>
 
@@ -110,6 +143,7 @@ defineExpose({ open: editor.open })
     :close-on-click-modal="false"
     :close-on-press-escape="!saving"
     :before-close="requestClose"
+    align-center
     destroy-on-close
   >
     <ElSkeleton v-if="loading" :rows="7" animated />
@@ -152,71 +186,63 @@ defineExpose({ open: editor.open })
               placeholder="例如：秋日京都之旅"
             />
           </ElFormItem>
-          <div class="editor-columns">
-            <ElFormItem label="开始日期" required :error="errors.start_date">
-              <ElDatePicker
-                :model-value="draft.start_date"
-                type="date"
-                value-format="YYYY-MM-DD"
-                format="YYYY-MM-DD"
-                placeholder="选择开始日期"
-                @update:model-value="setDate('start_date', $event)"
-              />
-            </ElFormItem>
-            <ElFormItem label="结束日期" required :error="errors.end_date">
-              <ElDatePicker
-                :model-value="draft.end_date"
-                type="date"
-                value-format="YYYY-MM-DD"
-                format="YYYY-MM-DD"
-                placeholder="选择结束日期"
-                @update:model-value="setDate('end_date', $event)"
-              />
-            </ElFormItem>
-          </div>
+          <ElFormItem label="游玩时间" required :error="dateError">
+            <ElDatePicker
+              v-model="dateRange"
+              class="trip-date-range"
+              type="daterange"
+              value-format="YYYY-MM-DD"
+              format="YYYY年M月D日"
+              range-separator="-"
+              start-placeholder="设置时间范围"
+              end-placeholder=""
+              :single-panel="isMobile"
+              unlink-panels
+            />
+          </ElFormItem>
           <p v-if="isEditing" class="editor-hint">
             修改日期会保留已有行程和记录，超出新日期的安排将在保存后提示。
           </p>
           <ElFormItem label="目的地" :error="errors.destination">
             <ElInput
-              v-model="draft.destination"
-              maxlength="300"
-              placeholder="城市、地区或多个目的地"
-            />
-          </ElFormItem>
-          <ElFormItem label="旅行时区" required :error="errors.timezone">
-            <ElInput v-model="draft.timezone" maxlength="64" placeholder="Asia/Shanghai" />
-            <span class="editor-hint"
-              >使用 IANA 时区，例如 Asia/Shanghai、Asia/Tokyo；旅行阶段按该时区计算。</span
+              :model-value="draft.destination"
+              readonly
+              role="button"
+              placeholder="搜索并选择一个或多个城市"
+              class="destination-input"
+              @click="destinationPicker?.open()"
+              @keydown.enter.prevent="destinationPicker?.open()"
+              @keydown.space.prevent="destinationPicker?.open()"
             >
+              <template #prefix><MapPin aria-hidden="true" /></template>
+              <template #suffix><ChevronDown aria-hidden="true" /></template>
+            </ElInput>
           </ElFormItem>
-          <div class="editor-columns">
-            <ElFormItem label="记账币种" required :error="errors.currency_code">
-              <ElSelect
-                v-model="draft.currency_code"
-                filterable
-                :disabled="!!baseline?.currency_locked_at"
-                aria-label="记账币种"
-              >
-                <ElOption
-                  v-for="currency in metadata.metadata?.currencies ?? []"
-                  :key="currency.code"
-                  :label="currency.code"
-                  :value="currency.code"
-                />
-              </ElSelect>
-            </ElFormItem>
-            <ElFormItem label="总预算" :error="errors.budget_amount">
-              <ElInput
-                v-model="draft.budget_amount"
-                inputmode="decimal"
-                placeholder="留空表示未设置"
-                clearable
-              >
-                <template #append>{{ draft.currency_code }}</template>
-              </ElInput>
-            </ElFormItem>
-          </div>
+          <ElFormItem label="总预算" :error="budgetError">
+            <ElInput
+              v-model="draft.budget_amount"
+              inputmode="decimal"
+              placeholder="留空表示未设置"
+              clearable
+            >
+              <template #append>
+                <ElSelect
+                  v-model="draft.currency_code"
+                  filterable
+                  :disabled="!!baseline?.currency_locked_at"
+                  aria-label="总预算币种"
+                  class="budget-currency"
+                >
+                  <ElOption
+                    v-for="currency in metadata.metadata?.currencies ?? []"
+                    :key="currency.code"
+                    :label="currency.code"
+                    :value="currency.code"
+                  />
+                </ElSelect>
+              </template>
+            </ElInput>
+          </ElFormItem>
           <p class="editor-hint">预算留空表示未设置，输入 0 表示零预算。金额不会随币种自动换算。</p>
           <ElAlert
             v-if="baseline?.currency_locked_at"
@@ -292,20 +318,37 @@ defineExpose({ open: editor.open })
       >
     </template>
   </ElDialog>
+  <DestinationPickerDialog
+    ref="destinationPicker"
+    :model-value="draft.destination"
+    @update:model-value="setDestination"
+  />
 </template>
 
 <style scoped>
 .editor-alert {
   margin-bottom: 16px;
 }
-.editor-columns {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 20px;
-}
-.editor-columns :deep(.el-date-editor),
-.editor-columns :deep(.el-select) {
+.trip-date-range {
   width: 100%;
+}
+.destination-input {
+  cursor: pointer;
+}
+.destination-input :deep(input) {
+  cursor: pointer;
+}
+.destination-input :deep(svg) {
+  width: 17px;
+  height: 17px;
+}
+.budget-currency {
+  width: 108px;
+}
+.budget-currency :deep(.el-select__wrapper) {
+  min-height: 30px;
+  background: transparent;
+  box-shadow: none;
 }
 .editor-hint {
   color: var(--tf-text-3);
@@ -362,10 +405,17 @@ defineExpose({ open: editor.open })
   overflow: hidden;
   clip-path: inset(50%);
 }
-@media (max-width: 600px) {
-  .editor-columns {
-    grid-template-columns: 1fr;
-    gap: 0;
+
+@media (max-width: 767px) {
+  :global(.trip-editor) {
+    display: flex;
+    max-height: calc(100dvh - 32px);
+    flex-direction: column;
+  }
+
+  :global(.trip-editor .el-dialog__body) {
+    min-height: 0;
+    overflow-y: auto;
   }
 }
 </style>

@@ -122,12 +122,6 @@ watch(
   margin-top: auto;
 }
 
-.mobile-trip-list :deep(.el-dialog) {
-  width: calc(100vw - 24px);
-  max-width: none;
-  margin: 12px auto;
-}
-
 @media (max-width: 380px) {
   .mobile-trip-list {
     padding-top: 24px;

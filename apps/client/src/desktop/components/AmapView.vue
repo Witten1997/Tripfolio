@@ -98,6 +98,15 @@ function draw() {
   const cycling = css.getPropertyValue('--tf-chart-2').trim()
   const muted = css.getPropertyValue('--tf-text-3').trim()
   const outline = css.getPropertyValue('--tf-surface').trim()
+  const contrast = css.getPropertyValue('--tf-accent-contrast').trim()
+  const text = css.getPropertyValue('--tf-text-1').trim()
+  const kindColors: Record<string, string> = {
+    transport: css.getPropertyValue('--tf-chart-4').trim(),
+    attraction: css.getPropertyValue('--tf-chart-6').trim(),
+    lodging: css.getPropertyValue('--tf-chart-2').trim(),
+    dining: css.getPropertyValue('--tf-chart-5').trim(),
+    other: css.getPropertyValue('--tf-info').trim(),
+  }
   const roadStyles: Record<TravelMode, { color: string; weight: number; dashed: boolean }> = {
     driving: { color: accent, weight: 5, dashed: false },
     walking: { color: walking, weight: 4, dashed: true },
@@ -128,6 +137,8 @@ function draw() {
     const button = document.createElement('button')
     button.type = 'button'
     button.className = 'tf-map-marker'
+    button.style.backgroundColor = kindColors[point.kind ?? ''] || accent
+    button.style.color = point.kind === 'lodging' ? text : contrast
     button.textContent = String(point.number)
     button.title = `${point.number}. ${point.title}`
     button.setAttribute('aria-label', `查看第 ${point.number} 站：${point.title}`)
