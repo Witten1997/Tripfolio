@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -144,15 +145,33 @@ func (s *Service) Routes(ctx context.Context, v Viewer, mode geo.Mode) (PublicRo
 	}
 	out := PublicRoutes{Mode: mode, Legs: []PublicLeg{}, UnlocatedItemCount: unlocated}
 	limitKey := "share|" + v.ShareID.String()
+	// 先试批量算路：驾车时整趟合成一次上游请求（geo.CalculateTripRoutes 按途经点分片），
+	// 访客首次打开不必等 (段数-1) × 1.1 秒。不可批量或批量失败时整批放弃，
+	// 退回下面的逐段循环，保持「单段失败只计 failed_leg_count」的既有语义。
+	if batched, err := s.batchRoutes(ctx, limitKey, legs, mode); err == nil {
+		out.Legs = make([]PublicLeg, 0, len(legs))
+		for i, leg := range legs {
+			out.Legs = append(out.Legs, PublicLeg{
+				FromItemID:      leg.FromID,
+				ToItemID:        leg.ToID,
+				DistanceMeters:  batched[i].DistanceMeters,
+				DurationSeconds: batched[i].DurationSeconds,
+				Path:            batched[i].Path,
+			})
+		}
+		s.routes.put(key, out, now)
+		return out, nil
+	} else if hardUnavailable(err) {
+		return PublicRoutes{}, err
+	}
 	for _, leg := range legs {
 		route, err := s.d.Routes.RouteAs(ctx, limitKey, leg.From, leg.To, mode)
 		if err != nil {
-			e, ok := apperr.As(err)
-			if !ok {
+			if _, ok := apperr.As(err); !ok {
 				return PublicRoutes{}, apperr.Internal(err)
 			}
 			// 未配置、凭证错误或配额耗尽：503 且不带 Retry-After，继续请求只会重复失败，整体不可用，前端降级为示意连线。
-			if e.Status == 503 && e.Headers["Retry-After"] == "" {
+			if hardUnavailable(err) {
 				return PublicRoutes{}, err
 			}
 			out.FailedLegCount++
@@ -164,4 +183,27 @@ func (s *Service) Routes(ctx context.Context, v Viewer, mode geo.Mode) (PublicRo
 		s.routes.put(key, out, now)
 	}
 	return out, nil
+}
+
+// errBatchUnavailable 表示这一趟不适合批量算路（段数或坐标数超出批量接口的范围）。
+var errBatchUnavailable = errors.New("share: 不具备批量算路条件")
+
+// batchRoutes 把相邻路段合成一条有序坐标序列，用一次批量请求算完。
+func (s *Service) batchRoutes(ctx context.Context, limitKey string, legs []legPlan, mode geo.Mode) ([]geo.Route, error) {
+	if len(legs) == 0 || len(legs)+1 > geo.MaxTripRoutePoints {
+		return nil, errBatchUnavailable
+	}
+	points := make([]geo.Coordinate, 0, len(legs)+1)
+	points = append(points, legs[0].From)
+	for _, leg := range legs {
+		points = append(points, leg.To)
+	}
+	return s.d.Routes.RoutesAs(ctx, limitKey, points, mode)
+}
+
+// hardUnavailable 判断错误是否属于「继续请求也只会重复失败」的整体不可用：
+// 未配置凭证、凭证或权限错误、配额耗尽（503 且不带 Retry-After）。
+func hardUnavailable(err error) bool {
+	e, ok := apperr.As(err)
+	return ok && e.Status == 503 && e.Headers["Retry-After"] == ""
 }

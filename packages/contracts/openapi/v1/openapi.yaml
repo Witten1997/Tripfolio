@@ -48,6 +48,8 @@ paths:
     $ref: ./paths/geo.yaml#/places
   /geo/routes:
     $ref: ./paths/geo.yaml#/routes
+  /geo/trip-routes:
+    $ref: ./paths/geo.yaml#/trip-routes
   /metadata:
     $ref: ./paths/metadata.yaml
   /auth/email-challenges:
@@ -170,6 +172,8 @@ components:
       $ref: ./schemas/geo.yaml#/GeoPlacesResponse
     GeoRouteResponse:
       $ref: ./schemas/geo.yaml#/GeoRouteResponse
+    GeoRouteListResponse:
+      $ref: ./schemas/geo.yaml#/GeoRouteListResponse
     Problem:
       $ref: ./schemas/common.yaml#/Problem
     FieldError:

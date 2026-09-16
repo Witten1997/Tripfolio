@@ -1,7 +1,13 @@
 import { computed, onScopeDispose, shallowRef, watch, type Ref } from 'vue'
 
 import { ApiError } from '@/shared/api/auth'
-import { calculateRoute, GeoRouteError, type GeoRoute, type TravelMode } from '@/shared/api/geo'
+import {
+  calculateRoute,
+  calculateTripRoutes,
+  GeoRouteError,
+  type GeoRoute,
+  type TravelMode,
+} from '@/shared/api/geo'
 import type { ItineraryItem } from '@/shared/api/itinerary'
 import {
   itineraryLegs,
@@ -22,6 +28,8 @@ const ttl = 5 * 60_000
 const requestInterval = 1100
 const retryBackoff = [1200, 2400]
 const maxAutoWait = 8000
+// 与服务端批量算路接口的坐标上限一致；超出时退回逐段算路。
+const batchMaxPoints = 50
 
 function routeFailure(cause: unknown) {
   let message = '暂时无法计算，请稍后重试'
@@ -172,6 +180,31 @@ export function useItineraryRoutes(items: () => ItineraryItem[], mode: Ref<Trave
           if (failure.stopsQueue) unavailable = failure.message
           update(key, { status: 'failed', message: failure.message })
         }
+      }
+    }
+    // 驾车且段数 ≥2：先试一次批量算路。服务端把整趟合并成一次途经点请求（每 16 段一片），
+    // 等待时间与段数基本无关；失败就落到下面的逐段路径，保持每段可单独降级与错误分级。
+    if (travelMode === 'driving' && queue.length >= 2 && points.value.length <= batchMaxPoints) {
+      try {
+        const routes = await calculateTripRoutes(points.value, travelMode, signal)
+        if (request === generation && !signal.aborted) {
+          segments.value.forEach((leg, index) => {
+            const key = routeKey(leg.from, leg.to, travelMode)
+            const route = routes[index]
+            if (!route) {
+              // 服务端返回的段数与请求不一致（不该发生）：只把仍在等待的段标失败，避免一直转圈。
+              if (states.value.get(key)?.status === 'loading')
+                update(key, { status: 'failed', message: '暂时无法计算，请稍后重试' })
+              return
+            }
+            remember(key, route)
+            update(key, { status: 'ready', route })
+          })
+        }
+        return
+      } catch {
+        // 批量不可用（老服务端、上游缺分段明细、暂时性失败）：交给逐段路径处理。
+        if (signal.aborted || request !== generation) return
       }
     }
     await worker()

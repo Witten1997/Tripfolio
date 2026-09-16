@@ -5,6 +5,7 @@ import 'element-plus/dist/index.css'
 import '@/styles/bridge/element-plus.css'
 
 import IconAction from '@/desktop/components/IconAction.vue'
+import BrandLogo from '@/shared/components/BrandLogo.vue'
 import { useSessionStore } from '@/shared/stores/session'
 
 const session = useSessionStore()
@@ -15,7 +16,9 @@ const session = useSessionStore()
     <div class="tf-backdrop" aria-hidden="true"></div>
     <ElContainer class="desktop-shell">
       <ElHeader class="desktop-shell__header tf-bar">
-        <RouterLink to="/trips" class="desktop-shell__brand">Tripfolio</RouterLink>
+        <RouterLink to="/trips" class="desktop-shell__brand" aria-label="Tripfolio 旅行首页">
+          <BrandLogo alt="" />
+        </RouterLink>
         <nav class="desktop-shell__nav">
           <template v-if="session.isAuthenticated">
             <IconAction :to="{ name: 'trips' }" icon="home" label="旅行首页" variant="navigation" />
@@ -59,9 +62,12 @@ const session = useSessionStore()
 }
 
 .desktop-shell__brand {
-  font-weight: 600;
+  --tf-brand-logo-size: 46px;
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
   text-decoration: none;
-  color: var(--tf-text-1);
 }
 
 .desktop-shell__nav {

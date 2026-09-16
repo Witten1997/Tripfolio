@@ -42,7 +42,7 @@ const rules = {
     { required: true, message: '请输入昵称', trigger: 'blur' },
     { max: 64, message: '昵称最多 64 个字符', trigger: 'blur' },
   ],
-  password: [{ validator: check(isValidPassword, '密码长度须为 10–128 个字符'), trigger: 'blur' }],
+  password: [{ validator: check(isValidPassword, '密码长度须为 8–128 个字符'), trigger: 'blur' }],
   confirm: [
     { validator: check((v) => v === form.password, '两次输入的密码不一致'), trigger: 'blur' },
   ],
@@ -126,7 +126,7 @@ async function submit() {
         <ElFormItem label="昵称" prop="nickname">
           <ElInput v-model="form.nickname" maxlength="64" autocomplete="nickname" />
         </ElFormItem>
-        <ElFormItem label="密码（10–128 个字符）" prop="password">
+        <ElFormItem label="密码（8–128 个字符）" prop="password">
           <ElInput
             v-model="form.password"
             type="password"

@@ -191,7 +191,7 @@ const check =
     cb(ok(v) ? undefined : new Error(message))
 const passwordRules = {
   current: [{ required: true, message: '请输入当前密码', trigger: 'blur' }],
-  next: [{ validator: check(isValidPassword, '密码长度须为 10–128 个字符'), trigger: 'blur' }],
+  next: [{ validator: check(isValidPassword, '密码长度须为 8–128 个字符'), trigger: 'blur' }],
   confirm: [
     { validator: check((v) => v === password.next, '两次输入的密码不一致'), trigger: 'blur' },
   ],
@@ -365,7 +365,7 @@ onMounted(async () => {
               autocomplete="current-password"
             />
           </ElFormItem>
-          <ElFormItem label="新密码" prop="next">
+          <ElFormItem label="新密码（8–128 个字符）" prop="next">
             <ElInput
               v-model="password.next"
               type="password"

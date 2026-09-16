@@ -27,6 +27,7 @@ declare module 'vue-router' {
 const pages = {
   tripList: {
     desktop: () => import('@/desktop/pages/TripListPage.vue'),
+    // 移动壳只是外层页面：内嵌桌面列表，主题／回收站／账号入口在 MobileShell 顶栏。
     mobile: () => import('@/mobile/pages/TripListPage.vue'),
   },
   login: {

@@ -1,40 +1,36 @@
 <script setup lang="ts">
-import {
-  Cell as VanCell,
-  CellGroup as VanCellGroup,
-  Loading as VanLoading,
-  NoticeBar as VanNoticeBar,
-} from 'vant'
-import { onMounted } from 'vue'
+// 移动壳的旅行列表复用桌面业务页（两个壳共用 Element Plus 实现，见
+// docs/architecture/2026-09-14-高德地图与行程路线.md 的「前端与安全代理」一节）。
+// 主题中心、回收站与账号入口在移动壳顶栏（MobileShell），本文件只内嵌桌面列表，
+// 并保留平台自检入口——此前该文件是只显示「服务端可用」与「主题中心」的自检占位页，
+// 窄屏与安卓用户因此进不去任何旅行。
+import { Cell as VanCell, CellGroup as VanCellGroup } from 'vant'
 
+import DesktopTripList from '@/desktop/pages/TripListPage.vue'
 import { platform } from '@/platform'
-import { useMetadataStore } from '@/shared/stores/metadata'
 
-const metadata = useMetadataStore()
 // 自检入口只在原生应用或开发模式显示
 const showDevTools = platform.isNative || import.meta.env.DEV
-
-onMounted(() => {
-  void metadata.load()
-})
 </script>
 
 <template>
-  <VanNoticeBar v-if="metadata.status === 'error'" :text="metadata.error ?? '无法连接服务端'" />
-  <VanCellGroup inset title="旅行">
-    <VanCell v-if="metadata.status === 'loading' || metadata.status === 'idle'">
-      <VanLoading size="20" type="spinner">正在连接服务端…</VanLoading>
-    </VanCell>
-    <VanCell
-      v-else-if="metadata.metadata"
-      title="服务端可用"
-      :label="`支持 ${metadata.metadata.currencies.length} 种币种，默认 ${metadata.metadata.default_currency_code}`"
-    />
-  </VanCellGroup>
-  <VanCellGroup inset title="外观">
-    <VanCell title="主题中心" is-link :to="{ name: 'themes' }" />
-  </VanCellGroup>
-  <VanCellGroup v-if="showDevTools" inset title="开发工具">
-    <VanCell title="本地数据库自检" is-link :to="{ name: 'dev-local-db' }" />
-  </VanCellGroup>
+  <div class="mobile-trip-list">
+    <DesktopTripList />
+    <VanCellGroup v-if="showDevTools" inset title="开发工具">
+      <VanCell title="本地数据库自检" is-link :to="{ name: 'dev-local-db' }" />
+    </VanCellGroup>
+  </div>
 </template>
+
+<style scoped>
+.mobile-trip-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px 0 24px;
+}
+/* 桌面列表自身不带外边距（桌面壳由 ElMain 提供），移动壳在这里补上与下方分组一致的 16px 边距。 */
+.mobile-trip-list :deep(.trip-list-page) {
+  padding: 0 16px;
+}
+</style>

@@ -851,6 +851,12 @@ type GeoPlacesResponse struct {
 // GeoRoute defines model for GeoRoute.
 type GeoRoute = geo.Route
 
+// GeoRouteListResponse defines model for GeoRouteListResponse.
+type GeoRouteListResponse struct {
+	// Data 与请求坐标的相邻关系一一对应，长度为坐标数减一
+	Data []GeoRoute `json:"data"`
+}
+
 // GeoRouteResponse defines model for GeoRouteResponse.
 type GeoRouteResponse struct {
 	Data GeoRoute `json:"data"`
@@ -1730,6 +1736,13 @@ type CalculateRouteParams struct {
 	Mode                 GeoTravelMode `form:"mode" json:"mode"`
 }
 
+// CalculateTripRoutesParams defines parameters for CalculateTripRoutes.
+type CalculateTripRoutesParams struct {
+	// Points 有序坐标，格式为 `经度,纬度;经度,纬度`，最多 50 个点
+	Points string        `form:"points" json:"points"`
+	Mode   GeoTravelMode `form:"mode" json:"mode"`
+}
+
 // ListSharedItineraryItemsParams defines parameters for ListSharedItineraryItems.
 type ListSharedItineraryItemsParams struct {
 	Limit  *int    `form:"limit,omitempty" json:"limit,omitempty"`
@@ -2164,6 +2177,9 @@ type ServerInterface interface {
 	// CalculateRoute 计算两点间的道路距离、预计时长和路线
 	// (GET /geo/routes)
 	CalculateRoute(w http.ResponseWriter, r *http.Request, params CalculateRouteParams)
+	// CalculateTripRoutes 一次算出整趟行程的相邻路段
+	// (GET /geo/trip-routes)
+	CalculateTripRoutes(w http.ResponseWriter, r *http.Request, params CalculateTripRoutesParams)
 	// GetMetadata 公开固定枚举、币种精度、上传上限与协议版本
 	// (GET /metadata)
 	GetMetadata(w http.ResponseWriter, r *http.Request)
@@ -2452,6 +2468,12 @@ func (_ Unimplemented) ReverseGeocode(w http.ResponseWriter, r *http.Request, pa
 // CalculateRoute 计算两点间的道路距离、预计时长和路线
 // (GET /geo/routes)
 func (_ Unimplemented) CalculateRoute(w http.ResponseWriter, r *http.Request, params CalculateRouteParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// CalculateTripRoutes 一次算出整趟行程的相邻路段
+// (GET /geo/trip-routes)
+func (_ Unimplemented) CalculateTripRoutes(w http.ResponseWriter, r *http.Request, params CalculateTripRoutesParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -3625,6 +3647,52 @@ func (siw *ServerInterfaceWrapper) CalculateRoute(w http.ResponseWriter, r *http
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.CalculateRoute(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CalculateTripRoutes operation middleware
+func (siw *ServerInterfaceWrapper) CalculateTripRoutes(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CalculateTripRoutesParams
+
+	// ------------- Required query parameter "points" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "points", r.URL.Query(), &params.Points, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "points"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "points", Err: err})
+		}
+		return
+	}
+
+	// ------------- Required query parameter "mode" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "mode", r.URL.Query(), &params.Mode, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "mode"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "mode", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CalculateTripRoutes(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -6246,6 +6314,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Get(options.BaseURL+"/geo/routes", wrapper.CalculateRoute)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/geo/trip-routes", wrapper.CalculateTripRoutes)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/metadata", wrapper.GetMetadata)
 	})
 	r.Group(func(r chi.Router) {
@@ -8520,6 +8591,130 @@ type CalculateRoute503ApplicationProblemPlusJSONResponse struct {
 }
 
 func (response CalculateRoute503ApplicationProblemPlusJSONResponse) VisitCalculateRouteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CalculateTripRoutesRequestObject struct {
+	Params CalculateTripRoutesParams
+}
+
+type CalculateTripRoutesResponseObject interface {
+	VisitCalculateTripRoutesResponse(w http.ResponseWriter) error
+}
+
+type CalculateTripRoutes200JSONResponse GeoRouteListResponse
+
+func (response CalculateTripRoutes200JSONResponse) VisitCalculateTripRoutesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CalculateTripRoutes400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response CalculateTripRoutes400ApplicationProblemPlusJSONResponse) VisitCalculateTripRoutesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CalculateTripRoutes401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response CalculateTripRoutes401ApplicationProblemPlusJSONResponse) VisitCalculateTripRoutesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CalculateTripRoutes404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response CalculateTripRoutes404ApplicationProblemPlusJSONResponse) VisitCalculateTripRoutesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CalculateTripRoutes422ApplicationProblemPlusJSONResponse struct {
+	ValidationFailedApplicationProblemPlusJSONResponse
+}
+
+func (response CalculateTripRoutes422ApplicationProblemPlusJSONResponse) VisitCalculateTripRoutesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CalculateTripRoutes429ApplicationProblemPlusJSONResponse struct {
+	RateLimitedApplicationProblemPlusJSONResponse
+}
+
+func (response CalculateTripRoutes429ApplicationProblemPlusJSONResponse) VisitCalculateTripRoutesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CalculateTripRoutes503ApplicationProblemPlusJSONResponse struct {
+	DependencyUnavailableApplicationProblemPlusJSONResponse
+}
+
+func (response CalculateTripRoutes503ApplicationProblemPlusJSONResponse) VisitCalculateTripRoutesResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -12768,6 +12963,9 @@ type StrictServerInterface interface {
 	// CalculateRoute 计算两点间的道路距离、预计时长和路线
 	// (GET /geo/routes)
 	CalculateRoute(ctx context.Context, request CalculateRouteRequestObject) (CalculateRouteResponseObject, error)
+	// CalculateTripRoutes 一次算出整趟行程的相邻路段
+	// (GET /geo/trip-routes)
+	CalculateTripRoutes(ctx context.Context, request CalculateTripRoutesRequestObject) (CalculateTripRoutesResponseObject, error)
 	// GetMetadata 公开固定枚举、币种精度、上传上限与协议版本
 	// (GET /metadata)
 	GetMetadata(ctx context.Context, request GetMetadataRequestObject) (GetMetadataResponseObject, error)
@@ -13682,6 +13880,32 @@ func (sh *strictHandler) CalculateRoute(w http.ResponseWriter, r *http.Request, 
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(CalculateRouteResponseObject); ok {
 		if err := validResponse.VisitCalculateRouteResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CalculateTripRoutes operation middleware
+func (sh *strictHandler) CalculateTripRoutes(w http.ResponseWriter, r *http.Request, params CalculateTripRoutesParams) {
+	var request CalculateTripRoutesRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CalculateTripRoutes(ctx, request.(CalculateTripRoutesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CalculateTripRoutes")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CalculateTripRoutesResponseObject); ok {
+		if err := validResponse.VisitCalculateTripRoutesResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

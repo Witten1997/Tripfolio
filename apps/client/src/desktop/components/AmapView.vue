@@ -162,7 +162,7 @@ async function initialize() {
       zoom: 11,
       center: props.center ? lngLat(props.center) : [116.4074, 39.9042],
       viewMode: '2D',
-      mapStyle: 'amap://styles/whitesmoke',
+      mapStyle: 'amap://styles/fresh', // 草色青：暖绿底色，与「有机自然」主题同色系
       resizeEnable: true,
       keyboardEnable: true,
       // 由容器统一处理滚轮，避免 SDK 与容器重复响应同一个事件。

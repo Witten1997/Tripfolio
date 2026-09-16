@@ -81,11 +81,11 @@ func NormalizeEmail(raw string) (email, key string, err error) {
 	return email, strings.ToLower(email), nil
 }
 
-// ValidatePassword 按接口设计 3.1：10–128 个 Unicode 字符，不裁剪、不归一化，字节总长受限。
+// ValidatePassword 按接口设计 3.1：8–128 个 Unicode 字符，不裁剪、不归一化，字节总长受限。
 func ValidatePassword(password string) error {
 	n := utf8.RuneCountInString(password)
-	if n < 10 || n > 128 {
-		return errors.New("密码长度须为 10–128 个字符")
+	if n < 8 || n > 128 {
+		return errors.New("密码长度须为 8–128 个字符")
 	}
 	if len(password) > 512 {
 		return errors.New("密码过长")

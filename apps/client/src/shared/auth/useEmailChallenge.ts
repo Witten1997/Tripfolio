@@ -66,10 +66,10 @@ export function isEmail(value: string): boolean {
   return EMAIL.test(value.trim()) && value.length <= 254
 }
 
-/** 与服务端一致：10–128 个字符（按 Unicode 码点计）。 */
+/** 与服务端一致：8–128 个字符（按 Unicode 码点计），不限制字符种类。 */
 export function isValidPassword(value: string): boolean {
   const n = Array.from(value).length
-  return n >= 10 && n <= 128
+  return n >= 8 && n <= 128
 }
 
 export function isSixDigits(value: string): boolean {

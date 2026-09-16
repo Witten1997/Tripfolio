@@ -70,3 +70,26 @@ export async function calculateRoute(
   if (error || !data) throw new GeoRouteError(error, response.headers.get('Retry-After'))
   return data.data
 }
+
+/**
+ * 一次算出有序坐标的相邻路段，返回长度等于坐标数减一。
+ * 驾车由服务端合并成一次途经点请求（每 16 段一片），等待时间与段数基本无关；
+ * 任一段无法确定时整体失败，调用方退回 calculateRoute 逐段调用。
+ */
+export async function calculateTripRoutes(
+  points: GeoCoordinate[],
+  mode: TravelMode,
+  signal?: AbortSignal,
+): Promise<GeoRoute[]> {
+  const { data, error, response } = await api.GET('/geo/trip-routes', {
+    params: {
+      query: {
+        points: points.map((point) => `${point.longitude},${point.latitude}`).join(';'),
+        mode,
+      },
+    },
+    signal,
+  })
+  if (error || !data) throw new GeoRouteError(error, response.headers.get('Retry-After'))
+  return data.data
+}

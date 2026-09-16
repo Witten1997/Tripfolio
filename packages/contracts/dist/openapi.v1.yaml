@@ -201,6 +201,51 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '503':
           $ref: '#/components/responses/DependencyUnavailable'
+  /geo/trip-routes:
+    get:
+      tags:
+        - geo
+      operationId: calculateTripRoutes
+      summary: 一次算出整趟行程的相邻路段
+      description: |
+        按传入的有序坐标返回相邻路段（长度为坐标数减一），语义与逐段调用 calculateRoute 一致。
+        驾车使用高德路径规划 2.0 的途经点能力：每 16 段（17 个坐标）合并为一次上游请求，
+        单次返回的整条路线按步骤归属切回各段，因此等待时间与段数基本无关；步行与骑行逐段计算。
+        任一段无路线或上游失败时整体失败，调用方退回逐段调用，每段仍可单独降级。
+        成功路段按有序坐标与模式缓存 5 分钟，命中缓存的段不发起上游请求。
+      parameters:
+        - name: points
+          in: query
+          required: true
+          description: 有序坐标，格式为 `经度,纬度;经度,纬度`，最多 50 个点
+          schema:
+            type: string
+            minLength: 3
+            maxLength: 2000
+        - name: mode
+          in: query
+          required: true
+          schema:
+            $ref: '#/components/schemas/GeoTravelMode'
+      responses:
+        '200':
+          description: 相邻路段；距离为米，时长为秒
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeoRouteListResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/DependencyUnavailable'
   /metadata:
     get:
       tags:
@@ -2514,6 +2559,16 @@ components:
       properties:
         data:
           $ref: '#/components/schemas/GeoRoute'
+    GeoRouteListResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          type: array
+          description: 与请求坐标的相邻关系一一对应，长度为坐标数减一
+          items:
+            $ref: '#/components/schemas/GeoRoute'
     Problem:
       type: object
       description: 统一错误响应，媒体类型 application/problem+json；代码清单见接口设计 1.4
@@ -2910,7 +2965,7 @@ components:
           pattern: ^[0-9]{6}$
         password:
           type: string
-          minLength: 10
+          minLength: 8
           maxLength: 128
         nickname:
           type: string
@@ -2959,7 +3014,7 @@ components:
           pattern: ^[0-9]{6}$
         new_password:
           type: string
-          minLength: 10
+          minLength: 8
           maxLength: 128
     ReauthenticateRequest:
       type: object
@@ -2980,7 +3035,7 @@ components:
           maxLength: 128
         new_password:
           type: string
-          minLength: 10
+          minLength: 8
           maxLength: 128
     Account:
       type: object

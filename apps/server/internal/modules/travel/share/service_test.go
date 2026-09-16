@@ -2,6 +2,7 @@ package share_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"testing"
@@ -73,6 +74,23 @@ func (f *fakeRoutes) RouteAs(_ context.Context, limitKey string, origin, destina
 		return geo.Route{}, err
 	}
 	return geo.Route{Mode: mode, DistanceMeters: 1000, DurationSeconds: 600, Path: []geo.Coordinate{origin, destination}, Provider: "amap"}, nil
+}
+
+// RoutesAs 逐段复用 RouteAs：任一段失败即整批失败，与服务端批量算路的「全有或全无」一致，
+// 让调用方走回逐段路径（既有用例的逐段降级断言因此保持成立）。
+func (f *fakeRoutes) RoutesAs(ctx context.Context, limitKey string, points []geo.Coordinate, mode geo.Mode) ([]geo.Route, error) {
+	if len(points) < 2 {
+		return nil, errors.New("至少两个坐标")
+	}
+	routes := make([]geo.Route, 0, len(points)-1)
+	for i := 0; i+1 < len(points); i++ {
+		route, err := f.RouteAs(ctx, limitKey, points[i], points[i+1], mode)
+		if err != nil {
+			return nil, err
+		}
+		routes = append(routes, route)
+	}
+	return routes, nil
 }
 
 // fakeLimiter 是不看时间的固定计数器。

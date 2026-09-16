@@ -50,8 +50,14 @@ type Route struct {
 	Provider        string       `json:"provider"`
 }
 
+// MaxTripRoutePoints 是一次批量算路允许的坐标数上限（与契约 points 的最大长度对应）。
+const MaxTripRoutePoints = 50
+
 type Provider interface {
 	ReverseGeocode(context.Context, string, float64, float64) (Place, error)
 	SearchPlaces(context.Context, string, string, *float64, *float64, string) ([]Place, error)
 	CalculateRoute(context.Context, string, Coordinate, Coordinate, Mode) (Route, error)
+	// CalculateTripRoutes 一次算出有序坐标的相邻路段（长度为坐标数减一）。
+	// 任一段无法确定时返回错误，调用方退回逐段调用。
+	CalculateTripRoutes(context.Context, string, []Coordinate, Mode) ([]Route, error)
 }

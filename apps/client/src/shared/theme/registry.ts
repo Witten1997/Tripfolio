@@ -17,7 +17,7 @@ export interface ThemeDefinition {
   load: () => Promise<unknown>
 }
 
-export const DEFAULT_THEME: ThemeId = 'organic'
+export const DEFAULT_THEME: ThemeId = 'glass'
 
 export const themes: readonly ThemeDefinition[] = [
   {

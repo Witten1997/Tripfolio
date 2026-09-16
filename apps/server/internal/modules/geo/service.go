@@ -3,6 +3,7 @@ package geo
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math"
 	"strconv"
 	"strings"
@@ -72,9 +73,36 @@ func (s *Service) RouteAs(ctx context.Context, limitKey string, origin, destinat
 	return route, mapError(err)
 }
 
+// Routes 一次算出整趟行程的相邻路段，以账号 ID 作限流键。
+func (s *Service) Routes(ctx context.Context, a actor.Actor, points []Coordinate, mode Mode) ([]Route, error) {
+	return s.RoutesAs(ctx, a.AccountID.String(), points, mode)
+}
+
+// RoutesAs 以调用方指定的限流键批量算路，供分享访客等非账号身份使用；校验与错误映射与 Route 相同。
+// 返回的路段与 points 的相邻关系一一对应（长度为 len(points)-1）。
+func (s *Service) RoutesAs(ctx context.Context, limitKey string, points []Coordinate, mode Mode) ([]Route, error) {
+	if len(points) < 2 || len(points) > MaxTripRoutePoints {
+		return nil, invalid("points", fmt.Sprintf("请提供 2–%d 个坐标", MaxTripRoutePoints))
+	}
+	for _, point := range points {
+		if !point.Valid() {
+			return nil, invalid("points", "坐标无效")
+		}
+	}
+	if !mode.Valid() {
+		return nil, invalid("mode", "请选择驾车、步行或骑行")
+	}
+	if s.provider == nil {
+		return nil, unavailable()
+	}
+	routes, err := s.provider.CalculateTripRoutes(ctx, limitKey, points, mode)
+	return routes, mapError(err)
+}
+
 func invalid(field, message string) error {
 	return apperr.Validation(apperr.Field(field, "INVALID", message))
 }
+
 func unavailable() error {
 	return apperr.New(503, "DEPENDENCY_UNAVAILABLE", "地图服务尚未配置，请联系管理员配置高德凭证").WithCause(ErrConfiguration)
 }

@@ -55,9 +55,11 @@ type ItinerarySource interface {
 	List(ctx context.Context, accountID, tripID uuid.UUID, q itinerary.ListQuery) ([]itinerary.Resource, error)
 }
 
-// RouteSource 以调用方指定的限流键算路；geo.Service 满足（S.7 新增 RouteAs）。
+// RouteSource 以调用方指定的限流键算路；geo.Service 满足（S.7 新增 RouteAs，算路批量化为 RoutesAs）。
 type RouteSource interface {
 	RouteAs(ctx context.Context, limitKey string, origin, destination geo.Coordinate, mode geo.Mode) (geo.Route, error)
+	// RoutesAs 一次算出有序坐标的相邻路段（长度为坐标数减一）；任一段无法确定时返回错误。
+	RoutesAs(ctx context.Context, limitKey string, points []geo.Coordinate, mode geo.Mode) ([]geo.Route, error)
 }
 
 // Limiter 是固定窗口限流器；由 adapters/ratelimit 实现。

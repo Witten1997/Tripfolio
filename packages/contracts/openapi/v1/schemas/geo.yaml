@@ -98,3 +98,13 @@ GeoRouteResponse:
   properties:
     data:
       $ref: '#/GeoRoute'
+
+GeoRouteListResponse:
+  type: object
+  required: [data]
+  properties:
+    data:
+      type: array
+      description: 与请求坐标的相邻关系一一对应，长度为坐标数减一
+      items:
+        $ref: '#/GeoRoute'

@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '@/shared/api/auth'
 import {
   calculateRoute,
+  calculateTripRoutes,
   GeoRouteError,
   type GeoCoordinate,
   type GeoRoute,
@@ -15,6 +16,7 @@ import { useItineraryRoutes } from '@/shared/geo/useItineraryRoutes'
 vi.mock('@/shared/api/geo', async (original) => ({
   ...(await original<typeof import('@/shared/api/geo')>()),
   calculateRoute: vi.fn(),
+  calculateTripRoutes: vi.fn(),
 }))
 const scopes: ReturnType<typeof effectScope>[] = []
 let fixtureId = 0
@@ -57,6 +59,7 @@ function setup(count = 3) {
 
 beforeEach(() => {
   vi.useFakeTimers()
+  vi.mocked(calculateTripRoutes).mockReset().mockRejectedValue(new Error('批量接口不可用'))
   vi.mocked(calculateRoute)
     .mockReset()
     .mockImplementation(async (a, b, mode) => route(a, b, mode))
@@ -82,24 +85,39 @@ describe('行程自动算路', () => {
   })
 
   it('切换方式取消旧请求，旧返回不能污染新模式里程', async () => {
-    const old: Array<() => void> = []
-    vi.mocked(calculateRoute).mockImplementation((a, b, mode) =>
-      mode === 'driving'
-        ? new Promise((resolve) => {
-            old.push(() => resolve(route(a, b, mode)))
-          })
-        : Promise.resolve(route(a, b, mode)),
+    let resolveOld: ((routes: GeoRoute[]) => void) | undefined
+    vi.mocked(calculateTripRoutes).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveOld = resolve
+        }),
     )
     const { mode, result } = setup()
     await nextTick()
-    const oldSignal = vi.mocked(calculateRoute).mock.calls[0]?.[3]
+    const oldCall = vi.mocked(calculateTripRoutes).mock.calls[0]
+    const oldSignal = oldCall?.[2]
     mode.value = 'walking'
     await settle()
     expect(oldSignal?.aborted).toBe(true)
-    old.forEach((resolve) => resolve())
+    const oldPoints = oldCall?.[0] ?? []
+    resolveOld?.(
+      oldPoints.slice(0, -1).map((point, index) => route(point, oldPoints[index + 1]!, 'driving')),
+    )
     await settle()
     expect(result.totals.value.distance).toBe(400)
     expect(result.legs.value.every((leg) => leg.route?.mode === 'walking')).toBe(true)
+  })
+
+  it('驾车多段优先一次批量算路，成功时不再发逐段请求', async () => {
+    vi.mocked(calculateTripRoutes).mockImplementation(async (points, mode) =>
+      points.slice(0, -1).map((point, index) => route(point, points[index + 1]!, mode)),
+    )
+    const { result } = setup()
+    await settle()
+    expect(calculateTripRoutes).toHaveBeenCalledOnce()
+    expect(calculateRoute).not.toHaveBeenCalled()
+    expect(result.readyCount.value).toBe(2)
+    expect(result.totals.value.distance).toBe(600)
   })
 
   it('部分路线不可用仍保留全部点位，只汇总成功路段', async () => {

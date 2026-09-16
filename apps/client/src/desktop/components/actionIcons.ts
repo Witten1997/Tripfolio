@@ -14,6 +14,7 @@ import {
   ReceiptText,
   RotateCw,
   Trash2,
+  User,
 } from '@lucide/vue'
 
 /** 按需导入 Lucide，尺寸、描边与颜色由 ActionIcon 统一提供。 */
@@ -33,6 +34,7 @@ export const actionIcons = {
   loading: LoaderCircle,
   'chevron-down': ChevronDown,
   'chevron-up': ChevronUp,
+  user: User,
 } as const
 
 export type ActionIconName = keyof typeof actionIcons

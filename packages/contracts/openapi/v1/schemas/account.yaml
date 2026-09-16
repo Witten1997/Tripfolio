@@ -65,7 +65,7 @@ RegisterRequest:
       pattern: '^[0-9]{6}$'
     password:
       type: string
-      minLength: 10
+      minLength: 8
       maxLength: 128
     nickname:
       type: string
@@ -110,7 +110,7 @@ ResetPasswordRequest:
       pattern: '^[0-9]{6}$'
     new_password:
       type: string
-      minLength: 10
+      minLength: 8
       maxLength: 128
 
 ReauthenticateRequest:
@@ -130,7 +130,7 @@ ChangePasswordRequest:
       maxLength: 128
     new_password:
       type: string
-      minLength: 10
+      minLength: 8
       maxLength: 128
 
 Account:

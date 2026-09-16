@@ -414,6 +414,30 @@ export type paths = {
         patch?: never;
         trace?: never;
     };
+    "/geo/trip-routes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 一次算出整趟行程的相邻路段
+         * @description 按传入的有序坐标返回相邻路段（长度为坐标数减一），语义与逐段调用 calculateRoute 一致。
+         *     驾车使用高德路径规划 2.0 的途经点能力：每 16 段（17 个坐标）合并为一次上游请求，
+         *     单次返回的整条路线按步骤归属切回各段，因此等待时间与段数基本无关；步行与骑行逐段计算。
+         *     任一段无路线或上游失败时整体失败，调用方退回逐段调用，每段仍可单独降级。
+         *     成功路段按有序坐标与模式缓存 5 分钟，命中缓存的段不发起上游请求。
+         */
+        get: operations["calculateTripRoutes"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/metadata": {
         parameters: {
             query?: never;
@@ -1299,6 +1323,10 @@ export type components = {
             path: components["schemas"]["GeoCoordinate"][];
             /** @enum {string} */
             provider: "amap";
+        };
+        GeoRouteListResponse: {
+            /** @description 与请求坐标的相邻关系一一对应，长度为坐标数减一 */
+            data: components["schemas"]["GeoRoute"][];
         };
         GeoRouteResponse: {
             data: components["schemas"]["GeoRoute"];
@@ -3024,6 +3052,36 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GeoRouteResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationFailed"];
+            429: components["responses"]["RateLimited"];
+            503: components["responses"]["DependencyUnavailable"];
+        };
+    };
+    calculateTripRoutes: {
+        parameters: {
+            query: {
+                mode: components["schemas"]["GeoTravelMode"];
+                /** @description 有序坐标，格式为 `经度,纬度;经度,纬度`，最多 50 个点 */
+                points: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 相邻路段；距离为米，时长为秒 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GeoRouteListResponse"];
                 };
             };
             400: components["responses"]["BadRequest"];
