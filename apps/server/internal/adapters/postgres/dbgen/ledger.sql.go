@@ -680,7 +680,7 @@ const setTripCurrencyLock = `-- name: SetTripCurrencyLock :one
 UPDATE trips
 SET currency_locked_at = $1, version = version + 1, updated_at = $2
 WHERE account_id = $3 AND id = $4
-RETURNING id, account_id, version, created_at, updated_at, deleted_at, name, start_date, end_date, destination, notes, timezone, currency_code, currency_locked_at, budget_amount, archived_at, purge_after_at, purge_requested_at
+RETURNING id, account_id, version, created_at, updated_at, deleted_at, name, start_date, end_date, destination, notes, timezone, currency_code, currency_locked_at, budget_amount, archived_at, purge_after_at, purge_requested_at, route_short_mode, route_short_distance_meters
 `
 
 type SetTripCurrencyLockParams struct {
@@ -718,6 +718,8 @@ func (q *Queries) SetTripCurrencyLock(ctx context.Context, arg SetTripCurrencyLo
 		&i.ArchivedAt,
 		&i.PurgeAfterAt,
 		&i.PurgeRequestedAt,
+		&i.RouteShortMode,
+		&i.RouteShortDistanceMeters,
 	)
 	return i, err
 }

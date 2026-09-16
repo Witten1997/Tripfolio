@@ -3,28 +3,40 @@ import {
   ElAlert,
   ElButton,
   ElCard,
+  ElDialog,
+  ElDrawer,
   ElEmpty,
+  ElInputNumber,
   ElMessageBox,
   ElRadioButton,
   ElRadioGroup,
   ElSkeleton,
   ElTag,
 } from 'element-plus'
-import { computed, onMounted, ref, watch } from 'vue'
+import { Bike, CarFront, ChevronRight, Footprints, RotateCcw, Route, Settings2 } from '@lucide/vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { VueDraggable, type DraggableEvent } from 'vue-draggable-plus'
 
 import IconAction from '@/desktop/components/IconAction.vue'
 import ItineraryItemDialog from '@/desktop/components/ItineraryItemDialog.vue'
 import { ApiError } from '@/shared/api/auth'
-import { travelModeLabels, type TravelMode } from '@/shared/api/geo'
 import { formatDistance, formatDuration } from '@/shared/geo/itineraryRoute'
-import { useItineraryRoutes } from '@/shared/geo/useItineraryRoutes'
 import {
   deleteItineraryItem,
   itineraryKindLabels,
   itineraryStatusLabels,
   type ItineraryItem,
 } from '@/shared/api/itinerary'
+import {
+  getRoutePlan,
+  recalculateRoutePlan,
+  updateRouteLegMode,
+  type RouteLeg,
+  type RouteLegMode,
+  type RoutePlan,
+} from '@/shared/api/routePlan'
+import { updateTrip } from '@/shared/api/trips'
+import { randomId } from '@/shared/randomId'
 import {
   actionError,
   createWriteIntent,
@@ -41,15 +53,44 @@ const board = useItineraryBoard(context.tripId, () => ({
   end: trip.value?.end_date ?? '',
 }))
 const { days, loading, error, reordering, actionFailure, feedback } = board
-const transportMode = ref<TravelMode>('driving')
-const transportModes = Object.keys(travelModeLabels) as TravelMode[]
-const routes = useItineraryRoutes(() => board.items.value, transportMode)
-const { byOrigin, points: locatedPoints, failedCount: routeFailures } = routes
 const dialog = ref<InstanceType<typeof ItineraryItemDialog>>()
 const busy = ref<string | null>(null)
 const notice = ref<string[]>([])
 const noticeType = ref<'success' | 'warning'>('success')
 const intents = new Map<string, ReturnType<typeof createWriteIntent>>()
+const routePlan = ref<RoutePlan | null>(null)
+const routeFailure = ref<string | null>(null)
+const routeDrawerOpen = ref(false)
+const preferenceOpen = ref(false)
+const selectedLegId = ref<string | null>(null)
+const routeBusy = ref(false)
+const shortMode = ref<'walking' | 'cycling'>('walking')
+const shortDistanceKm = ref(1.5)
+const isMobile = ref(false)
+const maxRoutePollAttempts = 20
+let routePoll: ReturnType<typeof setTimeout> | undefined
+let mediaQuery: MediaQueryList | undefined
+let mediaQueryListener: (() => void) | undefined
+let routePollAttempts = 0
+let recalculationRequested = false
+
+const modeMeta = {
+  auto: { label: '自动选择', icon: RotateCcw },
+  driving: { label: '驾车', icon: CarFront },
+  walking: { label: '步行', icon: Footprints },
+  cycling: { label: '骑行', icon: Bike },
+} as const
+const routeModes = Object.keys(modeMeta) as RouteLegMode[]
+const byOrigin = computed(
+  () => new Map((routePlan.value?.legs ?? []).map((leg) => [leg.from_item_id, leg])),
+)
+const itemById = computed(() => new Map(board.items.value.map((item) => [item.id, item])))
+const selectedLeg = computed(
+  () => routePlan.value?.legs.find((leg) => leg.id === selectedLegId.value) ?? null,
+)
+const selectedMode = computed<RouteLegMode>(() =>
+  selectedLeg.value?.mode_source === 'preference' ? 'auto' : (selectedLeg.value?.mode ?? 'auto'),
+)
 
 /**
  * 拖动组件需要可变数组：每天维护一份镜像。VueDraggable 在挂载时读取 v-model，
@@ -69,6 +110,95 @@ const isToday = (date: string) => date === context.today.value
 
 async function reloadAll() {
   await board.reload()
+  await loadRoutePlan()
+}
+
+function scheduleRoutePoll() {
+  if (routePoll || routePollAttempts >= maxRoutePollAttempts) return
+  routePoll = setTimeout(async () => {
+    routePoll = undefined
+    routePollAttempts += 1
+    await loadRoutePlan()
+  }, 1400)
+}
+
+async function loadRoutePlan() {
+  try {
+    routePlan.value = await getRoutePlan(context.tripId)
+    routeFailure.value = null
+    if (routePlan.value.summary.status === 'stale' && !recalculationRequested) {
+      recalculationRequested = true
+      routePollAttempts = 0
+      await recalculateRoutePlan(context.tripId, randomId())
+    }
+    if (!['stale', 'calculating'].includes(routePlan.value.summary.status)) {
+      recalculationRequested = false
+      routePollAttempts = 0
+    }
+    if (['stale', 'calculating'].includes(routePlan.value.summary.status)) scheduleRoutePoll()
+  } catch (cause) {
+    routeFailure.value = actionError(cause, '路线信息暂时无法加载。')
+  }
+}
+
+function legDescription(leg: RouteLeg) {
+  if (
+    leg.status === 'ready' &&
+    leg.route_distance_meters != null &&
+    leg.route_duration_seconds != null
+  )
+    return `${formatDistance(leg.route_distance_meters)} · ${formatDuration(leg.route_duration_seconds)}`
+  if (leg.status === 'failed') return '路线暂未算出'
+  return '正在计算路线'
+}
+
+function openRouteLeg(leg: RouteLeg) {
+  selectedLegId.value = leg.id
+  routeDrawerOpen.value = true
+}
+
+function openPreferences() {
+  shortMode.value = (trip.value?.route_short_mode as 'walking' | 'cycling') ?? 'walking'
+  shortDistanceKm.value = (trip.value?.route_short_distance_meters ?? 1500) / 1000
+  preferenceOpen.value = true
+}
+
+async function chooseRouteMode(mode: RouteLegMode) {
+  const leg = selectedLeg.value
+  if (!leg || routeBusy.value || selectedMode.value === mode) return
+  routeBusy.value = true
+  try {
+    await updateRouteLegMode(context.tripId, leg.id, leg.version, mode, randomId())
+    routeDrawerOpen.value = false
+    await loadRoutePlan()
+  } catch (cause) {
+    routeFailure.value = actionError(cause, '交通方式保存失败，请稍后重试。')
+  } finally {
+    routeBusy.value = false
+  }
+}
+
+async function savePreferences() {
+  if (!trip.value || routeBusy.value) return
+  routeBusy.value = true
+  try {
+    const result = await updateTrip(
+      context.tripId,
+      trip.value.version,
+      {
+        route_short_mode: shortMode.value,
+        route_short_distance_meters: Math.round(shortDistanceKm.value * 1000),
+      },
+      randomId(),
+    )
+    if (result.resource) context.replace(result.resource)
+    preferenceOpen.value = false
+    await loadRoutePlan()
+  } catch (cause) {
+    routeFailure.value = actionError(cause, '交通偏好保存失败，请稍后重试。')
+  } finally {
+    routeBusy.value = false
+  }
 }
 
 function jumpToToday() {
@@ -145,7 +275,7 @@ function timeLabel(item: ItineraryItem) {
     const end = sameDay
       ? item.planned_end_local.slice(11, 16)
       : item.planned_end_local.slice(5, 16).replace('T', ' ')
-    return start ? `${start} – ${end}` : `至 ${end}`
+    return start ? `${start} - ${end}` : `至 ${end}`
   }
   if (item.planned_duration_minutes) {
     return start
@@ -156,7 +286,18 @@ function timeLabel(item: ItineraryItem) {
 }
 
 onMounted(async () => {
+  if (typeof window !== 'undefined' && window.matchMedia) {
+    mediaQuery = window.matchMedia('(max-width: 767px)')
+    mediaQueryListener = () => (isMobile.value = mediaQuery?.matches ?? false)
+    mediaQueryListener()
+    mediaQuery.addEventListener('change', mediaQueryListener)
+  }
   await reloadAll()
+})
+
+onUnmounted(() => {
+  if (routePoll) clearTimeout(routePoll)
+  if (mediaQueryListener) mediaQuery?.removeEventListener('change', mediaQueryListener)
 })
 </script>
 
@@ -174,7 +315,6 @@ onMounted(async () => {
           :to="{
             name: 'trip-map',
             params: { tripId: context.tripId },
-            query: { mode: transportMode },
           }"
         />
         <ElButton v-if="days.some((d) => isToday(d.date))" size="small" @click="jumpToToday"
@@ -188,22 +328,36 @@ onMounted(async () => {
         />
       </div>
     </div>
-    <div v-if="locatedPoints.length > 1" class="route-options">
-      <span>相邻地点路程</span>
-      <ElRadioGroup v-model="transportMode" size="small" aria-label="行程距离计算方式">
-        <ElRadioButton v-for="mode in transportModes" :key="mode" :value="mode">{{
-          travelModeLabels[mode]
-        }}</ElRadioButton>
-      </ElRadioGroup>
-      <span class="route-options-hint">按排列顺序估算，不含停留时间</span>
-      <ElButton
-        v-if="routeFailures"
-        size="small"
-        :loading="routes.loading.value"
-        @click="routes.refresh"
-        >重新计算未完成路段</ElButton
-      >
+    <div v-if="routePlan" class="route-options">
+      <div>
+        <Route aria-hidden="true" />
+        <span>
+          相邻点位路线
+          <template
+            v-if="
+              routePlan.summary.status === 'ready' &&
+              routePlan.summary.total_distance_meters != null
+            "
+          >
+            · {{ formatDistance(routePlan.summary.total_distance_meters) }}
+          </template>
+          <template v-else-if="routePlan.summary.status === 'incomplete'">
+            · 部分路线未完成</template
+          >
+          <template v-else-if="['stale', 'calculating'].includes(routePlan.summary.status)">
+            · 计算中</template
+          >
+        </span>
+      </div>
+      <ElButton size="small" :icon="Settings2" @click="openPreferences">交通偏好</ElButton>
     </div>
+    <ElAlert
+      v-if="routeFailure"
+      type="warning"
+      :title="routeFailure"
+      show-icon
+      @close="routeFailure = null"
+    />
     <ElAlert
       v-if="notice.length"
       :type="noticeType"
@@ -286,22 +440,23 @@ onMounted(async () => {
                 预计 {{ item.currency_code }} {{ item.estimated_amount }}
               </p>
               <p v-if="item.notes" class="item-notes">{{ item.notes }}</p>
-              <p v-if="byOrigin.get(item.id)" class="item-route" role="status">
-                <span>下一站 · {{ byOrigin.get(item.id)?.to.title }}</span>
-                <template v-if="byOrigin.get(item.id)?.route"
-                  >{{ travelModeLabels[transportMode] }}
-                  {{ formatDistance(byOrigin.get(item.id)!.route!.distance_meters) }} ·
-                  {{ formatDuration(byOrigin.get(item.id)!.route!.duration_seconds) }}</template
-                >
-                <template v-else-if="byOrigin.get(item.id)?.status === 'loading'"
-                  >正在计算路程…</template
-                >
-                <template v-else>{{ byOrigin.get(item.id)?.message }}</template>
-                <span v-if="byOrigin.get(item.id)?.crossDay">（跨日接续）</span>
-                <span v-if="byOrigin.get(item.id)?.missingBetween"
-                  >（中间 {{ byOrigin.get(item.id)?.missingBetween }} 项尚未定位）</span
-                >
-              </p>
+              <button
+                v-if="byOrigin.get(item.id)"
+                type="button"
+                class="item-route"
+                :aria-label="`查看从 ${item.title} 到 ${itemById.get(byOrigin.get(item.id)!.to_item_id)?.title ?? '下一站'} 的交通方式`"
+                @click="openRouteLeg(byOrigin.get(item.id)!)"
+              >
+                <component :is="modeMeta[byOrigin.get(item.id)!.mode].icon" aria-hidden="true" />
+                <span class="item-route-copy">
+                  <strong>{{ modeMeta[byOrigin.get(item.id)!.mode].label }}</strong>
+                  <span>{{ legDescription(byOrigin.get(item.id)!) }}</span>
+                </span>
+                <span class="item-route-destination">
+                  到 {{ itemById.get(byOrigin.get(item.id)!.to_item_id)?.title ?? '下一站' }}
+                </span>
+                <ChevronRight aria-hidden="true" />
+              </button>
             </div>
             <div class="item-actions tf-actions">
               <IconAction
@@ -332,32 +487,156 @@ onMounted(async () => {
       </section>
     </div>
     <ItineraryItemDialog ref="dialog" @saved="saved" />
+
+    <ElDrawer
+      v-model="routeDrawerOpen"
+      :direction="isMobile ? 'btt' : 'rtl'"
+      :size="isMobile ? '78%' : '430px'"
+      class="route-drawer"
+      title="选择交通方式"
+    >
+      <template v-if="selectedLeg">
+        <div class="route-endpoints">
+          <span>{{ itemById.get(selectedLeg.from_item_id)?.title ?? '起点' }}</span>
+          <span>{{ itemById.get(selectedLeg.to_item_id)?.title ?? '终点' }}</span>
+        </div>
+        <div class="route-drawer-heading">
+          <div>
+            <h3>出行方式</h3>
+            <p>直线距离 {{ formatDistance(selectedLeg.direct_distance_meters) }}</p>
+          </div>
+          <ElButton text :icon="Settings2" @click="openPreferences">偏好设置</ElButton>
+        </div>
+        <div class="route-mode-list" :aria-busy="routeBusy">
+          <button
+            v-for="mode in routeModes"
+            :key="mode"
+            type="button"
+            class="route-mode-option"
+            :class="{ 'is-selected': selectedMode === mode }"
+            :disabled="routeBusy"
+            @click="chooseRouteMode(mode)"
+          >
+            <component :is="modeMeta[mode].icon" aria-hidden="true" />
+            <span>
+              <strong>{{ modeMeta[mode].label }}</strong>
+              <small v-if="mode === 'auto'">按交通偏好自动判断</small>
+              <small v-else-if="selectedLeg.mode === mode && selectedLeg.status === 'ready'">
+                {{ legDescription(selectedLeg) }}
+              </small>
+              <small v-else>选择后重新计算</small>
+            </span>
+          </button>
+        </div>
+      </template>
+    </ElDrawer>
+
+    <ElDialog
+      v-model="preferenceOpen"
+      title="交通偏好"
+      :width="isMobile ? 'calc(100% - 24px)' : '500px'"
+      class="route-preference-dialog"
+    >
+      <div class="preference-form">
+        <div class="preference-row">
+          <div>
+            <strong>短途区间</strong>
+            <span>0 至</span>
+          </div>
+          <ElInputNumber v-model="shortDistanceKm" :min="0" :max="50" :step="0.5" :precision="1" />
+          <span>公里</span>
+        </div>
+        <div class="preference-mode">
+          <span>短途自动方式</span>
+          <ElRadioGroup v-model="shortMode">
+            <ElRadioButton value="walking">步行</ElRadioButton>
+            <ElRadioButton value="cycling">骑行</ElRadioButton>
+          </ElRadioGroup>
+        </div>
+        <div class="preference-driving">
+          <CarFront aria-hidden="true" />
+          <span>超过 {{ shortDistanceKm.toFixed(1) }} 公里自动使用驾车</span>
+        </div>
+      </div>
+      <template #footer>
+        <ElButton @click="preferenceOpen = false">取消</ElButton>
+        <ElButton type="primary" :loading="routeBusy" @click="savePreferences">保存</ElButton>
+      </template>
+    </ElDialog>
   </div>
 </template>
 
 <style scoped>
 .route-options {
   display: flex;
-  flex-wrap: wrap;
+  justify-content: space-between;
   align-items: center;
   gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--tf-line-soft);
+  border-radius: var(--tf-radius-control);
+  background: var(--tf-surface);
   font-size: 13px;
   color: var(--tf-text-2);
 }
-.route-options-hint {
-  font-size: 12px;
+.route-options > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.route-options svg {
+  width: 18px;
+  flex: 0 0 auto;
+  color: var(--tf-accent);
 }
 .item-route {
+  display: grid;
+  grid-template-columns: 20px auto minmax(80px, 1fr) 16px;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
   margin: 10px 0 0;
-  padding-top: 8px;
+  padding: 10px 0 0;
+  border: 0;
   border-top: 1px solid var(--tf-line-soft);
-  font-size: 12px;
+  background: transparent;
   color: var(--tf-text-2);
-  line-height: 1.8;
-  overflow-wrap: anywhere;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
 }
-.item-route > span:first-child {
-  margin-right: 10px;
+.item-route:hover strong,
+.item-route:focus-visible strong {
+  color: var(--tf-accent);
+}
+.item-route:focus-visible {
+  outline: 2px solid var(--tf-accent);
+  outline-offset: 4px;
+}
+.item-route > svg {
+  width: 18px;
+  height: 18px;
+  color: var(--tf-accent);
+}
+.item-route > svg:last-child {
+  width: 15px;
+  color: var(--tf-text-3);
+}
+.item-route-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.45;
+}
+.item-route-copy strong {
+  color: var(--tf-text-1);
+  font-size: 13px;
+}
+.item-route-destination {
+  min-width: 0;
+  text-align: right;
+  overflow-wrap: anywhere;
 }
 .itinerary-tab {
   display: flex;
@@ -510,6 +789,137 @@ onMounted(async () => {
 .day-empty :deep(.el-empty__description) {
   margin-top: 4px;
 }
+:global(.route-drawer .el-drawer__header) {
+  margin-bottom: 0;
+  padding: 20px 22px 16px;
+  color: var(--tf-text-1);
+  font-weight: 800;
+}
+:global(.route-drawer .el-drawer__body) {
+  padding: 0 22px 24px;
+}
+.route-endpoints {
+  position: relative;
+  display: grid;
+  gap: 20px;
+  padding: 20px 20px 20px 48px;
+  border-radius: var(--tf-radius-control);
+  background: var(--tf-accent-soft);
+  color: var(--tf-text-1);
+  font-weight: 700;
+}
+.route-endpoints::before {
+  position: absolute;
+  top: 27px;
+  bottom: 27px;
+  left: 26px;
+  border-left: 1px dashed var(--tf-accent);
+  content: '';
+}
+.route-endpoints span::before {
+  position: absolute;
+  left: 22px;
+  width: 8px;
+  height: 8px;
+  margin-top: 5px;
+  border: 2px solid var(--tf-accent);
+  border-radius: 50%;
+  background: var(--tf-surface);
+  content: '';
+}
+.route-drawer-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 26px 0 12px;
+}
+.route-drawer-heading h3,
+.route-drawer-heading p {
+  margin: 0;
+}
+.route-drawer-heading h3 {
+  font-size: 17px;
+}
+.route-drawer-heading p {
+  margin-top: 4px;
+  color: var(--tf-text-3);
+  font-size: 12px;
+}
+.route-mode-list {
+  display: grid;
+  gap: 8px;
+}
+.route-mode-option {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  min-height: 66px;
+  padding: 12px 14px;
+  border: 1px solid var(--tf-line-soft);
+  border-radius: var(--tf-radius-control);
+  background: var(--tf-surface-inset);
+  color: var(--tf-text-2);
+  text-align: left;
+  cursor: pointer;
+}
+.route-mode-option:hover,
+.route-mode-option.is-selected {
+  border-color: var(--tf-accent);
+  background: var(--tf-accent-soft);
+}
+.route-mode-option.is-selected {
+  color: var(--tf-accent);
+}
+.route-mode-option svg {
+  width: 22px;
+}
+.route-mode-option span {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.route-mode-option strong {
+  color: var(--tf-text-1);
+  font-size: 14px;
+}
+.route-mode-option small {
+  color: var(--tf-text-3);
+}
+.preference-form {
+  display: grid;
+  gap: 18px;
+}
+.preference-row,
+.preference-mode,
+.preference-driving {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  border-radius: var(--tf-radius-control);
+  background: var(--tf-surface-inset);
+}
+.preference-row > div:first-child {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+}
+.preference-row span,
+.preference-mode > span,
+.preference-driving {
+  color: var(--tf-text-2);
+  font-size: 13px;
+}
+.preference-mode {
+  justify-content: space-between;
+}
+.preference-driving svg {
+  width: 20px;
+  color: var(--tf-accent);
+}
 @media (max-width: 600px) {
   .item {
     display: grid;
@@ -518,6 +928,43 @@ onMounted(async () => {
   .item-actions {
     grid-column: 2;
     justify-self: end;
+  }
+  .route-options {
+    align-items: flex-start;
+  }
+  .item-route {
+    grid-template-columns: 20px minmax(0, 1fr) 16px;
+  }
+  .item-route > svg:first-child {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+  }
+  .item-route-copy {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .item-route-destination {
+    grid-column: 2;
+    grid-row: 2;
+    overflow: visible;
+    white-space: normal;
+    text-align: left;
+    overflow-wrap: anywhere;
+  }
+  .item-route > svg:last-child {
+    grid-column: 3;
+    grid-row: 1 / span 2;
+  }
+  :global(.route-drawer.el-drawer) {
+    border-radius: 16px 16px 0 0;
+  }
+  .preference-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+  }
+  .preference-mode {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }
 </style>

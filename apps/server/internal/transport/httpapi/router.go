@@ -18,6 +18,7 @@ import (
 	"tripfolio/server/internal/modules/metadata"
 	"tripfolio/server/internal/modules/travel/itinerary"
 	"tripfolio/server/internal/modules/travel/packing"
+	"tripfolio/server/internal/modules/travel/routeplan"
 	"tripfolio/server/internal/modules/travel/todo"
 	"tripfolio/server/internal/modules/travel/trip"
 	"tripfolio/server/internal/transport/httpapi/generated"
@@ -37,6 +38,7 @@ type Deps struct {
 	Categories  *finance.CategoryService
 	Trips       *trip.Service
 	Itinerary   *itinerary.Service
+	RoutePlans  *routeplan.Service
 	Packing     *packing.Service
 	Todos       *todo.Service
 	// Shares 未装配时，缺少分享头返回 401，有分享头返回 503。
@@ -105,7 +107,7 @@ func NewRouter(d Deps) http.Handler {
 
 	handler := &Handler{
 		logger: d.Logger, metadata: d.Metadata, identity: d.Identity, sessions: d.Sessions, profile: d.Profile,
-		categories: d.Categories, trips: d.Trips, itinerary: d.Itinerary, packing: d.Packing, todos: d.Todos,
+		categories: d.Categories, trips: d.Trips, itinerary: d.Itinerary, routePlans: d.RoutePlans, packing: d.Packing, todos: d.Todos,
 		ledger: d.Ledger, statistics: d.Statistics, assets: d.Assets, geo: d.Geo,
 		cookies: d.Cookies, corsOrigins: d.CORSOrigins, shares: d.Shares,
 	}

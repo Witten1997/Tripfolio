@@ -65,6 +65,7 @@ type Repo interface {
 	ListDaysForUpdate(ctx context.Context, accountID, tripID uuid.UUID, dates []types.Date) ([]Resource, error)
 	// Reposition 只修改归属日期与顺序并递增版本。
 	Reposition(ctx context.Context, accountID, tripID, id uuid.UUID, on types.Date, sortOrder int32, now time.Time) (Resource, error)
+	InvalidateRouteSummary(ctx context.Context, accountID, tripID uuid.UUID, now time.Time) (int64, error)
 	// MergeSource 提供字段级合并所需的变更历史。
 	MergeSource() write.MergeSource
 }

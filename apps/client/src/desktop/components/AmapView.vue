@@ -2,7 +2,7 @@
 import { ElAlert, ElButton } from 'element-plus'
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
-import type { GeoCoordinate } from '@/shared/api/geo'
+import type { GeoCoordinate, TravelMode } from '@/shared/api/geo'
 import {
   cursorZoomCenter,
   lngLat,
@@ -94,28 +94,36 @@ function draw() {
   map.remove(overlays)
   const css = getComputedStyle(document.documentElement)
   const accent = css.getPropertyValue('--tf-accent').trim()
+  const walking = css.getPropertyValue('--tf-chart-3').trim()
+  const cycling = css.getPropertyValue('--tf-chart-2').trim()
   const muted = css.getPropertyValue('--tf-text-3').trim()
   const outline = css.getPropertyValue('--tf-surface').trim()
+  const roadStyles: Record<TravelMode, { color: string; weight: number; dashed: boolean }> = {
+    driving: { color: accent, weight: 5, dashed: false },
+    walking: { color: walking, weight: 4, dashed: true },
+    cycling: { color: cycling, weight: 5, dashed: false },
+  }
   const lines = props.paths
     .filter((path) => path.points.length >= 2)
-    .map(
-      (path) =>
-        new sdk!.Polyline({
-          path: path.points.map(lngLat),
-          strokeColor: path.kind === 'road' ? accent : muted,
-          strokeWeight: path.kind === 'road' ? 5 : 2,
-          strokeOpacity: path.kind === 'road' ? 0.9 : 0.7,
-          strokeStyle: path.kind === 'road' ? 'solid' : 'dashed',
-          strokeDasharray: [6, 6],
-          showDir: path.kind === 'road',
-          lineJoin: 'round',
-          lineCap: 'round',
-          isOutline: path.kind === 'road',
-          outlineColor: outline,
-          borderWeight: 2,
-          zIndex: 40,
-        }),
-    )
+    .map((path) => {
+      const road = path.kind === 'road'
+      const style = road ? roadStyles[path.mode ?? 'driving'] : undefined
+      return new sdk!.Polyline({
+        path: path.points.map(lngLat),
+        strokeColor: style?.color ?? muted,
+        strokeWeight: style?.weight ?? 2,
+        strokeOpacity: road ? 0.9 : 0.7,
+        strokeStyle: style?.dashed || !road ? 'dashed' : 'solid',
+        strokeDasharray: style?.dashed ? [3, 7] : [6, 6],
+        showDir: road && path.mode !== 'walking',
+        lineJoin: 'round',
+        lineCap: 'round',
+        isOutline: road,
+        outlineColor: outline,
+        borderWeight: 2,
+        zIndex: path.mode === 'walking' ? 42 : path.mode === 'cycling' ? 41 : 40,
+      })
+    })
   markers = props.points.map((point) => {
     const button = document.createElement('button')
     button.type = 'button'
@@ -141,7 +149,7 @@ function draw() {
   // 路线可能绕出点位包围盒；道路返回或方式改变后重新适配，主题重绘不改变视角。
   const signature = JSON.stringify([
     props.points.map((point) => [point.id, point.latitude, point.longitude]),
-    props.paths.map((path) => [path.id, path.points.map(lngLat)]),
+    props.paths.map((path) => [path.id, path.kind, path.mode, path.points.map(lngLat)]),
   ])
   if (signature !== fittedPoints) {
     fittedPoints = signature

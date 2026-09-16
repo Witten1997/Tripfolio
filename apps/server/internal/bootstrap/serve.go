@@ -165,7 +165,7 @@ func RunServe(ctx context.Context, cfg config.Config, logger *slog.Logger) error
 		Logger: logger, Metadata: metadata.Current(), Readiness: readiness, CORSOrigins: cfg.CORSOrigins,
 		Cookies:  httpapi.CookieSettings{Secure: cfg.CookieSecure},
 		Identity: services.Identity, Sessions: services.Sessions, Profile: services.Profile, Categories: services.Categories,
-		Trips: services.Trips, Itinerary: services.Itinerary, Packing: services.Packing, Todos: services.Todos,
+		Trips: services.Trips, Itinerary: services.Itinerary, RoutePlans: services.RoutePlans, Packing: services.Packing, Todos: services.Todos,
 		Ledger: services.Ledger, Statistics: services.Statistics, Assets: services.Assets, Geo: services.Geo, Shares: services.Shares,
 		Web: webHandler,
 	})
@@ -232,7 +232,7 @@ func migrateBeforeServe(ctx context.Context, cfg config.Config, pool *pgxpool.Po
 
 func startWorker(ctx context.Context, pool *pgxpool.Pool, cfg config.Config, services Services, logger *slog.Logger) (*river.Client[pgx.Tx], error) {
 	workers := river.NewWorkers()
-	deps := riverjobs.Deps{Logger: logger}
+	deps := riverjobs.Deps{Logger: logger, RouteRecalculator: services.RoutePlans}
 	// 未配置对象存储时 AssetVerifier 为 nil 指针；保持接口为 nil，让 worker 走推迟分支而不是解引用。
 	if services.AssetVerifier != nil {
 		deps.AssetVerifier = services.AssetVerifier

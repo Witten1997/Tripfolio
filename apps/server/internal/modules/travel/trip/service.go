@@ -18,6 +18,7 @@ import (
 	"tripfolio/server/internal/foundation/types"
 	"tripfolio/server/internal/foundation/write"
 	"tripfolio/server/internal/modules/metadata"
+	"tripfolio/server/internal/modules/travel/routeplan"
 )
 
 // Service 实现旅行与回收站用例（接口设计 2.2、3.2、§5）。
@@ -35,10 +36,11 @@ func NewService(uow write.UnitOfWork[Repo], reader Reader, cursors paging.Codec,
 }
 
 const (
-	maxNameChars        = 120
-	maxDestinationChars = 300
-	maxNotesChars       = 10000
-	maxTimezoneChars    = 64
+	maxNameChars                    = 120
+	maxDestinationChars             = 300
+	maxNotesChars                   = 10000
+	maxTimezoneChars                = 64
+	defaultRouteShortDistanceMeters = int32(1500)
 )
 
 // 错误代码（接口设计 1.4）。
@@ -401,7 +403,8 @@ func (s *Service) Create(ctx context.Context, a actor.Actor, operationID uuid.UU
 		now := s.clock.Now()
 		created, err := repo.Insert(ctx, a.AccountID, Resource{
 			ID: cmd.ID, Name: cmd.Name, StartDate: start, EndDate: end, Destination: destination, Notes: notes,
-			Timezone: tz, CurrencyCode: currency, BudgetAmount: budget, Version: 1, CreatedAt: now, UpdatedAt: now,
+			Timezone: tz, CurrencyCode: currency, BudgetAmount: budget, RouteShortMode: string(routeplan.ModeWalking),
+			RouteShortDistanceMeters: defaultRouteShortDistanceMeters, Version: 1, CreatedAt: now, UpdatedAt: now,
 		})
 		if err != nil {
 			return err
@@ -414,15 +417,17 @@ func (s *Service) Create(ctx context.Context, a actor.Actor, operationID uuid.UU
 
 // Patch 是局部更新（接口设计 3.2 TripPatch）；nil 表示缺省。BudgetSet 区分“清空预算”与缺省。
 type Patch struct {
-	Name         *string `json:"name"`
-	StartDate    *string `json:"start_date"`
-	EndDate      *string `json:"end_date"`
-	Destination  *string `json:"destination"`
-	Notes        *string `json:"notes"`
-	Timezone     *string `json:"timezone"`
-	CurrencyCode *string `json:"currency_code"`
-	BudgetSet    bool    `json:"budget_set"`
-	BudgetAmount *string `json:"budget_amount"`
+	Name                     *string `json:"name"`
+	StartDate                *string `json:"start_date"`
+	EndDate                  *string `json:"end_date"`
+	Destination              *string `json:"destination"`
+	Notes                    *string `json:"notes"`
+	Timezone                 *string `json:"timezone"`
+	CurrencyCode             *string `json:"currency_code"`
+	BudgetSet                bool    `json:"budget_set"`
+	BudgetAmount             *string `json:"budget_amount"`
+	RouteShortMode           *string `json:"route_short_mode"`
+	RouteShortDistanceMeters *int32  `json:"route_short_distance_meters"`
 }
 
 func (p Patch) fields() []string {
@@ -450,6 +455,12 @@ func (p Patch) fields() []string {
 	}
 	if p.BudgetSet {
 		f = append(f, "budget_amount")
+	}
+	if p.RouteShortMode != nil {
+		f = append(f, "route_short_mode")
+	}
+	if p.RouteShortDistanceMeters != nil {
+		f = append(f, "route_short_distance_meters")
 	}
 	return f
 }
@@ -496,6 +507,12 @@ func (s *Service) Update(ctx context.Context, a actor.Actor, operationID uuid.UU
 		compact, ferr := compactBudget(*patch.BudgetAmount)
 		addField(ferr)
 		patch.BudgetAmount = &compact
+	}
+	if patch.RouteShortMode != nil && *patch.RouteShortMode != string(routeplan.ModeWalking) && *patch.RouteShortMode != string(routeplan.ModeCycling) {
+		fields = append(fields, apperr.Field("route_short_mode", "INVALID", "短途方式须为步行或骑行"))
+	}
+	if patch.RouteShortDistanceMeters != nil && (*patch.RouteShortDistanceMeters < 0 || *patch.RouteShortDistanceMeters > 50000) {
+		fields = append(fields, apperr.Field("route_short_distance_meters", "OUT_OF_RANGE", "短途距离须在 0-50000 米之间"))
 	}
 	if len(fields) > 0 {
 		return write.Result{}, apperr.Validation(fields...)
@@ -555,6 +572,12 @@ func (s *Service) Update(ctx context.Context, a actor.Actor, operationID uuid.UU
 		if patch.CurrencyCode != nil {
 			v.CurrencyCode = *patch.CurrencyCode
 		}
+		if patch.RouteShortMode != nil {
+			v.RouteShortMode = *patch.RouteShortMode
+		}
+		if patch.RouteShortDistanceMeters != nil {
+			v.RouteShortDistanceMeters = *patch.RouteShortDistanceMeters
+		}
 		if v.EndDate.Before(v.StartDate) {
 			field := "end_date"
 			if patch.EndDate == nil {
@@ -608,6 +631,15 @@ func (s *Service) Update(ctx context.Context, a actor.Actor, operationID uuid.UU
 		}
 		record(scope, updated, write.ChangeUpsert, submitted, false)
 		scope.SetPrimary(ref(updated))
+		if v.RouteShortMode != current.RouteShortMode || v.RouteShortDistanceMeters != current.RouteShortDistanceMeters {
+			revision, err := repo.InvalidateRouteSummary(ctx, a.AccountID, id, s.clock.Now())
+			if err != nil {
+				return err
+			}
+			if err := scope.Enqueue(routeplan.RecalculateJobArgs{AccountID: a.AccountID, TripID: id, Revision: revision}); err != nil {
+				return err
+			}
+		}
 		return nil
 	}, s.reload(a, id))
 }

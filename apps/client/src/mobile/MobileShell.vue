@@ -27,14 +27,19 @@ const detailRoutes = new Set([
 ])
 const showBottomBar = computed(
   () =>
-    session.isAuthenticated &&
-    !route.meta.guestOnly &&
-    !detailRoutes.has(String(route.name ?? '')),
+    session.isAuthenticated && !route.meta.guestOnly && !detailRoutes.has(String(route.name ?? '')),
 )
 const travelActive = computed(() =>
-  ['trips', 'trip-detail', 'trip-itinerary', 'trip-ledger', 'trip-map', 'trip-packing', 'trip-album', 'trip-todos'].includes(
-    String(route.name ?? ''),
-  ),
+  [
+    'trips',
+    'trip-detail',
+    'trip-itinerary',
+    'trip-ledger',
+    'trip-map',
+    'trip-packing',
+    'trip-album',
+    'trip-todos',
+  ].includes(String(route.name ?? '')),
 )
 const accountActive = computed(() =>
   ['account', 'themes', 'recycle-bin'].includes(String(route.name ?? '')),
@@ -47,12 +52,23 @@ function createTrip() {
 
 <template>
   <ElConfigProvider :locale="zhCn">
-    <div class="mobile-shell" :class="{ 'mobile-shell--has-bottom-bar': showBottomBar }">
+    <div
+      class="mobile-shell"
+      :class="{
+        'mobile-shell--has-bottom-bar': showBottomBar,
+        'mobile-shell--trips': travelActive,
+      }"
+    >
       <div class="tf-backdrop" aria-hidden="true"></div>
       <main class="mobile-shell__main">
         <RouterView :key="String($route.params.tripId ?? '')" />
       </main>
-      <nav v-if="showBottomBar" class="mobile-bottom-bar" aria-label="主要导航">
+      <nav
+        v-if="showBottomBar"
+        class="mobile-bottom-bar"
+        :class="{ 'mobile-bottom-bar--trips': travelActive }"
+        aria-label="主要导航"
+      >
         <RouterLink
           :to="{ name: 'trips' }"
           class="mobile-bottom-bar__item"
@@ -62,7 +78,12 @@ function createTrip() {
           <ActionIcon name="luggage" />
           <span>旅行</span>
         </RouterLink>
-        <button class="mobile-bottom-bar__create" type="button" aria-label="新建旅行" @click="createTrip">
+        <button
+          class="mobile-bottom-bar__create"
+          type="button"
+          aria-label="新建旅行"
+          @click="createTrip"
+        >
           <ActionIcon name="plus" />
         </button>
         <RouterLink
@@ -90,11 +111,11 @@ function createTrip() {
 }
 
 .mobile-shell--has-bottom-bar {
-  --tf-map-toggle-bottom: 68px;
+  --tf-map-toggle-bottom: 92px;
 }
 
 .mobile-shell--has-bottom-bar .mobile-shell__main {
-  padding-bottom: calc(68px + env(safe-area-inset-bottom));
+  padding-bottom: calc(92px + env(safe-area-inset-bottom));
 }
 
 .mobile-shell__main :deep(.trip-detail) {
@@ -119,6 +140,7 @@ function createTrip() {
 }
 
 .mobile-bottom-bar__item {
+  position: relative;
   display: flex;
   min-height: 46px;
   flex-direction: column;
@@ -172,6 +194,56 @@ function createTrip() {
 
 .mobile-bottom-bar__create:active {
   transform: scale(0.96);
+}
+
+.mobile-bottom-bar--trips {
+  right: max(12px, env(safe-area-inset-right));
+  bottom: max(10px, env(safe-area-inset-bottom));
+  left: max(12px, env(safe-area-inset-left));
+  min-height: 66px;
+  padding: 7px 18px 5px;
+  border: 1px solid color-mix(in srgb, var(--tf-surface-raised) 58%, transparent);
+  border-radius: 28px 28px 20px 20px;
+  background: color-mix(in srgb, var(--tf-surface-raised) 42%, transparent);
+  box-shadow:
+    0 18px 44px -22px color-mix(in srgb, var(--tf-accent) 36%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--tf-surface-raised) 82%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, var(--tf-accent) 8%, transparent);
+  -webkit-backdrop-filter: blur(12px) saturate(125%);
+  backdrop-filter: blur(12px) saturate(125%);
+}
+
+.mobile-bottom-bar--trips .mobile-bottom-bar__item {
+  min-height: 54px;
+}
+
+.mobile-bottom-bar--trips .mobile-bottom-bar__item.is-active::after {
+  position: absolute;
+  right: 30%;
+  bottom: -1px;
+  left: 30%;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--tf-accent);
+  content: '';
+}
+
+.mobile-bottom-bar--trips .mobile-bottom-bar__create {
+  width: 62px;
+  height: 62px;
+  margin-top: -27px;
+  border: 4px solid color-mix(in srgb, var(--tf-surface-raised) 72%, transparent);
+  background: var(--tf-accent);
+  color: var(--tf-accent-contrast);
+  box-shadow:
+    0 12px 24px -10px color-mix(in srgb, var(--tf-accent) 64%, transparent),
+    inset 0 2px 0 color-mix(in srgb, var(--tf-surface-raised) 38%, transparent),
+    inset 0 -3px 7px color-mix(in srgb, var(--tf-accent) 20%, transparent);
+}
+
+.mobile-bottom-bar--trips .mobile-bottom-bar__create :deep(svg) {
+  width: 29px;
+  height: 29px;
 }
 
 @media (prefers-reduced-motion: no-preference) {

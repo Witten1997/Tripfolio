@@ -15,6 +15,8 @@ Trip:
       timezone,
       currency_code,
       budget_amount,
+      route_short_mode,
+      route_short_distance_meters,
       version,
       created_at,
       updated_at,
@@ -53,6 +55,15 @@ Trip:
       nullable: true
       description: 总预算；null 表示未设置，"0.00" 表示零预算；格式同 Money
       pattern: '^[0-9]{1,14}(\.[0-9]{1,4})?$'
+    route_short_mode:
+      type: string
+      enum: [walking, cycling]
+      description: 直线距离位于短途区间时自动采用的方式
+    route_short_distance_meters:
+      type: integer
+      minimum: 0
+      maximum: 50000
+      description: 短途区间上限，超过后自动采用驾车
     version:
       $ref: ./write.yaml#/Version
     created_at:
@@ -93,12 +104,25 @@ TripListItem:
   allOf:
     - $ref: '#/Trip'
     - type: object
-      required: [phase]
+      required: [phase, route_status, total_distance_meters, total_duration_seconds]
       properties:
         phase:
           type: string
           enum: [planned, ongoing, ended]
           description: planned 待出发 / ongoing 旅行中 / ended 已结束
+        route_status:
+          type: string
+          enum: [stale, calculating, ready, incomplete, empty]
+        total_distance_meters:
+          type: integer
+          format: int64
+          nullable: true
+          minimum: 0
+        total_duration_seconds:
+          type: integer
+          format: int64
+          nullable: true
+          minimum: 0
 
 TrashedTrip:
   description: 回收站中的旅行；按 purge_after_at 展示剩余保留时间，能否恢复以服务端判定为准
@@ -213,6 +237,13 @@ TripPatch:
       type: string
       nullable: true
       pattern: '^[0-9]{1,14}(\.[0-9]{1,4})?$'
+    route_short_mode:
+      type: string
+      enum: [walking, cycling]
+    route_short_distance_meters:
+      type: integer
+      minimum: 0
+      maximum: 50000
 
 ArchiveRequest:
   type: object

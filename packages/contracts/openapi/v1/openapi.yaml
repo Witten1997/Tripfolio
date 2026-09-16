@@ -108,6 +108,12 @@ paths:
     $ref: ./paths/itinerary-items.yaml#/reorder
   /trips/{trip_id}/itinerary-items/{item_id}:
     $ref: ./paths/itinerary-items.yaml#/item
+  /trips/{trip_id}/route-plan:
+    $ref: ./paths/route-plan.yaml#/plan
+  /trips/{trip_id}/route-plan/recalculate:
+    $ref: ./paths/route-plan.yaml#/recalculate
+  /trips/{trip_id}/route-legs/{leg_id}:
+    $ref: ./paths/route-plan.yaml#/leg
   /trips/{trip_id}/packing-items:
     $ref: ./paths/packing-items.yaml#/collection
   /trips/{trip_id}/packing-items/batch:
@@ -296,6 +302,18 @@ components:
       $ref: ./schemas/itinerary.yaml#/ItineraryReorderDay
     ItineraryReorder:
       $ref: ./schemas/itinerary.yaml#/ItineraryReorder
+    RoutePlan:
+      $ref: ./schemas/route-plan.yaml#/RoutePlan
+    RoutePreference:
+      $ref: ./schemas/route-plan.yaml#/RoutePreference
+    RouteSummary:
+      $ref: ./schemas/route-plan.yaml#/RouteSummary
+    RouteLeg:
+      $ref: ./schemas/route-plan.yaml#/RouteLeg
+    RoutePlanResponse:
+      $ref: ./schemas/route-plan.yaml#/RoutePlanResponse
+    RouteLegModePatch:
+      $ref: ./schemas/route-plan.yaml#/RouteLegModePatch
     PackingCategory:
       $ref: ./schemas/packing.yaml#/PackingCategory
     PackingStatus:

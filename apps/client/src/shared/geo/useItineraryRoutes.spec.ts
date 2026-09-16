@@ -177,10 +177,8 @@ describe('行程自动算路', () => {
     expect(calculateRoute).toHaveBeenCalledTimes(7)
   })
 
-  it('请求间隔不小于 1.1 秒，持续失败只重试两次且不跳过后续路段', async () => {
-    const starts: number[] = []
+  it('并发请求各路段，持续失败只重试两次且不跳过后续路段', async () => {
     vi.mocked(calculateRoute).mockImplementation(async (a, b, mode) => {
-      starts.push(Date.now())
       if ((a as ItineraryItem).id === 'b')
         throw new GeoRouteError(
           {
@@ -199,7 +197,6 @@ describe('行程自动算路', () => {
     expect(calculateRoute).toHaveBeenCalledTimes(7)
     expect(result.failedCount.value).toBe(1)
     expect(result.readyCount.value).toBe(4)
-    expect(starts.slice(1).every((start, i) => start - starts[i]! >= 1100)).toBe(true)
   })
 
   it.each([
@@ -215,7 +212,7 @@ describe('行程自动算路', () => {
     )
     const { result } = setup(6)
     await settle()
-    expect(calculateRoute).toHaveBeenCalledOnce()
+    expect(calculateRoute).toHaveBeenCalledTimes(3)
     expect(result.failedCount.value).toBe(5)
     expect(result.totals.value.distance).toBe(0)
   })
@@ -236,23 +233,77 @@ describe('行程自动算路', () => {
     const { scope } = setup(6)
     await nextTick()
     await vi.advanceTimersByTimeAsync(2900)
-    expect(calculateRoute).toHaveBeenCalledOnce()
+    expect(calculateRoute).toHaveBeenCalledTimes(3)
     scope.stop()
     await vi.runAllTimersAsync()
-    expect(calculateRoute).toHaveBeenCalledOnce()
+    expect(calculateRoute).toHaveBeenCalledTimes(3)
     expect(vi.getTimerCount()).toBe(0)
   })
 
-  it('平滑排队中切换模式，未开始的旧路段不会继续请求', async () => {
+  it('切换模式会取消已发出的旧方式请求，并立即计算新方式', async () => {
+    vi.mocked(calculateRoute).mockImplementation((a, b, mode) => {
+      if (mode === 'driving') return new Promise(() => {})
+      return Promise.resolve(route(a, b, mode))
+    })
     const { mode, result } = setup(6)
-    await vi.advanceTimersByTimeAsync(100)
-    expect(calculateRoute).toHaveBeenCalledOnce()
+    await nextTick()
+    await vi.runAllTimersAsync()
+    await nextTick()
+    const oldSignals = vi.mocked(calculateRoute).mock.calls.map((call) => call[3])
+    expect(calculateRoute).toHaveBeenCalledTimes(3)
     mode.value = 'walking'
     await settle()
+    expect(oldSignals.every((signal) => signal?.aborted)).toBe(true)
     expect(
       vi.mocked(calculateRoute).mock.calls.filter((call) => call[2] === 'driving'),
-    ).toHaveLength(1)
+    ).toHaveLength(3)
     expect(result.readyCount.value).toBe(5)
     expect(result.legs.value.every((leg) => leg.route?.mode === 'walking')).toBe(true)
+  })
+
+  it('按每段方式拆分混合路线，只批量计算连续驾车段', async () => {
+    vi.mocked(calculateTripRoutes).mockImplementation(async (points, mode) =>
+      points.slice(0, -1).map((point, index) => route(point, points[index + 1]!, mode)),
+    )
+    const list = shallowRef(items(6))
+    const modes: Record<string, TravelMode> = {
+      'a>b': 'driving',
+      'b>c': 'driving',
+      'c>d': 'walking',
+      'd>e': 'driving',
+      'e>f': 'driving',
+    }
+    const scope = effectScope()
+    scopes.push(scope)
+    const result = scope.run(() =>
+      useItineraryRoutes(
+        () => list.value,
+        (leg) => modes[leg.id] ?? 'driving',
+      ),
+    )!
+    await settle()
+    expect(calculateTripRoutes).toHaveBeenCalledTimes(2)
+    expect(vi.mocked(calculateTripRoutes).mock.calls.map((call) => call[0])).toEqual([
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'a' }),
+        expect.objectContaining({ id: 'c' }),
+      ]),
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'd' }),
+        expect.objectContaining({ id: 'f' }),
+      ]),
+    ])
+    expect(calculateRoute).toHaveBeenCalledOnce()
+    expect(vi.mocked(calculateRoute).mock.calls[0]?.[2]).toBe('walking')
+    expect(result.legs.value.map((leg) => leg.mode)).toEqual([
+      'driving',
+      'driving',
+      'walking',
+      'driving',
+      'driving',
+    ])
+    expect(
+      result.paths.value.filter((path) => path.kind === 'road').map((path) => path.mode),
+    ).toEqual(['driving', 'driving', 'walking', 'driving', 'driving'])
   })
 })

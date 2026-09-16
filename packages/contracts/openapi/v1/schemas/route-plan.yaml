@@ -1,0 +1,144 @@
+RoutePlan:
+  type: object
+  x-go-type: routeplan.Plan
+  x-go-type-import:
+    path: tripfolio/server/internal/modules/travel/routeplan
+  required: [preference, summary, legs]
+  properties:
+    preference:
+      $ref: '#/RoutePreference'
+    summary:
+      $ref: '#/RouteSummary'
+    legs:
+      type: array
+      items:
+        $ref: '#/RouteLeg'
+
+RoutePreference:
+  type: object
+  required: [short_mode, short_distance_meters]
+  properties:
+    short_mode:
+      type: string
+      enum: [walking, cycling]
+    short_distance_meters:
+      type: integer
+      minimum: 0
+      maximum: 50000
+
+RouteSummary:
+  type: object
+  required:
+    [
+      revision,
+      status,
+      total_distance_meters,
+      total_duration_seconds,
+      ready_leg_count,
+      total_leg_count,
+      missing_point_count,
+      calculated_at,
+    ]
+  properties:
+    revision:
+      $ref: ./write.yaml#/Version
+    status:
+      type: string
+      enum: [stale, calculating, ready, incomplete, empty]
+    total_distance_meters:
+      type: integer
+      format: int64
+      nullable: true
+      minimum: 0
+    total_duration_seconds:
+      type: integer
+      format: int64
+      nullable: true
+      minimum: 0
+    ready_leg_count:
+      type: integer
+      minimum: 0
+    total_leg_count:
+      type: integer
+      minimum: 0
+    missing_point_count:
+      type: integer
+      minimum: 0
+    calculated_at:
+      type: string
+      format: date-time
+      nullable: true
+
+RouteLeg:
+  type: object
+  required:
+    [
+      id,
+      from_item_id,
+      to_item_id,
+      version,
+      mode,
+      mode_source,
+      direct_distance_meters,
+      route_distance_meters,
+      route_duration_seconds,
+      status,
+      error_code,
+      calculated_at,
+    ]
+  properties:
+    id:
+      type: string
+      format: uuid
+    from_item_id:
+      type: string
+      format: uuid
+    to_item_id:
+      type: string
+      format: uuid
+    version:
+      $ref: ./write.yaml#/Version
+    mode:
+      $ref: ./geo.yaml#/GeoTravelMode
+    mode_source:
+      type: string
+      enum: [preference, manual]
+    direct_distance_meters:
+      type: integer
+      format: int64
+      minimum: 0
+    route_distance_meters:
+      type: integer
+      format: int64
+      nullable: true
+      minimum: 0
+    route_duration_seconds:
+      type: integer
+      format: int64
+      nullable: true
+      minimum: 0
+    status:
+      type: string
+      enum: [stale, ready, failed]
+    error_code:
+      type: string
+      nullable: true
+    calculated_at:
+      type: string
+      format: date-time
+      nullable: true
+
+RoutePlanResponse:
+  type: object
+  required: [data]
+  properties:
+    data:
+      $ref: '#/RoutePlan'
+
+RouteLegModePatch:
+  type: object
+  required: [mode]
+  properties:
+    mode:
+      type: string
+      enum: [auto, driving, walking, cycling]

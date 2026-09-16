@@ -1427,6 +1427,101 @@ paths:
           $ref: '#/components/responses/PreconditionFailed'
         '428':
           $ref: '#/components/responses/VersionRequired'
+  /trips/{trip_id}/route-plan:
+    parameters:
+      - name: trip_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags:
+        - travel
+      operationId: getRoutePlan
+      summary: 获取旅行相邻点位的持久化路线计划与汇总
+      responses:
+        '200':
+          description: 路线计划
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoutePlanResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /trips/{trip_id}/route-plan/recalculate:
+    parameters:
+      - name: trip_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      tags:
+        - travel
+      operationId: recalculateRoutePlan
+      summary: 将路线计划置为待计算并投递后台任务
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: 已投递
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WriteResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /trips/{trip_id}/route-legs/{leg_id}:
+    parameters:
+      - name: trip_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: leg_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    patch:
+      tags:
+        - travel
+      operationId: updateRouteLegMode
+      summary: 手动选择某一路段的交通方式，或恢复自动选择
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RouteLegModePatch'
+      responses:
+        '200':
+          description: 已更新并投递重算
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WriteResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '412':
+          $ref: '#/components/responses/PreconditionFailed'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '428':
+          $ref: '#/components/responses/VersionRequired'
   /trips/{trip_id}/packing-items:
     parameters:
       - name: trip_id
@@ -3282,6 +3377,8 @@ components:
         - timezone
         - currency_code
         - budget_amount
+        - route_short_mode
+        - route_short_distance_meters
         - version
         - created_at
         - updated_at
@@ -3319,6 +3416,17 @@ components:
           nullable: true
           description: 总预算；null 表示未设置，"0.00" 表示零预算；格式同 Money
           pattern: ^[0-9]{1,14}(\.[0-9]{1,4})?$
+        route_short_mode:
+          type: string
+          enum:
+            - walking
+            - cycling
+          description: 直线距离位于短途区间时自动采用的方式
+        route_short_distance_meters:
+          type: integer
+          minimum: 0
+          maximum: 50000
+          description: 短途区间上限，超过后自动采用驾车
         version:
           $ref: '#/components/schemas/Version'
         created_at:
@@ -3360,6 +3468,9 @@ components:
         - type: object
           required:
             - phase
+            - route_status
+            - total_distance_meters
+            - total_duration_seconds
           properties:
             phase:
               type: string
@@ -3368,6 +3479,24 @@ components:
                 - ongoing
                 - ended
               description: planned 待出发 / ongoing 旅行中 / ended 已结束
+            route_status:
+              type: string
+              enum:
+                - stale
+                - calculating
+                - ready
+                - incomplete
+                - empty
+            total_distance_meters:
+              type: integer
+              format: int64
+              nullable: true
+              minimum: 0
+            total_duration_seconds:
+              type: integer
+              format: int64
+              nullable: true
+              minimum: 0
     TrashedTrip:
       description: 回收站中的旅行；按 purge_after_at 展示剩余保留时间，能否恢复以服务端判定为准
       x-go-type: trip.Resource
@@ -3485,6 +3614,15 @@ components:
           type: string
           nullable: true
           pattern: ^[0-9]{1,14}(\.[0-9]{1,4})?$
+        route_short_mode:
+          type: string
+          enum:
+            - walking
+            - cycling
+        route_short_distance_meters:
+          type: integer
+          minimum: 0
+          maximum: 50000
     ArchiveRequest:
       type: object
       required:
@@ -3845,6 +3983,164 @@ components:
           minItems: 1
           items:
             $ref: '#/components/schemas/ItineraryReorderDay'
+    RoutePlan:
+      type: object
+      x-go-type: routeplan.Plan
+      x-go-type-import:
+        path: tripfolio/server/internal/modules/travel/routeplan
+      required:
+        - preference
+        - summary
+        - legs
+      properties:
+        preference:
+          $ref: '#/components/schemas/RoutePreference'
+        summary:
+          $ref: '#/components/schemas/RouteSummary'
+        legs:
+          type: array
+          items:
+            $ref: '#/components/schemas/RouteLeg'
+    RoutePreference:
+      type: object
+      required:
+        - short_mode
+        - short_distance_meters
+      properties:
+        short_mode:
+          type: string
+          enum:
+            - walking
+            - cycling
+        short_distance_meters:
+          type: integer
+          minimum: 0
+          maximum: 50000
+    RouteSummary:
+      type: object
+      required:
+        - revision
+        - status
+        - total_distance_meters
+        - total_duration_seconds
+        - ready_leg_count
+        - total_leg_count
+        - missing_point_count
+        - calculated_at
+      properties:
+        revision:
+          $ref: '#/components/schemas/Version'
+        status:
+          type: string
+          enum:
+            - stale
+            - calculating
+            - ready
+            - incomplete
+            - empty
+        total_distance_meters:
+          type: integer
+          format: int64
+          nullable: true
+          minimum: 0
+        total_duration_seconds:
+          type: integer
+          format: int64
+          nullable: true
+          minimum: 0
+        ready_leg_count:
+          type: integer
+          minimum: 0
+        total_leg_count:
+          type: integer
+          minimum: 0
+        missing_point_count:
+          type: integer
+          minimum: 0
+        calculated_at:
+          type: string
+          format: date-time
+          nullable: true
+    RouteLeg:
+      type: object
+      required:
+        - id
+        - from_item_id
+        - to_item_id
+        - version
+        - mode
+        - mode_source
+        - direct_distance_meters
+        - route_distance_meters
+        - route_duration_seconds
+        - status
+        - error_code
+        - calculated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        from_item_id:
+          type: string
+          format: uuid
+        to_item_id:
+          type: string
+          format: uuid
+        version:
+          $ref: '#/components/schemas/Version'
+        mode:
+          $ref: '#/components/schemas/GeoTravelMode'
+        mode_source:
+          type: string
+          enum:
+            - preference
+            - manual
+        direct_distance_meters:
+          type: integer
+          format: int64
+          minimum: 0
+        route_distance_meters:
+          type: integer
+          format: int64
+          nullable: true
+          minimum: 0
+        route_duration_seconds:
+          type: integer
+          format: int64
+          nullable: true
+          minimum: 0
+        status:
+          type: string
+          enum:
+            - stale
+            - ready
+            - failed
+        error_code:
+          type: string
+          nullable: true
+        calculated_at:
+          type: string
+          format: date-time
+          nullable: true
+    RoutePlanResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: '#/components/schemas/RoutePlan'
+    RouteLegModePatch:
+      type: object
+      required:
+        - mode
+      properties:
+        mode:
+          type: string
+          enum:
+            - auto
+            - driving
+            - walking
+            - cycling
     PackingCategory:
       type: string
       description: 物资分类；取值清单见 Metadata.packing_categories

@@ -12,14 +12,16 @@ import (
 
 // Values 是旅行可编辑字段的集合；Update 整体写回。
 type Values struct {
-	Name         string
-	StartDate    types.Date
-	EndDate      types.Date
-	Destination  string
-	Notes        string
-	Timezone     string
-	CurrencyCode string
-	BudgetAmount *string
+	Name                     string
+	StartDate                types.Date
+	EndDate                  types.Date
+	Destination              string
+	Notes                    string
+	Timezone                 string
+	CurrencyCode             string
+	BudgetAmount             *string
+	RouteShortMode           string
+	RouteShortDistanceMeters int32
 }
 
 // Values 取出资源的可编辑字段。
@@ -27,6 +29,7 @@ func (r Resource) Values() Values {
 	return Values{
 		Name: r.Name, StartDate: r.StartDate, EndDate: r.EndDate, Destination: r.Destination, Notes: r.Notes,
 		Timezone: r.Timezone, CurrencyCode: r.CurrencyCode, BudgetAmount: r.BudgetAmount,
+		RouteShortMode: r.RouteShortMode, RouteShortDistanceMeters: r.RouteShortDistanceMeters,
 	}
 }
 
@@ -70,6 +73,7 @@ type Repo interface {
 	AccountDefaultTimezone(ctx context.Context, accountID uuid.UUID) (string, error)
 	Insert(ctx context.Context, accountID uuid.UUID, r Resource) (Resource, error)
 	Update(ctx context.Context, accountID, id uuid.UUID, v Values, now time.Time) (Resource, error)
+	InvalidateRouteSummary(ctx context.Context, accountID, tripID uuid.UUID, now time.Time) (int64, error)
 	SetArchived(ctx context.Context, accountID, id uuid.UUID, archivedAt *time.Time, now time.Time) (Resource, error)
 	Trash(ctx context.Context, accountID, id uuid.UUID, now, purgeAfter time.Time) (Resource, error)
 	Restore(ctx context.Context, accountID, id uuid.UUID, now time.Time) (Resource, error)

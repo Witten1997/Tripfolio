@@ -60,7 +60,7 @@ func (q *Queries) GetActiveTripDeletionJob(ctx context.Context, arg GetActiveTri
 
 const getTrip = `-- name: GetTrip :one
 
-SELECT id, account_id, version, created_at, updated_at, deleted_at, name, start_date, end_date, destination, notes, timezone, currency_code, currency_locked_at, budget_amount, archived_at, purge_after_at, purge_requested_at FROM trips
+SELECT id, account_id, version, created_at, updated_at, deleted_at, name, start_date, end_date, destination, notes, timezone, currency_code, currency_locked_at, budget_amount, archived_at, purge_after_at, purge_requested_at, route_short_mode, route_short_distance_meters FROM trips
 WHERE account_id = $1 AND id = $2
 `
 
@@ -92,12 +92,14 @@ func (q *Queries) GetTrip(ctx context.Context, arg GetTripParams) (Trip, error) 
 		&i.ArchivedAt,
 		&i.PurgeAfterAt,
 		&i.PurgeRequestedAt,
+		&i.RouteShortMode,
+		&i.RouteShortDistanceMeters,
 	)
 	return i, err
 }
 
 const getTripForUpdate = `-- name: GetTripForUpdate :one
-SELECT id, account_id, version, created_at, updated_at, deleted_at, name, start_date, end_date, destination, notes, timezone, currency_code, currency_locked_at, budget_amount, archived_at, purge_after_at, purge_requested_at FROM trips
+SELECT id, account_id, version, created_at, updated_at, deleted_at, name, start_date, end_date, destination, notes, timezone, currency_code, currency_locked_at, budget_amount, archived_at, purge_after_at, purge_requested_at, route_short_mode, route_short_distance_meters FROM trips
 WHERE account_id = $1 AND id = $2
 FOR UPDATE
 `
@@ -129,29 +131,35 @@ func (q *Queries) GetTripForUpdate(ctx context.Context, arg GetTripForUpdatePara
 		&i.ArchivedAt,
 		&i.PurgeAfterAt,
 		&i.PurgeRequestedAt,
+		&i.RouteShortMode,
+		&i.RouteShortDistanceMeters,
 	)
 	return i, err
 }
 
 const insertTrip = `-- name: InsertTrip :one
-INSERT INTO trips (id, account_id, name, start_date, end_date, destination, notes, timezone, currency_code, budget_amount, created_at, updated_at)
+INSERT INTO trips (id, account_id, name, start_date, end_date, destination, notes, timezone, currency_code, budget_amount,
+    route_short_mode, route_short_distance_meters, created_at, updated_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7,
-        $8, $9, $10, $11, $11)
-RETURNING id, account_id, version, created_at, updated_at, deleted_at, name, start_date, end_date, destination, notes, timezone, currency_code, currency_locked_at, budget_amount, archived_at, purge_after_at, purge_requested_at
+        $8, $9, $10, $11,
+        $12, $13, $13)
+RETURNING id, account_id, version, created_at, updated_at, deleted_at, name, start_date, end_date, destination, notes, timezone, currency_code, currency_locked_at, budget_amount, archived_at, purge_after_at, purge_requested_at, route_short_mode, route_short_distance_meters
 `
 
 type InsertTripParams struct {
-	ID           uuid.UUID
-	AccountID    uuid.UUID
-	Name         string
-	StartDate    time.Time
-	EndDate      time.Time
-	Destination  string
-	Notes        string
-	Timezone     string
-	CurrencyCode string
-	BudgetAmount *string
-	CreatedAt    time.Time
+	ID                       uuid.UUID
+	AccountID                uuid.UUID
+	Name                     string
+	StartDate                time.Time
+	EndDate                  time.Time
+	Destination              string
+	Notes                    string
+	Timezone                 string
+	CurrencyCode             string
+	BudgetAmount             *string
+	RouteShortMode           string
+	RouteShortDistanceMeters int32
+	CreatedAt                time.Time
 }
 
 func (q *Queries) InsertTrip(ctx context.Context, arg InsertTripParams) (Trip, error) {
@@ -166,6 +174,8 @@ func (q *Queries) InsertTrip(ctx context.Context, arg InsertTripParams) (Trip, e
 		arg.Timezone,
 		arg.CurrencyCode,
 		arg.BudgetAmount,
+		arg.RouteShortMode,
+		arg.RouteShortDistanceMeters,
 		arg.CreatedAt,
 	)
 	var i Trip
@@ -188,6 +198,8 @@ func (q *Queries) InsertTrip(ctx context.Context, arg InsertTripParams) (Trip, e
 		&i.ArchivedAt,
 		&i.PurgeAfterAt,
 		&i.PurgeRequestedAt,
+		&i.RouteShortMode,
+		&i.RouteShortDistanceMeters,
 	)
 	return i, err
 }
@@ -238,7 +250,7 @@ func (q *Queries) InsertTripDeletionJob(ctx context.Context, arg InsertTripDelet
 }
 
 const listTrashedTrips = `-- name: ListTrashedTrips :many
-SELECT id, account_id, version, created_at, updated_at, deleted_at, name, start_date, end_date, destination, notes, timezone, currency_code, currency_locked_at, budget_amount, archived_at, purge_after_at, purge_requested_at FROM trips
+SELECT id, account_id, version, created_at, updated_at, deleted_at, name, start_date, end_date, destination, notes, timezone, currency_code, currency_locked_at, budget_amount, archived_at, purge_after_at, purge_requested_at, route_short_mode, route_short_distance_meters FROM trips
 WHERE account_id = $1
   AND deleted_at IS NOT NULL
   AND ($2::timestamptz IS NULL
@@ -287,6 +299,8 @@ func (q *Queries) ListTrashedTrips(ctx context.Context, arg ListTrashedTripsPara
 			&i.ArchivedAt,
 			&i.PurgeAfterAt,
 			&i.PurgeRequestedAt,
+			&i.RouteShortMode,
+			&i.RouteShortDistanceMeters,
 		); err != nil {
 			return nil, err
 		}
@@ -299,13 +313,17 @@ func (q *Queries) ListTrashedTrips(ctx context.Context, arg ListTrashedTripsPara
 }
 
 const listTripsByStartDate = `-- name: ListTripsByStartDate :many
-SELECT t.id, t.account_id, t.version, t.created_at, t.updated_at, t.deleted_at, t.name, t.start_date, t.end_date, t.destination, t.notes, t.timezone, t.currency_code, t.currency_locked_at, t.budget_amount, t.archived_at, t.purge_after_at, t.purge_requested_at,
+SELECT t.id, t.account_id, t.version, t.created_at, t.updated_at, t.deleted_at, t.name, t.start_date, t.end_date, t.destination, t.notes, t.timezone, t.currency_code, t.currency_locked_at, t.budget_amount, t.archived_at, t.purge_after_at, t.purge_requested_at, t.route_short_mode, t.route_short_distance_meters,
        CASE
            WHEN ($1::timestamptz AT TIME ZONE t.timezone)::date < t.start_date THEN 'planned'
            WHEN ($1::timestamptz AT TIME ZONE t.timezone)::date > t.end_date THEN 'ended'
            ELSE 'ongoing'
-       END::text AS phase
+       END::text AS phase,
+       coalesce(rs.status, 'stale')::text AS route_status,
+       rs.total_distance_meters,
+       rs.total_duration_seconds
 FROM trips t
+LEFT JOIN trip_route_summaries rs ON rs.account_id = t.account_id AND rs.trip_id = t.id
 WHERE t.account_id = $2
   AND t.deleted_at IS NULL
   AND ($3::text = 'all'
@@ -336,8 +354,11 @@ type ListTripsByStartDateParams struct {
 }
 
 type ListTripsByStartDateRow struct {
-	Trip  Trip
-	Phase string
+	Trip                 Trip
+	Phase                string
+	RouteStatus          string
+	TotalDistanceMeters  *int64
+	TotalDurationSeconds *int64
 }
 
 // 列表：接口设计 3.9 TripFilters。q 由应用转义 LIKE 通配符；游标用行比较走 (account_id, start_date DESC, id DESC) 索引。
@@ -378,7 +399,12 @@ func (q *Queries) ListTripsByStartDate(ctx context.Context, arg ListTripsByStart
 			&i.Trip.ArchivedAt,
 			&i.Trip.PurgeAfterAt,
 			&i.Trip.PurgeRequestedAt,
+			&i.Trip.RouteShortMode,
+			&i.Trip.RouteShortDistanceMeters,
 			&i.Phase,
+			&i.RouteStatus,
+			&i.TotalDistanceMeters,
+			&i.TotalDurationSeconds,
 		); err != nil {
 			return nil, err
 		}
@@ -391,13 +417,17 @@ func (q *Queries) ListTripsByStartDate(ctx context.Context, arg ListTripsByStart
 }
 
 const listTripsByStartDateAsc = `-- name: ListTripsByStartDateAsc :many
-SELECT t.id, t.account_id, t.version, t.created_at, t.updated_at, t.deleted_at, t.name, t.start_date, t.end_date, t.destination, t.notes, t.timezone, t.currency_code, t.currency_locked_at, t.budget_amount, t.archived_at, t.purge_after_at, t.purge_requested_at,
+SELECT t.id, t.account_id, t.version, t.created_at, t.updated_at, t.deleted_at, t.name, t.start_date, t.end_date, t.destination, t.notes, t.timezone, t.currency_code, t.currency_locked_at, t.budget_amount, t.archived_at, t.purge_after_at, t.purge_requested_at, t.route_short_mode, t.route_short_distance_meters,
        CASE
            WHEN ($1::timestamptz AT TIME ZONE t.timezone)::date < t.start_date THEN 'planned'
            WHEN ($1::timestamptz AT TIME ZONE t.timezone)::date > t.end_date THEN 'ended'
            ELSE 'ongoing'
-       END::text AS phase
+       END::text AS phase,
+       coalesce(rs.status, 'stale')::text AS route_status,
+       rs.total_distance_meters,
+       rs.total_duration_seconds
 FROM trips t
+LEFT JOIN trip_route_summaries rs ON rs.account_id = t.account_id AND rs.trip_id = t.id
 WHERE t.account_id = $2
   AND t.deleted_at IS NULL
   AND ($3::text = 'all'
@@ -428,8 +458,11 @@ type ListTripsByStartDateAscParams struct {
 }
 
 type ListTripsByStartDateAscRow struct {
-	Trip  Trip
-	Phase string
+	Trip                 Trip
+	Phase                string
+	RouteStatus          string
+	TotalDistanceMeters  *int64
+	TotalDurationSeconds *int64
 }
 
 func (q *Queries) ListTripsByStartDateAsc(ctx context.Context, arg ListTripsByStartDateAscParams) ([]ListTripsByStartDateAscRow, error) {
@@ -469,7 +502,12 @@ func (q *Queries) ListTripsByStartDateAsc(ctx context.Context, arg ListTripsBySt
 			&i.Trip.ArchivedAt,
 			&i.Trip.PurgeAfterAt,
 			&i.Trip.PurgeRequestedAt,
+			&i.Trip.RouteShortMode,
+			&i.Trip.RouteShortDistanceMeters,
 			&i.Phase,
+			&i.RouteStatus,
+			&i.TotalDistanceMeters,
+			&i.TotalDurationSeconds,
 		); err != nil {
 			return nil, err
 		}
@@ -482,13 +520,17 @@ func (q *Queries) ListTripsByStartDateAsc(ctx context.Context, arg ListTripsBySt
 }
 
 const listTripsByUpdatedAt = `-- name: ListTripsByUpdatedAt :many
-SELECT t.id, t.account_id, t.version, t.created_at, t.updated_at, t.deleted_at, t.name, t.start_date, t.end_date, t.destination, t.notes, t.timezone, t.currency_code, t.currency_locked_at, t.budget_amount, t.archived_at, t.purge_after_at, t.purge_requested_at,
+SELECT t.id, t.account_id, t.version, t.created_at, t.updated_at, t.deleted_at, t.name, t.start_date, t.end_date, t.destination, t.notes, t.timezone, t.currency_code, t.currency_locked_at, t.budget_amount, t.archived_at, t.purge_after_at, t.purge_requested_at, t.route_short_mode, t.route_short_distance_meters,
        CASE
            WHEN ($1::timestamptz AT TIME ZONE t.timezone)::date < t.start_date THEN 'planned'
            WHEN ($1::timestamptz AT TIME ZONE t.timezone)::date > t.end_date THEN 'ended'
            ELSE 'ongoing'
-       END::text AS phase
+       END::text AS phase,
+       coalesce(rs.status, 'stale')::text AS route_status,
+       rs.total_distance_meters,
+       rs.total_duration_seconds
 FROM trips t
+LEFT JOIN trip_route_summaries rs ON rs.account_id = t.account_id AND rs.trip_id = t.id
 WHERE t.account_id = $2
   AND t.deleted_at IS NULL
   AND ($3::text = 'all'
@@ -519,8 +561,11 @@ type ListTripsByUpdatedAtParams struct {
 }
 
 type ListTripsByUpdatedAtRow struct {
-	Trip  Trip
-	Phase string
+	Trip                 Trip
+	Phase                string
+	RouteStatus          string
+	TotalDistanceMeters  *int64
+	TotalDurationSeconds *int64
 }
 
 func (q *Queries) ListTripsByUpdatedAt(ctx context.Context, arg ListTripsByUpdatedAtParams) ([]ListTripsByUpdatedAtRow, error) {
@@ -560,7 +605,12 @@ func (q *Queries) ListTripsByUpdatedAt(ctx context.Context, arg ListTripsByUpdat
 			&i.Trip.ArchivedAt,
 			&i.Trip.PurgeAfterAt,
 			&i.Trip.PurgeRequestedAt,
+			&i.Trip.RouteShortMode,
+			&i.Trip.RouteShortDistanceMeters,
 			&i.Phase,
+			&i.RouteStatus,
+			&i.TotalDistanceMeters,
+			&i.TotalDurationSeconds,
 		); err != nil {
 			return nil, err
 		}
@@ -576,7 +626,7 @@ const requestTripPurge = `-- name: RequestTripPurge :one
 UPDATE trips
 SET purge_requested_at = $1, version = version + 1, updated_at = $1
 WHERE account_id = $2 AND id = $3
-RETURNING id, account_id, version, created_at, updated_at, deleted_at, name, start_date, end_date, destination, notes, timezone, currency_code, currency_locked_at, budget_amount, archived_at, purge_after_at, purge_requested_at
+RETURNING id, account_id, version, created_at, updated_at, deleted_at, name, start_date, end_date, destination, notes, timezone, currency_code, currency_locked_at, budget_amount, archived_at, purge_after_at, purge_requested_at, route_short_mode, route_short_distance_meters
 `
 
 type RequestTripPurgeParams struct {
@@ -607,6 +657,8 @@ func (q *Queries) RequestTripPurge(ctx context.Context, arg RequestTripPurgePara
 		&i.ArchivedAt,
 		&i.PurgeAfterAt,
 		&i.PurgeRequestedAt,
+		&i.RouteShortMode,
+		&i.RouteShortDistanceMeters,
 	)
 	return i, err
 }
@@ -615,7 +667,7 @@ const restoreTrip = `-- name: RestoreTrip :one
 UPDATE trips
 SET deleted_at = NULL, purge_after_at = NULL, version = version + 1, updated_at = $1
 WHERE account_id = $2 AND id = $3
-RETURNING id, account_id, version, created_at, updated_at, deleted_at, name, start_date, end_date, destination, notes, timezone, currency_code, currency_locked_at, budget_amount, archived_at, purge_after_at, purge_requested_at
+RETURNING id, account_id, version, created_at, updated_at, deleted_at, name, start_date, end_date, destination, notes, timezone, currency_code, currency_locked_at, budget_amount, archived_at, purge_after_at, purge_requested_at, route_short_mode, route_short_distance_meters
 `
 
 type RestoreTripParams struct {
@@ -646,6 +698,8 @@ func (q *Queries) RestoreTrip(ctx context.Context, arg RestoreTripParams) (Trip,
 		&i.ArchivedAt,
 		&i.PurgeAfterAt,
 		&i.PurgeRequestedAt,
+		&i.RouteShortMode,
+		&i.RouteShortDistanceMeters,
 	)
 	return i, err
 }
@@ -654,7 +708,7 @@ const setTripArchived = `-- name: SetTripArchived :one
 UPDATE trips
 SET archived_at = $1, version = version + 1, updated_at = $2
 WHERE account_id = $3 AND id = $4
-RETURNING id, account_id, version, created_at, updated_at, deleted_at, name, start_date, end_date, destination, notes, timezone, currency_code, currency_locked_at, budget_amount, archived_at, purge_after_at, purge_requested_at
+RETURNING id, account_id, version, created_at, updated_at, deleted_at, name, start_date, end_date, destination, notes, timezone, currency_code, currency_locked_at, budget_amount, archived_at, purge_after_at, purge_requested_at, route_short_mode, route_short_distance_meters
 `
 
 type SetTripArchivedParams struct {
@@ -691,6 +745,8 @@ func (q *Queries) SetTripArchived(ctx context.Context, arg SetTripArchivedParams
 		&i.ArchivedAt,
 		&i.PurgeAfterAt,
 		&i.PurgeRequestedAt,
+		&i.RouteShortMode,
+		&i.RouteShortDistanceMeters,
 	)
 	return i, err
 }
@@ -699,7 +755,7 @@ const trashTrip = `-- name: TrashTrip :one
 UPDATE trips
 SET deleted_at = $1, purge_after_at = $2, version = version + 1, updated_at = $1
 WHERE account_id = $3 AND id = $4
-RETURNING id, account_id, version, created_at, updated_at, deleted_at, name, start_date, end_date, destination, notes, timezone, currency_code, currency_locked_at, budget_amount, archived_at, purge_after_at, purge_requested_at
+RETURNING id, account_id, version, created_at, updated_at, deleted_at, name, start_date, end_date, destination, notes, timezone, currency_code, currency_locked_at, budget_amount, archived_at, purge_after_at, purge_requested_at, route_short_mode, route_short_distance_meters
 `
 
 type TrashTripParams struct {
@@ -736,6 +792,8 @@ func (q *Queries) TrashTrip(ctx context.Context, arg TrashTripParams) (Trip, err
 		&i.ArchivedAt,
 		&i.PurgeAfterAt,
 		&i.PurgeRequestedAt,
+		&i.RouteShortMode,
+		&i.RouteShortDistanceMeters,
 	)
 	return i, err
 }
@@ -834,23 +892,26 @@ const updateTrip = `-- name: UpdateTrip :one
 UPDATE trips
 SET name = $1, start_date = $2, end_date = $3, destination = $4,
     notes = $5, timezone = $6, currency_code = $7, budget_amount = $8,
-    version = version + 1, updated_at = $9
-WHERE account_id = $10 AND id = $11
-RETURNING id, account_id, version, created_at, updated_at, deleted_at, name, start_date, end_date, destination, notes, timezone, currency_code, currency_locked_at, budget_amount, archived_at, purge_after_at, purge_requested_at
+    route_short_mode = $9, route_short_distance_meters = $10,
+    version = version + 1, updated_at = $11
+WHERE account_id = $12 AND id = $13
+RETURNING id, account_id, version, created_at, updated_at, deleted_at, name, start_date, end_date, destination, notes, timezone, currency_code, currency_locked_at, budget_amount, archived_at, purge_after_at, purge_requested_at, route_short_mode, route_short_distance_meters
 `
 
 type UpdateTripParams struct {
-	Name         string
-	StartDate    time.Time
-	EndDate      time.Time
-	Destination  string
-	Notes        string
-	Timezone     string
-	CurrencyCode string
-	BudgetAmount *string
-	UpdatedAt    time.Time
-	AccountID    uuid.UUID
-	ID           uuid.UUID
+	Name                     string
+	StartDate                time.Time
+	EndDate                  time.Time
+	Destination              string
+	Notes                    string
+	Timezone                 string
+	CurrencyCode             string
+	BudgetAmount             *string
+	RouteShortMode           string
+	RouteShortDistanceMeters int32
+	UpdatedAt                time.Time
+	AccountID                uuid.UUID
+	ID                       uuid.UUID
 }
 
 func (q *Queries) UpdateTrip(ctx context.Context, arg UpdateTripParams) (Trip, error) {
@@ -863,6 +924,8 @@ func (q *Queries) UpdateTrip(ctx context.Context, arg UpdateTripParams) (Trip, e
 		arg.Timezone,
 		arg.CurrencyCode,
 		arg.BudgetAmount,
+		arg.RouteShortMode,
+		arg.RouteShortDistanceMeters,
 		arg.UpdatedAt,
 		arg.AccountID,
 		arg.ID,
@@ -887,6 +950,8 @@ func (q *Queries) UpdateTrip(ctx context.Context, arg UpdateTripParams) (Trip, e
 		&i.ArchivedAt,
 		&i.PurgeAfterAt,
 		&i.PurgeRequestedAt,
+		&i.RouteShortMode,
+		&i.RouteShortDistanceMeters,
 	)
 	return i, err
 }

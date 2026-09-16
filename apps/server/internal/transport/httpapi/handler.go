@@ -13,6 +13,7 @@ import (
 	"tripfolio/server/internal/modules/metadata"
 	"tripfolio/server/internal/modules/travel/itinerary"
 	"tripfolio/server/internal/modules/travel/packing"
+	"tripfolio/server/internal/modules/travel/routeplan"
 	"tripfolio/server/internal/modules/travel/share"
 	"tripfolio/server/internal/modules/travel/todo"
 	"tripfolio/server/internal/modules/travel/trip"
@@ -35,6 +36,7 @@ type Handler struct {
 	geo         *geo.Service
 	trips       *trip.Service
 	itinerary   *itinerary.Service
+	routePlans  *routeplan.Service
 	packing     *packing.Service
 	todos       *todo.Service
 	shares      *share.Service

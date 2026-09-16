@@ -15,6 +15,7 @@ import {
   routeKey,
   routeMapPaths,
 } from '@/shared/geo/itineraryRoute'
+import type { RouteLeg as ItineraryRouteLeg } from '@/shared/geo/itineraryRoute'
 
 export interface RouteState {
   status: 'loading' | 'ready' | 'failed'
@@ -25,11 +26,11 @@ export interface RouteState {
 // 只缓存供应商路线，不缓存账号、行程标题或业务记录；页面切换可复用，5 分钟失效。
 const cache = new Map<string, { route: GeoRoute; expires: number }>()
 const ttl = 5 * 60_000
-const requestInterval = 1100
 const retryBackoff = [1200, 2400]
 const maxAutoWait = 8000
 // 与服务端批量算路接口的坐标上限一致；超出时退回逐段算路。
 const batchMaxPoints = 50
+const requestConcurrency = 3
 
 function routeFailure(cause: unknown) {
   let message = '暂时无法计算，请稍后重试'
@@ -83,18 +84,26 @@ function remember(key: string, route: GeoRoute) {
   cache.set(key, { route, expires: Date.now() + ttl })
 }
 
-export function useItineraryRoutes(items: () => ItineraryItem[], mode: Ref<TravelMode>) {
+type ModeSource = Ref<TravelMode> | ((leg: ItineraryRouteLeg) => TravelMode)
+
+export function useItineraryRoutes(items: () => ItineraryItem[], modeSource: ModeSource) {
   const points = computed(() => itineraryWaypoints(items()))
   const segments = computed(() => itineraryLegs(points.value))
+  const selectedSegments = computed(() =>
+    segments.value.map((leg) => {
+      const mode = typeof modeSource === 'function' ? modeSource(leg) : modeSource.value
+      return { ...leg, mode, key: routeKey(leg.from, leg.to, mode) }
+    }),
+  )
   const states = shallowRef(new Map<string, RouteState>())
   const missingCount = computed(() => items().length - points.value.length)
   let generation = 0
   let controller: AbortController | undefined
 
   const legs = computed(() =>
-    segments.value.map((leg) => ({
+    selectedSegments.value.map((leg) => ({
       ...leg,
-      ...(states.value.get(routeKey(leg.from, leg.to, mode.value)) ?? {
+      ...(states.value.get(leg.key) ?? {
         status: 'loading' as const,
       }),
     })),
@@ -119,31 +128,26 @@ export function useItineraryRoutes(items: () => ItineraryItem[], mode: Ref<Trave
     controller?.abort()
     controller = new AbortController()
     const signal = controller.signal
-    const travelMode = mode.value
+    const requested = selectedSegments.value
     const next = new Map<string, RouteState>()
-    const queue = segments.value.filter((leg) => {
-      const key = routeKey(leg.from, leg.to, travelMode)
-      if (next.has(key)) return false
-      const route = cached(key)
-      next.set(key, route ? { status: 'ready', route } : { status: 'loading' })
-      return !route
+    const pending = new Map<string, (typeof requested)[number]>()
+    requested.forEach((leg) => {
+      if (next.has(leg.key)) return
+      const route = cached(leg.key)
+      next.set(leg.key, route ? { status: 'ready', route } : { status: 'loading' })
+      if (!route) pending.set(leg.key, leg)
     })
     states.value = next
-    let cursor = 0
     let unavailable: string | null = null
-    let lastStarted = -Infinity
     function update(key: string, value: RouteState) {
       if (request !== generation || signal.aborted) return
       states.value = new Map(states.value).set(key, value)
     }
-    async function requestLeg(leg: (typeof queue)[number]): Promise<GeoRoute> {
+    async function requestLeg(leg: (typeof requested)[number]): Promise<GeoRoute> {
       for (let attempt = 0; ; attempt++) {
-        if (!(await pause(requestInterval - (Date.now() - lastStarted), signal)))
-          throw new DOMException('请求已取消', 'AbortError')
         if (signal.aborted) throw new DOMException('请求已取消', 'AbortError')
-        lastStarted = Date.now()
         try {
-          return await calculateRoute(leg.from, leg.to, travelMode, signal)
+          return await calculateRoute(leg.from, leg.to, leg.mode, signal)
         } catch (cause) {
           if (signal.aborted) throw cause
           const failure = routeFailure(cause)
@@ -160,12 +164,12 @@ export function useItineraryRoutes(items: () => ItineraryItem[], mode: Ref<Trave
         }
       }
     }
-    // 串行、平滑请求；单段短暂失败仅重试该段，不跳过后续未请求的路段。
-    async function worker() {
-      while (cursor < queue.length && !signal.aborted) {
-        const leg = queue[cursor++]!
-        const key = routeKey(leg.from, leg.to, travelMode)
+    async function worker(queue: (typeof requested)[number][], cursor: { value: number }) {
+      while (cursor.value < queue.length && !signal.aborted) {
+        const leg = queue[cursor.value++]!
+        const key = leg.key
         if (unavailable) {
+          pending.delete(key)
           update(key, { status: 'failed', message: unavailable })
           continue
         }
@@ -173,49 +177,77 @@ export function useItineraryRoutes(items: () => ItineraryItem[], mode: Ref<Trave
           const route = await requestLeg(leg)
           if (signal.aborted || request !== generation) return
           remember(key, route)
+          pending.delete(key)
           update(key, { status: 'ready', route })
         } catch (cause) {
           if (signal.aborted || request !== generation) return
           const failure = routeFailure(cause)
           if (failure.stopsQueue) unavailable = failure.message
+          pending.delete(key)
           update(key, { status: 'failed', message: failure.message })
         }
       }
     }
-    // 驾车且段数 ≥2：先试一次批量算路。服务端把整趟合并成一次途经点请求（每 16 段一片），
-    // 等待时间与段数基本无关；失败就落到下面的逐段路径，保持每段可单独降级与错误分级。
-    if (travelMode === 'driving' && queue.length >= 2 && points.value.length <= batchMaxPoints) {
-      try {
-        const routes = await calculateTripRoutes(points.value, travelMode, signal)
-        if (request === generation && !signal.aborted) {
-          segments.value.forEach((leg, index) => {
-            const key = routeKey(leg.from, leg.to, travelMode)
-            const route = routes[index]
-            if (!route) {
-              // 服务端返回的段数与请求不一致（不该发生）：只把仍在等待的段标失败，避免一直转圈。
-              if (states.value.get(key)?.status === 'loading')
-                update(key, { status: 'failed', message: '暂时无法计算，请稍后重试' })
-              return
-            }
-            remember(key, route)
-            update(key, { status: 'ready', route })
-          })
-        }
-        return
-      } catch {
-        // 批量不可用（老服务端、上游缺分段明细、暂时性失败）：交给逐段路径处理。
-        if (signal.aborted || request !== generation) return
+
+    // 只合并连续驾车段。交通方式切换点自然成为分组边界，步行和骑行保持单段算路。
+    const drivingGroups: (typeof requested)[] = []
+    let run: typeof requested = []
+    function flushDrivingRun() {
+      for (let start = 0; start < run.length;) {
+        const remaining = run.length - start
+        let size = Math.min(batchMaxPoints - 1, remaining)
+        if (remaining - size === 1 && size > 2) size--
+        const group = run.slice(start, start + size)
+        if (group.length >= 2 && group.some((leg) => pending.has(leg.key)))
+          drivingGroups.push(group)
+        start += size
       }
+      run = []
     }
-    await worker()
+    requested.forEach((leg) => {
+      if (leg.mode === 'driving') run.push(leg)
+      else flushDrivingRun()
+    })
+    flushDrivingRun()
+
+    const batchedKeys = new Set(drivingGroups.flatMap((group) => group.map((leg) => leg.key)))
+    const directQueue = [...pending.values()].filter((leg) => !batchedKeys.has(leg.key))
+    async function runWorkers(queue: (typeof requested)[number][]) {
+      const cursor = { value: 0 }
+      await Promise.all(
+        Array.from({ length: Math.min(requestConcurrency, queue.length) }, () =>
+          worker(queue, cursor),
+        ),
+      )
+    }
+    const batchRequests = drivingGroups.map(async (group) => {
+      try {
+        const groupPoints = [group[0]!.from, ...group.map((leg) => leg.to)]
+        const routes = await calculateTripRoutes(groupPoints, 'driving', signal)
+        if (routes.length !== group.length) throw new Error('批量路线段数不匹配')
+        if (request !== generation || signal.aborted) return
+        group.forEach((leg, index) => {
+          const route = routes[index]!
+          remember(leg.key, route)
+          pending.delete(leg.key)
+          update(leg.key, { status: 'ready', route })
+        })
+      } catch {
+        // 老服务端或批量结果不可拆分时，保留待处理项并退回单段请求。
+      }
+    })
+    await Promise.all([Promise.all(batchRequests), runWorkers(directQueue)])
+    if (signal.aborted || request !== generation) return
+
+    await runWorkers([...pending.values()])
   }
 
   watch(
     () =>
       JSON.stringify([
-        mode.value,
-        segments.value.map((leg) => [
+        selectedSegments.value.map((leg) => [
           leg.id,
+          leg.mode,
           leg.from.latitude,
           leg.from.longitude,
           leg.to.latitude,

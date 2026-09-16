@@ -842,6 +842,64 @@ export type paths = {
         patch?: never;
         trace?: never;
     };
+    "/trips/{trip_id}/route-legs/{leg_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                leg_id: string;
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** 手动选择某一路段的交通方式，或恢复自动选择 */
+        patch: operations["updateRouteLegMode"];
+        trace?: never;
+    };
+    "/trips/{trip_id}/route-plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        /** 获取旅行相邻点位的持久化路线计划与汇总 */
+        get: operations["getRoutePlan"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/trips/{trip_id}/route-plan/recalculate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 将路线计划置为待计算并投递后台任务 */
+        post: operations["recalculateRoutePlan"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/trips/{trip_id}/share": {
         parameters: {
             query?: never;
@@ -1843,6 +1901,60 @@ export type components = {
             email: string;
             new_password: string;
         };
+        RouteLeg: {
+            /** Format: date-time */
+            calculated_at: string | null;
+            /** Format: int64 */
+            direct_distance_meters: number;
+            error_code: string | null;
+            /** Format: uuid */
+            from_item_id: string;
+            /** Format: uuid */
+            id: string;
+            mode: components["schemas"]["GeoTravelMode"];
+            /** @enum {string} */
+            mode_source: "preference" | "manual";
+            /** Format: int64 */
+            route_distance_meters: number | null;
+            /** Format: int64 */
+            route_duration_seconds: number | null;
+            /** @enum {string} */
+            status: "stale" | "ready" | "failed";
+            /** Format: uuid */
+            to_item_id: string;
+            version: components["schemas"]["Version"];
+        };
+        RouteLegModePatch: {
+            /** @enum {string} */
+            mode: "auto" | "driving" | "walking" | "cycling";
+        };
+        RoutePlan: {
+            legs: components["schemas"]["RouteLeg"][];
+            preference: components["schemas"]["RoutePreference"];
+            summary: components["schemas"]["RouteSummary"];
+        };
+        RoutePlanResponse: {
+            data: components["schemas"]["RoutePlan"];
+        };
+        RoutePreference: {
+            short_distance_meters: number;
+            /** @enum {string} */
+            short_mode: "walking" | "cycling";
+        };
+        RouteSummary: {
+            /** Format: date-time */
+            calculated_at: string | null;
+            missing_point_count: number;
+            ready_leg_count: number;
+            revision: components["schemas"]["Version"];
+            /** @enum {string} */
+            status: "stale" | "calculating" | "ready" | "incomplete" | "empty";
+            /** Format: int64 */
+            total_distance_meters: number | null;
+            /** Format: int64 */
+            total_duration_seconds: number | null;
+            total_leg_count: number;
+        };
         Session: {
             /** @enum {string} */
             client_kind: "web" | "android" | "harmony";
@@ -1989,6 +2101,13 @@ export type components = {
              * @description 已请求永久清理的时间，非空后不能再恢复
              */
             purge_requested_at: string | null;
+            /** @description 短途区间上限，超过后自动采用驾车 */
+            route_short_distance_meters: number;
+            /**
+             * @description 直线距离位于短途区间时自动采用的方式
+             * @enum {string}
+             */
+            route_short_mode: "walking" | "cycling";
             start_date: components["schemas"]["Date"];
             /** @description 本次旅行的唯一 IANA 时区，例如 Asia/Tokyo */
             timezone: string;
@@ -2026,6 +2145,12 @@ export type components = {
              * @enum {string}
              */
             phase: "planned" | "ongoing" | "ended";
+            /** @enum {string} */
+            route_status: "stale" | "calculating" | "ready" | "incomplete" | "empty";
+            /** Format: int64 */
+            total_distance_meters: number | null;
+            /** Format: int64 */
+            total_duration_seconds: number | null;
         };
         /** @description Page<TripListItem>；键集分页，游标绑定账号、筛选与排序 */
         TripPage: {
@@ -2046,6 +2171,9 @@ export type components = {
             end_date?: components["schemas"]["Date"];
             name?: string;
             notes?: string;
+            route_short_distance_meters?: number;
+            /** @enum {string} */
+            route_short_mode?: "walking" | "cycling";
             start_date?: components["schemas"]["Date"];
             timezone?: string;
         };
@@ -4156,6 +4284,94 @@ export interface operations {
             409: components["responses"]["Conflict"];
             410: components["responses"]["Gone"];
             422: components["responses"]["ValidationFailed"];
+        };
+    };
+    updateRouteLegMode: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 写请求的操作编号（UUID）；相同成功操作重试复用同一键 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /** @description 客户端所基于的资源版本，形如 "7"（带引号） */
+                "If-Match"?: components["parameters"]["IfMatch"];
+            };
+            path: {
+                leg_id: string;
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RouteLegModePatch"];
+            };
+        };
+        responses: {
+            /** @description 已更新并投递重算 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WriteResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            412: components["responses"]["PreconditionFailed"];
+            422: components["responses"]["ValidationFailed"];
+            428: components["responses"]["VersionRequired"];
+        };
+    };
+    getRoutePlan: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 路线计划 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoutePlanResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    recalculateRoutePlan: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 写请求的操作编号（UUID）；相同成功操作重试复用同一键 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已投递 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WriteResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
         };
     };
     getTripShare: {

@@ -18,15 +18,18 @@ SELECT default_timezone FROM accounts
 WHERE id = sqlc.arg(account_id);
 
 -- name: InsertTrip :one
-INSERT INTO trips (id, account_id, name, start_date, end_date, destination, notes, timezone, currency_code, budget_amount, created_at, updated_at)
+INSERT INTO trips (id, account_id, name, start_date, end_date, destination, notes, timezone, currency_code, budget_amount,
+    route_short_mode, route_short_distance_meters, created_at, updated_at)
 VALUES (sqlc.arg(id), sqlc.arg(account_id), sqlc.arg(name), sqlc.arg(start_date), sqlc.arg(end_date), sqlc.arg(destination), sqlc.arg(notes),
-        sqlc.arg(timezone), sqlc.arg(currency_code), sqlc.narg(budget_amount), sqlc.arg(created_at), sqlc.arg(created_at))
+        sqlc.arg(timezone), sqlc.arg(currency_code), sqlc.narg(budget_amount), sqlc.arg(route_short_mode),
+        sqlc.arg(route_short_distance_meters), sqlc.arg(created_at), sqlc.arg(created_at))
 RETURNING *;
 
 -- name: UpdateTrip :one
 UPDATE trips
 SET name = sqlc.arg(name), start_date = sqlc.arg(start_date), end_date = sqlc.arg(end_date), destination = sqlc.arg(destination),
     notes = sqlc.arg(notes), timezone = sqlc.arg(timezone), currency_code = sqlc.arg(currency_code), budget_amount = sqlc.narg(budget_amount),
+    route_short_mode = sqlc.arg(route_short_mode), route_short_distance_meters = sqlc.arg(route_short_distance_meters),
     version = version + 1, updated_at = sqlc.arg(updated_at)
 WHERE account_id = sqlc.arg(account_id) AND id = sqlc.arg(id)
 RETURNING *;
@@ -99,8 +102,12 @@ SELECT sqlc.embed(t),
            WHEN (sqlc.arg(now)::timestamptz AT TIME ZONE t.timezone)::date < t.start_date THEN 'planned'
            WHEN (sqlc.arg(now)::timestamptz AT TIME ZONE t.timezone)::date > t.end_date THEN 'ended'
            ELSE 'ongoing'
-       END::text AS phase
+       END::text AS phase,
+       coalesce(rs.status, 'stale')::text AS route_status,
+       rs.total_distance_meters,
+       rs.total_duration_seconds
 FROM trips t
+LEFT JOIN trip_route_summaries rs ON rs.account_id = t.account_id AND rs.trip_id = t.id
 WHERE t.account_id = sqlc.arg(account_id)
   AND t.deleted_at IS NULL
   AND (sqlc.arg(archived)::text = 'all'
@@ -124,8 +131,12 @@ SELECT sqlc.embed(t),
            WHEN (sqlc.arg(now)::timestamptz AT TIME ZONE t.timezone)::date < t.start_date THEN 'planned'
            WHEN (sqlc.arg(now)::timestamptz AT TIME ZONE t.timezone)::date > t.end_date THEN 'ended'
            ELSE 'ongoing'
-       END::text AS phase
+       END::text AS phase,
+       coalesce(rs.status, 'stale')::text AS route_status,
+       rs.total_distance_meters,
+       rs.total_duration_seconds
 FROM trips t
+LEFT JOIN trip_route_summaries rs ON rs.account_id = t.account_id AND rs.trip_id = t.id
 WHERE t.account_id = sqlc.arg(account_id)
   AND t.deleted_at IS NULL
   AND (sqlc.arg(archived)::text = 'all'
@@ -149,8 +160,12 @@ SELECT sqlc.embed(t),
            WHEN (sqlc.arg(now)::timestamptz AT TIME ZONE t.timezone)::date < t.start_date THEN 'planned'
            WHEN (sqlc.arg(now)::timestamptz AT TIME ZONE t.timezone)::date > t.end_date THEN 'ended'
            ELSE 'ongoing'
-       END::text AS phase
+       END::text AS phase,
+       coalesce(rs.status, 'stale')::text AS route_status,
+       rs.total_distance_meters,
+       rs.total_duration_seconds
 FROM trips t
+LEFT JOIN trip_route_summaries rs ON rs.account_id = t.account_id AND rs.trip_id = t.id
 WHERE t.account_id = sqlc.arg(account_id)
   AND t.deleted_at IS NULL
   AND (sqlc.arg(archived)::text = 'all'

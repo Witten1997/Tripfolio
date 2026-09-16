@@ -40,6 +40,7 @@ func toResource(row dbgen.Trip) (trip.Resource, error) {
 	return trip.Resource{
 		ID: row.ID, Name: row.Name, StartDate: types.DateOf(row.StartDate), EndDate: types.DateOf(row.EndDate),
 		Destination: row.Destination, Notes: row.Notes, Timezone: row.Timezone, CurrencyCode: row.CurrencyCode, BudgetAmount: budget,
+		RouteShortMode: row.RouteShortMode, RouteShortDistanceMeters: row.RouteShortDistanceMeters,
 		Version: types.Version(row.Version), CreatedAt: pgcore.UTC(row.CreatedAt), UpdatedAt: pgcore.UTC(row.UpdatedAt),
 		ArchivedAt: pgcore.UTCPtr(row.ArchivedAt), CurrencyLockedAt: pgcore.UTCPtr(row.CurrencyLockedAt), DeletedAt: pgcore.UTCPtr(row.DeletedAt),
 		PurgeAfterAt: pgcore.UTCPtr(row.PurgeAfterAt), PurgeRequestedAt: pgcore.UTCPtr(row.PurgeRequestedAt),
@@ -110,9 +111,13 @@ func (r *tripRepo) Insert(ctx context.Context, accountID uuid.UUID, t trip.Resou
 	row, err := r.scope.Queries.InsertTrip(ctx, dbgen.InsertTripParams{
 		ID: t.ID, AccountID: accountID, Name: t.Name, StartDate: t.StartDate.Time(), EndDate: t.EndDate.Time(),
 		Destination: t.Destination, Notes: t.Notes, Timezone: t.Timezone, CurrencyCode: t.CurrencyCode, BudgetAmount: t.BudgetAmount,
+		RouteShortMode: t.RouteShortMode, RouteShortDistanceMeters: t.RouteShortDistanceMeters,
 		CreatedAt: t.CreatedAt,
 	})
 	if err != nil {
+		return trip.Resource{}, err
+	}
+	if err := r.scope.Queries.InitEmptyRouteSummary(ctx, dbgen.InitEmptyRouteSummaryParams{AccountID: accountID, TripID: t.ID, UpdatedAt: t.CreatedAt}); err != nil {
 		return trip.Resource{}, err
 	}
 	return toResource(row)
@@ -122,11 +127,17 @@ func (r *tripRepo) Update(ctx context.Context, accountID, id uuid.UUID, v trip.V
 	row, err := r.scope.Queries.UpdateTrip(ctx, dbgen.UpdateTripParams{
 		AccountID: accountID, ID: id, Name: v.Name, StartDate: v.StartDate.Time(), EndDate: v.EndDate.Time(), Destination: v.Destination,
 		Notes: v.Notes, Timezone: v.Timezone, CurrencyCode: v.CurrencyCode, BudgetAmount: v.BudgetAmount, UpdatedAt: now,
+		RouteShortMode: v.RouteShortMode, RouteShortDistanceMeters: v.RouteShortDistanceMeters,
 	})
 	if err != nil {
 		return trip.Resource{}, err
 	}
 	return toResource(row)
+}
+
+func (r *tripRepo) InvalidateRouteSummary(ctx context.Context, accountID, tripID uuid.UUID, now time.Time) (int64, error) {
+	row, err := r.scope.Queries.InvalidateRouteSummary(ctx, dbgen.InvalidateRouteSummaryParams{AccountID: accountID, TripID: tripID, UpdatedAt: now})
+	return row.Revision, err
 }
 
 func (r *tripRepo) SetArchived(ctx context.Context, accountID, id uuid.UUID, archivedAt *time.Time, now time.Time) (trip.Resource, error) {
@@ -257,7 +268,8 @@ func (r *TripReader) List(ctx context.Context, accountID uuid.UUID, q trip.ListQ
 			if err != nil {
 				return nil, err
 			}
-			out = append(out, trip.ListItem{Resource: res, Phase: trip.Phase(row.Phase)})
+			out = append(out, trip.ListItem{Resource: res, Phase: trip.Phase(row.Phase), RouteStatus: row.RouteStatus,
+				TotalDistanceMeters: row.TotalDistanceMeters, TotalDurationSeconds: row.TotalDurationSeconds})
 		}
 		return out, nil
 	}
@@ -279,7 +291,8 @@ func (r *TripReader) List(ctx context.Context, accountID uuid.UUID, q trip.ListQ
 			if err != nil {
 				return nil, err
 			}
-			out = append(out, trip.ListItem{Resource: res, Phase: trip.Phase(row.Phase)})
+			out = append(out, trip.ListItem{Resource: res, Phase: trip.Phase(row.Phase), RouteStatus: row.RouteStatus,
+				TotalDistanceMeters: row.TotalDistanceMeters, TotalDurationSeconds: row.TotalDurationSeconds})
 		}
 		return out, nil
 	}
@@ -300,7 +313,8 @@ func (r *TripReader) List(ctx context.Context, accountID uuid.UUID, q trip.ListQ
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, trip.ListItem{Resource: res, Phase: trip.Phase(row.Phase)})
+		out = append(out, trip.ListItem{Resource: res, Phase: trip.Phase(row.Phase), RouteStatus: row.RouteStatus,
+			TotalDistanceMeters: row.TotalDistanceMeters, TotalDurationSeconds: row.TotalDurationSeconds})
 	}
 	return out, nil
 }

@@ -124,7 +124,7 @@ func (s *Service) Reorder(ctx context.Context, a actor.Actor, operationID, tripI
 				record(scope, moved, write.ChangeUpsert, PositionFields)
 			}
 		}
-		return nil
+		return recalculateRoutes(ctx, scope, repo, a.AccountID, tripID, now)
 	}, nil)
 }
 

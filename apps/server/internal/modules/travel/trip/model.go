@@ -22,23 +22,25 @@ const RecycleBinRetention = 30 * 24 * time.Hour
 // Resource 是旅行的规范资源，也是同步日志与快照中的表示（接口设计 3.2 Trip / TrashedTrip）。
 // 阶段 phase 随时间变化，不在规范资源中，由 ListItem 另行携带。
 type Resource struct {
-	ID               uuid.UUID     `json:"id"`
-	Name             string        `json:"name"`
-	StartDate        types.Date    `json:"start_date"`
-	EndDate          types.Date    `json:"end_date"`
-	Destination      string        `json:"destination"`
-	Notes            string        `json:"notes"`
-	Timezone         string        `json:"timezone"`
-	CurrencyCode     string        `json:"currency_code"`
-	BudgetAmount     *string       `json:"budget_amount"`
-	Version          types.Version `json:"version"`
-	CreatedAt        time.Time     `json:"created_at"`
-	UpdatedAt        time.Time     `json:"updated_at"`
-	ArchivedAt       *time.Time    `json:"archived_at"`
-	CurrencyLockedAt *time.Time    `json:"currency_locked_at"`
-	DeletedAt        *time.Time    `json:"deleted_at"`
-	PurgeAfterAt     *time.Time    `json:"purge_after_at"`
-	PurgeRequestedAt *time.Time    `json:"purge_requested_at"`
+	ID                       uuid.UUID     `json:"id"`
+	Name                     string        `json:"name"`
+	StartDate                types.Date    `json:"start_date"`
+	EndDate                  types.Date    `json:"end_date"`
+	Destination              string        `json:"destination"`
+	Notes                    string        `json:"notes"`
+	Timezone                 string        `json:"timezone"`
+	CurrencyCode             string        `json:"currency_code"`
+	BudgetAmount             *string       `json:"budget_amount"`
+	RouteShortMode           string        `json:"route_short_mode"`
+	RouteShortDistanceMeters int32         `json:"route_short_distance_meters"`
+	Version                  types.Version `json:"version"`
+	CreatedAt                time.Time     `json:"created_at"`
+	UpdatedAt                time.Time     `json:"updated_at"`
+	ArchivedAt               *time.Time    `json:"archived_at"`
+	CurrencyLockedAt         *time.Time    `json:"currency_locked_at"`
+	DeletedAt                *time.Time    `json:"deleted_at"`
+	PurgeAfterAt             *time.Time    `json:"purge_after_at"`
+	PurgeRequestedAt         *time.Time    `json:"purge_requested_at"`
 }
 
 // Phase 是按旅行时区的今天与起止日期计算的阶段。
@@ -58,7 +60,10 @@ func (p Phase) Valid() bool {
 // ListItem 是列表项：规范资源加阶段（接口设计 3.2 TripListItem）。
 type ListItem struct {
 	Resource
-	Phase Phase `json:"phase"`
+	Phase                Phase  `json:"phase"`
+	RouteStatus          string `json:"route_status"`
+	TotalDistanceMeters  *int64 `json:"total_distance_meters"`
+	TotalDurationSeconds *int64 `json:"total_duration_seconds"`
 }
 
 // PhaseOf 计算 r 在 now 时刻的阶段。旅行时区无法加载时按 UTC 计算，避免列表因历史数据出错而不可用。
@@ -78,7 +83,7 @@ func PhaseOf(r Resource, now time.Time) Phase {
 }
 
 // Fields 是旅行可局部更新的业务字段名，用于 changed_fields 与字段级合并；创建时记录全部字段。
-var Fields = []string{"name", "start_date", "end_date", "destination", "notes", "timezone", "currency_code", "budget_amount"}
+var Fields = []string{"name", "start_date", "end_date", "destination", "notes", "timezone", "currency_code", "budget_amount", "route_short_mode", "route_short_distance_meters"}
 
 // CreateFields 是创建变更记录的字段集合：全部业务字段加归档与币种锁状态。
 var CreateFields = append(append([]string{}, Fields...), "archived_at", "currency_locked_at")

@@ -1,0 +1,94 @@
+plan:
+  parameters:
+    - name: trip_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  get:
+    tags: [travel]
+    operationId: getRoutePlan
+    summary: 获取旅行相邻点位的持久化路线计划与汇总
+    responses:
+      '200':
+        description: 路线计划
+        content:
+          application/json:
+            schema:
+              $ref: ../openapi.yaml#/components/schemas/RoutePlanResponse
+      '401':
+        $ref: ../openapi.yaml#/components/responses/Unauthorized
+      '404':
+        $ref: ../openapi.yaml#/components/responses/NotFound
+
+recalculate:
+  parameters:
+    - name: trip_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  post:
+    tags: [travel]
+    operationId: recalculateRoutePlan
+    summary: 将路线计划置为待计算并投递后台任务
+    parameters:
+      - $ref: ../openapi.yaml#/components/parameters/IdempotencyKey
+    responses:
+      '200':
+        description: 已投递
+        content:
+          application/json:
+            schema:
+              $ref: ../openapi.yaml#/components/schemas/WriteResponse
+      '401':
+        $ref: ../openapi.yaml#/components/responses/Unauthorized
+      '404':
+        $ref: ../openapi.yaml#/components/responses/NotFound
+
+leg:
+  parameters:
+    - name: trip_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    - name: leg_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  patch:
+    tags: [travel]
+    operationId: updateRouteLegMode
+    summary: 手动选择某一路段的交通方式，或恢复自动选择
+    parameters:
+      - $ref: ../openapi.yaml#/components/parameters/IdempotencyKey
+      - $ref: ../openapi.yaml#/components/parameters/IfMatch
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: ../openapi.yaml#/components/schemas/RouteLegModePatch
+    responses:
+      '200':
+        description: 已更新并投递重算
+        content:
+          application/json:
+            schema:
+              $ref: ../openapi.yaml#/components/schemas/WriteResponse
+      '401':
+        $ref: ../openapi.yaml#/components/responses/Unauthorized
+      '404':
+        $ref: ../openapi.yaml#/components/responses/NotFound
+      '412':
+        $ref: ../openapi.yaml#/components/responses/PreconditionFailed
+      '422':
+        $ref: ../openapi.yaml#/components/responses/ValidationFailed
+      '428':
+        $ref: ../openapi.yaml#/components/responses/VersionRequired

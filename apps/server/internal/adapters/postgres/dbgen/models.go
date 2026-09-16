@@ -215,6 +215,25 @@ type ItineraryItem struct {
 	ActualNotes            string
 }
 
+type ItineraryRouteLeg struct {
+	ID                   uuid.UUID
+	AccountID            uuid.UUID
+	TripID               uuid.UUID
+	FromItemID           uuid.UUID
+	ToItemID             uuid.UUID
+	Version              int64
+	Mode                 string
+	ModeSource           string
+	DirectDistanceMeters int64
+	RouteDistanceMeters  *int64
+	RouteDurationSeconds *int64
+	Status               string
+	ErrorCode            *string
+	CalculatedAt         *time.Time
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
+}
+
 type LedgerAttachment struct {
 	AccountID     uuid.UUID
 	TripID        uuid.UUID
@@ -355,24 +374,40 @@ type TodoItem struct {
 }
 
 type Trip struct {
-	ID               uuid.UUID
-	AccountID        uuid.UUID
-	Version          int64
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
-	DeletedAt        *time.Time
-	Name             string
-	StartDate        time.Time
-	EndDate          time.Time
-	Destination      string
-	Notes            string
-	Timezone         string
-	CurrencyCode     string
-	CurrencyLockedAt *time.Time
-	BudgetAmount     *string
-	ArchivedAt       *time.Time
-	PurgeAfterAt     *time.Time
-	PurgeRequestedAt *time.Time
+	ID                       uuid.UUID
+	AccountID                uuid.UUID
+	Version                  int64
+	CreatedAt                time.Time
+	UpdatedAt                time.Time
+	DeletedAt                *time.Time
+	Name                     string
+	StartDate                time.Time
+	EndDate                  time.Time
+	Destination              string
+	Notes                    string
+	Timezone                 string
+	CurrencyCode             string
+	CurrencyLockedAt         *time.Time
+	BudgetAmount             *string
+	ArchivedAt               *time.Time
+	PurgeAfterAt             *time.Time
+	PurgeRequestedAt         *time.Time
+	RouteShortMode           string
+	RouteShortDistanceMeters int32
+}
+
+type TripRouteSummary struct {
+	AccountID            uuid.UUID
+	TripID               uuid.UUID
+	Revision             int64
+	Status               string
+	TotalDistanceMeters  *int64
+	TotalDurationSeconds *int64
+	ReadyLegCount        int32
+	TotalLegCount        int32
+	MissingPointCount    int32
+	CalculatedAt         *time.Time
+	UpdatedAt            time.Time
 }
 
 type TripShare struct {

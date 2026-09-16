@@ -120,6 +120,14 @@ func (h *Handler) UpdateTrip(ctx context.Context, req generated.UpdateTripReques
 	}
 	b := req.Body
 	patch := trip.Patch{Name: b.Name, Destination: b.Destination, Notes: b.Notes, Timezone: b.Timezone}
+	if b.RouteShortMode != nil {
+		mode := string(*b.RouteShortMode)
+		patch.RouteShortMode = &mode
+	}
+	if b.RouteShortDistanceMeters != nil {
+		distance := int32(*b.RouteShortDistanceMeters)
+		patch.RouteShortDistanceMeters = &distance
+	}
 	if b.StartDate != nil {
 		s := string(*b.StartDate)
 		patch.StartDate = &s

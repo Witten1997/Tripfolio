@@ -43,27 +43,27 @@ watch(
 .mobile-trip-list {
   display: flex;
   flex-direction: column;
-  gap: 20px;
-  padding: 20px 0 32px;
+  gap: 24px;
+  padding: 30px 0 40px;
 }
 
 .mobile-trip-list :deep(.trip-list-page) {
-  gap: 16px;
+  gap: 20px;
   padding: 0 18px;
 }
 
 .mobile-trip-list :deep(.page-heading) {
-  padding: 2px 2px 4px;
+  padding: 2px 2px 6px;
 }
 
 .mobile-trip-list :deep(.page-heading h1) {
-  font-size: 27px;
-  line-height: 1.2;
+  font-size: 34px;
+  line-height: 1.08;
 }
 
 .mobile-trip-list :deep(.page-heading p) {
-  margin-top: 6px;
-  font-size: 13px;
+  margin-top: 9px;
+  font-size: 14px;
 }
 
 .mobile-trip-list :deep(.heading-actions) {
@@ -76,13 +76,13 @@ watch(
 }
 
 .mobile-trip-list :deep(.heading-tool-actions) {
-  gap: 3px;
+  gap: 2px;
 }
 
 .mobile-trip-list :deep(.heading-tool-actions .icon-action) {
-  width: 40px;
-  height: 40px;
-  min-height: 40px;
+  width: 42px;
+  height: 42px;
+  min-height: 42px;
 }
 
 .mobile-trip-list :deep(.trip-tool-panel) {
@@ -95,13 +95,12 @@ watch(
 }
 
 .mobile-trip-list :deep(.trip-group h2) {
-  margin-bottom: 12px;
+  margin-bottom: 14px;
 }
 
 .mobile-trip-list :deep(.trip-card) {
   overflow: hidden;
   border-radius: var(--tf-radius-card);
-  box-shadow: var(--tf-shadow-1);
 }
 
 .mobile-trip-list :deep(.trip-card .el-card__body) {
@@ -109,7 +108,7 @@ watch(
 }
 
 .mobile-trip-list :deep(.trip-card h3) {
-  font-size: 19px;
+  font-size: 20px;
 }
 
 .mobile-trip-list :deep(.trip-dates) {
@@ -130,14 +129,31 @@ watch(
 }
 
 @media (max-width: 380px) {
-  .mobile-trip-list :deep(.page-heading p) {
-    display: none;
+  .mobile-trip-list {
+    padding-top: 24px;
+  }
+
+  .mobile-trip-list :deep(.page-heading h1) {
+    font-size: 27px;
+  }
+
+  .mobile-trip-list :deep(.page-heading) {
+    gap: 10px;
+  }
+
+  .mobile-trip-list :deep(.page-title-row) {
+    gap: 6px;
+  }
+
+  .mobile-trip-list :deep(.page-title-plane) {
+    width: 22px;
+    height: 22px;
   }
 
   .mobile-trip-list :deep(.heading-tool-actions .icon-action) {
-    width: 38px;
-    height: 38px;
-    min-height: 38px;
+    width: 36px;
+    height: 36px;
+    min-height: 36px;
   }
 }
 </style>

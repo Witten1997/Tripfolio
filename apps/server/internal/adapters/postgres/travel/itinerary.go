@@ -232,6 +232,11 @@ func (r *itineraryRepo) Reposition(ctx context.Context, accountID, tripID, id uu
 	return toItineraryResource(row, currency)
 }
 
+func (r *itineraryRepo) InvalidateRouteSummary(ctx context.Context, accountID, tripID uuid.UUID, now time.Time) (int64, error) {
+	row, err := r.scope.Queries.InvalidateRouteSummary(ctx, dbgen.InvalidateRouteSummaryParams{AccountID: accountID, TripID: tripID, UpdatedAt: now})
+	return row.Revision, err
+}
+
 func (r *itineraryRepo) ListDaysForUpdate(ctx context.Context, accountID, tripID uuid.UUID, dates []types.Date) ([]itinerary.Resource, error) {
 	ts := make([]time.Time, len(dates))
 	for i, d := range dates {

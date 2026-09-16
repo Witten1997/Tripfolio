@@ -6,13 +6,16 @@ import AmapView from '@/desktop/components/AmapView.vue'
 import TripMapTab from '@/desktop/pages/trip/TripMapTab.vue'
 import { calculateRoute } from '@/shared/api/geo'
 import { listAllItineraryItems, type ItineraryItem } from '@/shared/api/itinerary'
+import { getRoutePlan, type RoutePlan } from '@/shared/api/routePlan'
 
-const query = vi.hoisted(() => ({ mode: '' }))
-vi.mock('vue-router', () => ({ useRoute: () => ({ query }) }))
 vi.mock('@/shared/travel/tripContext', () => ({ useTripContext: () => ({ tripId: 'trip' }) }))
 vi.mock('@/shared/api/itinerary', async (original) => ({
   ...(await original<typeof import('@/shared/api/itinerary')>()),
   listAllItineraryItems: vi.fn(),
+}))
+vi.mock('@/shared/api/routePlan', async (original) => ({
+  ...(await original<typeof import('@/shared/api/routePlan')>()),
+  getRoutePlan: vi.fn(),
 }))
 vi.mock('@/shared/api/geo', async (original) => ({
   ...(await original<typeof import('@/shared/api/geo')>()),
@@ -23,7 +26,6 @@ let sequence = 0
 let items: ItineraryItem[]
 beforeEach(() => {
   vi.useFakeTimers()
-  query.mode = ''
   sequence++
   items = ['c', 'b', 'a'].map(
     (id, index) =>
@@ -40,6 +42,51 @@ beforeEach(() => {
   vi.mocked(listAllItineraryItems)
     .mockReset()
     .mockImplementation(async () => items)
+  vi.mocked(getRoutePlan)
+    .mockReset()
+    .mockResolvedValue({
+      preference: { short_mode: 'walking', short_distance_meters: 1500 },
+      summary: {
+        revision: '1',
+        status: 'ready',
+        total_distance_meters: 200,
+        total_duration_seconds: 120,
+        ready_leg_count: 2,
+        total_leg_count: 2,
+        missing_point_count: 0,
+        calculated_at: '2026-10-01T00:00:00Z',
+      },
+      legs: [
+        {
+          id: 'leg-a-b',
+          from_item_id: 'a',
+          to_item_id: 'b',
+          version: '1',
+          mode: 'driving',
+          mode_source: 'preference',
+          direct_distance_meters: 100,
+          route_distance_meters: 100,
+          route_duration_seconds: 60,
+          status: 'ready',
+          error_code: null,
+          calculated_at: '2026-10-01T00:00:00Z',
+        },
+        {
+          id: 'leg-b-c',
+          from_item_id: 'b',
+          to_item_id: 'c',
+          version: '1',
+          mode: 'cycling',
+          mode_source: 'manual',
+          direct_distance_meters: 100,
+          route_distance_meters: 100,
+          route_duration_seconds: 60,
+          status: 'ready',
+          error_code: null,
+          calculated_at: '2026-10-01T00:00:00Z',
+        },
+      ],
+    } as RoutePlan)
   vi.mocked(calculateRoute)
     .mockReset()
     .mockImplementation(async (from, to, mode) => ({
@@ -96,12 +143,16 @@ describe('行程地图视图', () => {
     view.unmount()
   })
 
-  it('URL 的非枚举模式不会沿用对象原型属性', async () => {
-    query.mode = 'toString'
+  it('按路线计划为每段使用不同交通方式', async () => {
     const view = setup()
     await settleRoutes()
-    expect(vi.mocked(calculateRoute).mock.calls.every((call) => call[2] === 'driving')).toBe(true)
-    expect(view.text()).toContain('预计驾车用时')
+    expect(vi.mocked(calculateRoute).mock.calls.map((call) => call[2])).toEqual([
+      'walking',
+      'cycling',
+    ])
+    expect(view.text()).toContain('步行 100 米')
+    expect(view.text()).toContain('骑行 100 米')
+    expect(view.text()).toContain('道路预计用时')
     view.unmount()
   })
 })

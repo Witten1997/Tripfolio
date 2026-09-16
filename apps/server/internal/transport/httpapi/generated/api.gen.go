@@ -20,6 +20,7 @@ import (
 	"tripfolio/server/internal/modules/geo"
 	"tripfolio/server/internal/modules/travel/itinerary"
 	"tripfolio/server/internal/modules/travel/packing"
+	"tripfolio/server/internal/modules/travel/routeplan"
 	"tripfolio/server/internal/modules/travel/share"
 	"tripfolio/server/internal/modules/travel/todo"
 	"tripfolio/server/internal/modules/travel/trip"
@@ -164,19 +165,19 @@ func (e EmailChallengeRequestPurpose) Valid() bool {
 
 // Defines values for GeoTravelMode.
 const (
-	Cycling GeoTravelMode = "cycling"
-	Driving GeoTravelMode = "driving"
-	Walking GeoTravelMode = "walking"
+	GeoTravelModeCycling GeoTravelMode = "cycling"
+	GeoTravelModeDriving GeoTravelMode = "driving"
+	GeoTravelModeWalking GeoTravelMode = "walking"
 )
 
 // Valid indicates whether the value is a known member of the GeoTravelMode enum.
 func (e GeoTravelMode) Valid() bool {
 	switch e {
-	case Cycling:
+	case GeoTravelModeCycling:
 		return true
-	case Driving:
+	case GeoTravelModeDriving:
 		return true
-	case Walking:
+	case GeoTravelModeWalking:
 		return true
 	default:
 		return false
@@ -348,6 +349,114 @@ func (e PackingStatus) Valid() bool {
 	}
 }
 
+// Defines values for RouteLegModeSource.
+const (
+	Manual     RouteLegModeSource = "manual"
+	Preference RouteLegModeSource = "preference"
+)
+
+// Valid indicates whether the value is a known member of the RouteLegModeSource enum.
+func (e RouteLegModeSource) Valid() bool {
+	switch e {
+	case Manual:
+		return true
+	case Preference:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RouteLegStatus.
+const (
+	RouteLegStatusFailed RouteLegStatus = "failed"
+	RouteLegStatusReady  RouteLegStatus = "ready"
+	RouteLegStatusStale  RouteLegStatus = "stale"
+)
+
+// Valid indicates whether the value is a known member of the RouteLegStatus enum.
+func (e RouteLegStatus) Valid() bool {
+	switch e {
+	case RouteLegStatusFailed:
+		return true
+	case RouteLegStatusReady:
+		return true
+	case RouteLegStatusStale:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RouteLegModePatchMode.
+const (
+	RouteLegModePatchModeAuto    RouteLegModePatchMode = "auto"
+	RouteLegModePatchModeCycling RouteLegModePatchMode = "cycling"
+	RouteLegModePatchModeDriving RouteLegModePatchMode = "driving"
+	RouteLegModePatchModeWalking RouteLegModePatchMode = "walking"
+)
+
+// Valid indicates whether the value is a known member of the RouteLegModePatchMode enum.
+func (e RouteLegModePatchMode) Valid() bool {
+	switch e {
+	case RouteLegModePatchModeAuto:
+		return true
+	case RouteLegModePatchModeCycling:
+		return true
+	case RouteLegModePatchModeDriving:
+		return true
+	case RouteLegModePatchModeWalking:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RoutePreferenceShortMode.
+const (
+	RoutePreferenceShortModeCycling RoutePreferenceShortMode = "cycling"
+	RoutePreferenceShortModeWalking RoutePreferenceShortMode = "walking"
+)
+
+// Valid indicates whether the value is a known member of the RoutePreferenceShortMode enum.
+func (e RoutePreferenceShortMode) Valid() bool {
+	switch e {
+	case RoutePreferenceShortModeCycling:
+		return true
+	case RoutePreferenceShortModeWalking:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RouteSummaryStatus.
+const (
+	RouteSummaryStatusCalculating RouteSummaryStatus = "calculating"
+	RouteSummaryStatusEmpty       RouteSummaryStatus = "empty"
+	RouteSummaryStatusIncomplete  RouteSummaryStatus = "incomplete"
+	RouteSummaryStatusReady       RouteSummaryStatus = "ready"
+	RouteSummaryStatusStale       RouteSummaryStatus = "stale"
+)
+
+// Valid indicates whether the value is a known member of the RouteSummaryStatus enum.
+func (e RouteSummaryStatus) Valid() bool {
+	switch e {
+	case RouteSummaryStatusCalculating:
+		return true
+	case RouteSummaryStatusEmpty:
+		return true
+	case RouteSummaryStatusIncomplete:
+		return true
+	case RouteSummaryStatusReady:
+		return true
+	case RouteSummaryStatusStale:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ThumbnailStatus.
 const (
 	ThumbnailStatusFailed     ThumbnailStatus = "failed"
@@ -390,6 +499,24 @@ func (e TodoState) Valid() bool {
 	case TodoStateOverdue:
 		return true
 	case TodoStatePending:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TripPatchRouteShortMode.
+const (
+	TripPatchRouteShortModeCycling TripPatchRouteShortMode = "cycling"
+	TripPatchRouteShortModeWalking TripPatchRouteShortMode = "walking"
+)
+
+// Valid indicates whether the value is a known member of the TripPatchRouteShortMode enum.
+func (e TripPatchRouteShortMode) Valid() bool {
+	switch e {
+	case TripPatchRouteShortModeCycling:
+		return true
+	case TripPatchRouteShortModeWalking:
 		return true
 	default:
 		return false
@@ -1336,6 +1463,76 @@ type ResetPasswordRequest struct {
 	NewPassword string             `json:"new_password"`
 }
 
+// RouteLeg defines model for RouteLeg.
+type RouteLeg struct {
+	CalculatedAt         nullable.Nullable[time.Time] `json:"calculated_at"`
+	DirectDistanceMeters int64                        `json:"direct_distance_meters"`
+	ErrorCode            nullable.Nullable[string]    `json:"error_code"`
+	FromItemId           openapi_types.UUID           `json:"from_item_id"`
+	Id                   openapi_types.UUID           `json:"id"`
+	Mode                 GeoTravelMode                `json:"mode"`
+	ModeSource           RouteLegModeSource           `json:"mode_source"`
+	RouteDistanceMeters  nullable.Nullable[int64]     `json:"route_distance_meters"`
+	RouteDurationSeconds nullable.Nullable[int64]     `json:"route_duration_seconds"`
+	Status               RouteLegStatus               `json:"status"`
+	ToItemId             openapi_types.UUID           `json:"to_item_id"`
+
+	// Version 资源版本，正整数十进制字符串
+	//
+	// Example: 7
+	Version Version `json:"version"`
+}
+
+// RouteLegModeSource defines model for RouteLeg.ModeSource.
+type RouteLegModeSource string
+
+// RouteLegStatus defines model for RouteLeg.Status.
+type RouteLegStatus string
+
+// RouteLegModePatch defines model for RouteLegModePatch.
+type RouteLegModePatch struct {
+	Mode RouteLegModePatchMode `json:"mode"`
+}
+
+// RouteLegModePatchMode defines model for RouteLegModePatch.Mode.
+type RouteLegModePatchMode string
+
+// RoutePlan defines model for RoutePlan.
+type RoutePlan = routeplan.Plan
+
+// RoutePlanResponse defines model for RoutePlanResponse.
+type RoutePlanResponse struct {
+	Data RoutePlan `json:"data"`
+}
+
+// RoutePreference defines model for RoutePreference.
+type RoutePreference struct {
+	ShortDistanceMeters int                      `json:"short_distance_meters"`
+	ShortMode           RoutePreferenceShortMode `json:"short_mode"`
+}
+
+// RoutePreferenceShortMode defines model for RoutePreference.ShortMode.
+type RoutePreferenceShortMode string
+
+// RouteSummary defines model for RouteSummary.
+type RouteSummary struct {
+	CalculatedAt      nullable.Nullable[time.Time] `json:"calculated_at"`
+	MissingPointCount int                          `json:"missing_point_count"`
+	ReadyLegCount     int                          `json:"ready_leg_count"`
+
+	// Revision 资源版本，正整数十进制字符串
+	//
+	// Example: 7
+	Revision             Version                  `json:"revision"`
+	Status               RouteSummaryStatus       `json:"status"`
+	TotalDistanceMeters  nullable.Nullable[int64] `json:"total_distance_meters"`
+	TotalDurationSeconds nullable.Nullable[int64] `json:"total_duration_seconds"`
+	TotalLegCount        int                      `json:"total_leg_count"`
+}
+
+// RouteSummaryStatus defines model for RouteSummary.Status.
+type RouteSummaryStatus string
+
 // Session defines model for Session.
 type Session = account.SessionResource
 
@@ -1517,9 +1714,11 @@ type TripPatch struct {
 	// EndDate YYYY-MM-DD，不带时区
 	//
 	// Example: 2026-10-01
-	EndDate *Date   `json:"end_date,omitempty"`
-	Name    *string `json:"name,omitempty"`
-	Notes   *string `json:"notes,omitempty"`
+	EndDate                  *Date                    `json:"end_date,omitempty"`
+	Name                     *string                  `json:"name,omitempty"`
+	Notes                    *string                  `json:"notes,omitempty"`
+	RouteShortDistanceMeters *int                     `json:"route_short_distance_meters,omitempty"`
+	RouteShortMode           *TripPatchRouteShortMode `json:"route_short_mode,omitempty"`
 
 	// StartDate YYYY-MM-DD，不带时区
 	//
@@ -1527,6 +1726,9 @@ type TripPatch struct {
 	StartDate *Date   `json:"start_date,omitempty"`
 	Timezone  *string `json:"timezone,omitempty"`
 }
+
+// TripPatchRouteShortMode defines model for TripPatch.RouteShortMode.
+type TripPatchRouteShortMode string
 
 // TripResponse defines model for TripResponse.
 type TripResponse struct {
@@ -1974,6 +2176,21 @@ type UpdatePackingItemParams struct {
 	IfMatch *IfMatch `json:"If-Match,omitempty"`
 }
 
+// UpdateRouteLegModeParams defines parameters for UpdateRouteLegMode.
+type UpdateRouteLegModeParams struct {
+	// IdempotencyKey 写请求的操作编号（UUID）；相同成功操作重试复用同一键
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+
+	// IfMatch 客户端所基于的资源版本，形如 "7"（带引号）
+	IfMatch *IfMatch `json:"If-Match,omitempty"`
+}
+
+// RecalculateRoutePlanParams defines parameters for RecalculateRoutePlan.
+type RecalculateRoutePlanParams struct {
+	// IdempotencyKey 写请求的操作编号（UUID）；相同成功操作重试复用同一键
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
 // GetTripStatisticsParams defines parameters for GetTripStatistics.
 type GetTripStatisticsParams struct {
 	DateFrom *string `form:"date_from,omitempty" json:"date_from,omitempty"`
@@ -2093,6 +2310,9 @@ type CreatePackingItemsJSONRequestBody = PackingBatchCreate
 
 // UpdatePackingItemJSONRequestBody defines body for UpdatePackingItem for application/json ContentType.
 type UpdatePackingItemJSONRequestBody = PackingPatch
+
+// UpdateRouteLegModeJSONRequestBody defines body for UpdateRouteLegMode for application/json ContentType.
+type UpdateRouteLegModeJSONRequestBody = RouteLegModePatch
 
 // CreateTodoJSONRequestBody defines body for CreateTodo for application/json ContentType.
 type CreateTodoJSONRequestBody = TodoCreate
@@ -2282,6 +2502,15 @@ type ServerInterface interface {
 	// UpdatePackingItem 局部更新；内容编辑与状态变化使用同一业务规则
 	// (PATCH /trips/{trip_id}/packing-items/{item_id})
 	UpdatePackingItem(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, itemId openapi_types.UUID, params UpdatePackingItemParams)
+	// UpdateRouteLegMode 手动选择某一路段的交通方式，或恢复自动选择
+	// (PATCH /trips/{trip_id}/route-legs/{leg_id})
+	UpdateRouteLegMode(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, legId openapi_types.UUID, params UpdateRouteLegModeParams)
+	// GetRoutePlan 获取旅行相邻点位的持久化路线计划与汇总
+	// (GET /trips/{trip_id}/route-plan)
+	GetRoutePlan(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID)
+	// RecalculateRoutePlan 将路线计划置为待计算并投递后台任务
+	// (POST /trips/{trip_id}/route-plan/recalculate)
+	RecalculateRoutePlan(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, params RecalculateRoutePlanParams)
 	// DisableTripShare 关闭分享，旧链接立即失效；未开启也返回 204
 	// (DELETE /trips/{trip_id}/share)
 	DisableTripShare(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID)
@@ -2675,6 +2904,24 @@ func (_ Unimplemented) GetPackingItem(w http.ResponseWriter, r *http.Request, tr
 // UpdatePackingItem 局部更新；内容编辑与状态变化使用同一业务规则
 // (PATCH /trips/{trip_id}/packing-items/{item_id})
 func (_ Unimplemented) UpdatePackingItem(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, itemId openapi_types.UUID, params UpdatePackingItemParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// UpdateRouteLegMode 手动选择某一路段的交通方式，或恢复自动选择
+// (PATCH /trips/{trip_id}/route-legs/{leg_id})
+func (_ Unimplemented) UpdateRouteLegMode(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, legId openapi_types.UUID, params UpdateRouteLegModeParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetRoutePlan 获取旅行相邻点位的持久化路线计划与汇总
+// (GET /trips/{trip_id}/route-plan)
+func (_ Unimplemented) GetRoutePlan(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// RecalculateRoutePlan 将路线计划置为待计算并投递后台任务
+// (POST /trips/{trip_id}/route-plan/recalculate)
+func (_ Unimplemented) RecalculateRoutePlan(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, params RecalculateRoutePlanParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -5675,6 +5922,168 @@ func (siw *ServerInterfaceWrapper) UpdatePackingItem(w http.ResponseWriter, r *h
 	handler.ServeHTTP(w, r)
 }
 
+// UpdateRouteLegMode operation middleware
+func (siw *ServerInterfaceWrapper) UpdateRouteLegMode(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "trip_id" -------------
+	var tripId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "trip_id", chi.URLParam(r, "trip_id"), &tripId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "trip_id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "leg_id" -------------
+	var legId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "leg_id", chi.URLParam(r, "leg_id"), &legId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "leg_id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params UpdateRouteLegModeParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
+		return
+	}
+
+	// ------------- Optional header parameter "If-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
+		var IfMatch IfMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-Match", Err: err})
+			return
+		}
+
+		params.IfMatch = &IfMatch
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateRouteLegMode(w, r, tripId, legId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetRoutePlan operation middleware
+func (siw *ServerInterfaceWrapper) GetRoutePlan(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "trip_id" -------------
+	var tripId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "trip_id", chi.URLParam(r, "trip_id"), &tripId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "trip_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetRoutePlan(w, r, tripId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RecalculateRoutePlan operation middleware
+func (siw *ServerInterfaceWrapper) RecalculateRoutePlan(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "trip_id" -------------
+	var tripId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "trip_id", chi.URLParam(r, "trip_id"), &tripId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "trip_id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params RecalculateRoutePlanParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RecalculateRoutePlan(w, r, tripId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // DisableTripShare operation middleware
 func (siw *ServerInterfaceWrapper) DisableTripShare(w http.ResponseWriter, r *http.Request) {
 
@@ -6441,6 +6850,15 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Patch(options.BaseURL+"/trips/{trip_id}/itinerary-items/{item_id}", wrapper.UpdateItineraryItem)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/trips/{trip_id}/route-plan", wrapper.GetRoutePlan)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/trips/{trip_id}/route-plan/recalculate", wrapper.RecalculateRoutePlan)
+	})
+	r.Group(func(r chi.Router) {
+		r.Patch(options.BaseURL+"/trips/{trip_id}/route-legs/{leg_id}", wrapper.UpdateRouteLegMode)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/trips/{trip_id}/packing-items", wrapper.ListPackingItems)
@@ -11996,6 +12414,220 @@ func (response UpdatePackingItem428ApplicationProblemPlusJSONResponse) VisitUpda
 	return err
 }
 
+type UpdateRouteLegModeRequestObject struct {
+	TripId openapi_types.UUID `json:"trip_id"`
+	LegId  openapi_types.UUID `json:"leg_id"`
+	Params UpdateRouteLegModeParams
+	Body   *UpdateRouteLegModeJSONRequestBody
+}
+
+type UpdateRouteLegModeResponseObject interface {
+	VisitUpdateRouteLegModeResponse(w http.ResponseWriter) error
+}
+
+type UpdateRouteLegMode200JSONResponse WriteResponse
+
+func (response UpdateRouteLegMode200JSONResponse) VisitUpdateRouteLegModeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateRouteLegMode401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response UpdateRouteLegMode401ApplicationProblemPlusJSONResponse) VisitUpdateRouteLegModeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateRouteLegMode404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response UpdateRouteLegMode404ApplicationProblemPlusJSONResponse) VisitUpdateRouteLegModeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateRouteLegMode412ApplicationProblemPlusJSONResponse struct {
+	PreconditionFailedApplicationProblemPlusJSONResponse
+}
+
+func (response UpdateRouteLegMode412ApplicationProblemPlusJSONResponse) VisitUpdateRouteLegModeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(412)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateRouteLegMode422ApplicationProblemPlusJSONResponse struct {
+	ValidationFailedApplicationProblemPlusJSONResponse
+}
+
+func (response UpdateRouteLegMode422ApplicationProblemPlusJSONResponse) VisitUpdateRouteLegModeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateRouteLegMode428ApplicationProblemPlusJSONResponse struct {
+	VersionRequiredApplicationProblemPlusJSONResponse
+}
+
+func (response UpdateRouteLegMode428ApplicationProblemPlusJSONResponse) VisitUpdateRouteLegModeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(428)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetRoutePlanRequestObject struct {
+	TripId openapi_types.UUID `json:"trip_id"`
+}
+
+type GetRoutePlanResponseObject interface {
+	VisitGetRoutePlanResponse(w http.ResponseWriter) error
+}
+
+type GetRoutePlan200JSONResponse RoutePlanResponse
+
+func (response GetRoutePlan200JSONResponse) VisitGetRoutePlanResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetRoutePlan401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response GetRoutePlan401ApplicationProblemPlusJSONResponse) VisitGetRoutePlanResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetRoutePlan404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response GetRoutePlan404ApplicationProblemPlusJSONResponse) VisitGetRoutePlanResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RecalculateRoutePlanRequestObject struct {
+	TripId openapi_types.UUID `json:"trip_id"`
+	Params RecalculateRoutePlanParams
+}
+
+type RecalculateRoutePlanResponseObject interface {
+	VisitRecalculateRoutePlanResponse(w http.ResponseWriter) error
+}
+
+type RecalculateRoutePlan200JSONResponse WriteResponse
+
+func (response RecalculateRoutePlan200JSONResponse) VisitRecalculateRoutePlanResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RecalculateRoutePlan401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response RecalculateRoutePlan401ApplicationProblemPlusJSONResponse) VisitRecalculateRoutePlanResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RecalculateRoutePlan404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response RecalculateRoutePlan404ApplicationProblemPlusJSONResponse) VisitRecalculateRoutePlanResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type DisableTripShareRequestObject struct {
 	TripId openapi_types.UUID `json:"trip_id"`
 }
@@ -13068,6 +13700,15 @@ type StrictServerInterface interface {
 	// UpdatePackingItem 局部更新；内容编辑与状态变化使用同一业务规则
 	// (PATCH /trips/{trip_id}/packing-items/{item_id})
 	UpdatePackingItem(ctx context.Context, request UpdatePackingItemRequestObject) (UpdatePackingItemResponseObject, error)
+	// UpdateRouteLegMode 手动选择某一路段的交通方式，或恢复自动选择
+	// (PATCH /trips/{trip_id}/route-legs/{leg_id})
+	UpdateRouteLegMode(ctx context.Context, request UpdateRouteLegModeRequestObject) (UpdateRouteLegModeResponseObject, error)
+	// GetRoutePlan 获取旅行相邻点位的持久化路线计划与汇总
+	// (GET /trips/{trip_id}/route-plan)
+	GetRoutePlan(ctx context.Context, request GetRoutePlanRequestObject) (GetRoutePlanResponseObject, error)
+	// RecalculateRoutePlan 将路线计划置为待计算并投递后台任务
+	// (POST /trips/{trip_id}/route-plan/recalculate)
+	RecalculateRoutePlan(ctx context.Context, request RecalculateRoutePlanRequestObject) (RecalculateRoutePlanResponseObject, error)
 	// DisableTripShare 关闭分享，旧链接立即失效；未开启也返回 204
 	// (DELETE /trips/{trip_id}/share)
 	DisableTripShare(ctx context.Context, request DisableTripShareRequestObject) (DisableTripShareResponseObject, error)
@@ -14874,6 +15515,94 @@ func (sh *strictHandler) UpdatePackingItem(w http.ResponseWriter, r *http.Reques
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(UpdatePackingItemResponseObject); ok {
 		if err := validResponse.VisitUpdatePackingItemResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateRouteLegMode operation middleware
+func (sh *strictHandler) UpdateRouteLegMode(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, legId openapi_types.UUID, params UpdateRouteLegModeParams) {
+	var request UpdateRouteLegModeRequestObject
+
+	request.TripId = tripId
+	request.LegId = legId
+	request.Params = params
+
+	var body UpdateRouteLegModeJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateRouteLegMode(ctx, request.(UpdateRouteLegModeRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateRouteLegMode")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateRouteLegModeResponseObject); ok {
+		if err := validResponse.VisitUpdateRouteLegModeResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetRoutePlan operation middleware
+func (sh *strictHandler) GetRoutePlan(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID) {
+	var request GetRoutePlanRequestObject
+
+	request.TripId = tripId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetRoutePlan(ctx, request.(GetRoutePlanRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetRoutePlan")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetRoutePlanResponseObject); ok {
+		if err := validResponse.VisitGetRoutePlanResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RecalculateRoutePlan operation middleware
+func (sh *strictHandler) RecalculateRoutePlan(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, params RecalculateRoutePlanParams) {
+	var request RecalculateRoutePlanRequestObject
+
+	request.TripId = tripId
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RecalculateRoutePlan(ctx, request.(RecalculateRoutePlanRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RecalculateRoutePlan")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RecalculateRoutePlanResponseObject); ok {
+		if err := validResponse.VisitRecalculateRoutePlanResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

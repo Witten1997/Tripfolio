@@ -1,27 +1,20 @@
 <script setup lang="ts">
-import {
-  ElAlert,
-  ElButton,
-  ElEmpty,
-  ElOption,
-  ElRadioButton,
-  ElRadioGroup,
-  ElSelect,
-  ElSkeleton,
-} from 'element-plus'
+import { ElAlert, ElButton, ElEmpty, ElOption, ElSelect, ElSkeleton } from 'element-plus'
 import { computed, onMounted, onScopeDispose, ref, shallowRef } from 'vue'
-import { useRoute } from 'vue-router'
 
 import AmapView from '@/desktop/components/AmapView.vue'
 import IconAction from '@/desktop/components/IconAction.vue'
 import ItineraryItemDialog from '@/desktop/components/ItineraryItemDialog.vue'
 import { travelModeLabels, type TravelMode } from '@/shared/api/geo'
 import { listAllItineraryItems, type ItineraryItem } from '@/shared/api/itinerary'
+import { getRoutePlan, type RoutePlan } from '@/shared/api/routePlan'
 import { actionError } from '@/shared/api/writes'
 import {
+  directDistanceMeters,
   formatDistance,
   formatDuration,
   sortedItinerary,
+  type RouteLeg,
   type Waypoint,
 } from '@/shared/geo/itineraryRoute'
 import { useItineraryRoutes } from '@/shared/geo/useItineraryRoutes'
@@ -29,15 +22,11 @@ import { useTripContext } from '@/shared/travel/tripContext'
 import { dayTitle } from '@/shared/travel/tripDays'
 
 const context = useTripContext()
-const route = useRoute()
-const requestedMode = String(route.query.mode ?? '')
-const mode = ref<TravelMode>(
-  Object.hasOwn(travelModeLabels, requestedMode) ? (requestedMode as TravelMode) : 'driving',
-)
-const modes = Object.keys(travelModeLabels) as TravelMode[]
 const items = shallowRef<ItineraryItem[]>([])
+const routePlan = shallowRef<RoutePlan | null>(null)
 const loading = ref(false)
 const error = ref<string | null>(null)
+const routePlanError = ref<string | null>(null)
 const date = ref('all')
 const map = ref<InstanceType<typeof AmapView>>()
 const dialog = ref<InstanceType<typeof ItineraryItemDialog>>()
@@ -50,7 +39,21 @@ const filtered = computed(() =>
     ? items.value.filter((item) => item.scheduled_on === date.value)
     : items.value,
 )
-const routes = useItineraryRoutes(() => filtered.value, mode)
+const plannedLegs = computed(
+  () =>
+    new Map(
+      (routePlan.value?.legs ?? []).map((leg) => [`${leg.from_item_id}>${leg.to_item_id}`, leg]),
+    ),
+)
+function modeForLeg(leg: RouteLeg): TravelMode {
+  const planned = plannedLegs.value.get(leg.id)
+  if (planned?.mode_source === 'manual') return planned.mode
+  const preference = routePlan.value?.preference
+  const distance = planned?.direct_distance_meters ?? directDistanceMeters(leg.from, leg.to)
+  if (preference && distance <= preference.short_distance_meters) return preference.short_mode
+  return 'driving'
+}
+const routes = useItineraryRoutes(() => filtered.value, modeForLeg)
 const {
   points,
   legs,
@@ -71,12 +74,20 @@ async function reload() {
   const request = ++generation
   loading.value = true
   error.value = null
+  routePlanError.value = null
   try {
-    const loaded = await listAllItineraryItems(context.tripId)
-    if (request === generation) items.value = loaded
-  } catch (cause) {
-    if (request === generation)
-      error.value = actionError(cause, '无法加载行程地点，请检查网络后重试')
+    const [itemResult, planResult] = await Promise.allSettled([
+      listAllItineraryItems(context.tripId),
+      getRoutePlan(context.tripId),
+    ])
+    if (request !== generation) return
+    if (itemResult.status === 'fulfilled') items.value = itemResult.value
+    else error.value = actionError(itemResult.reason, '无法加载行程地点，请检查网络后重试')
+    if (planResult.status === 'fulfilled') routePlan.value = planResult.value
+    else {
+      routePlan.value = null
+      routePlanError.value = actionError(planResult.reason, '交通方式暂时无法加载，当前按驾车绘制')
+    }
   } finally {
     if (request === generation) loading.value = false
   }
@@ -111,11 +122,6 @@ onScopeDispose(() => {
           <ElOption label="整趟旅行" value="all" />
           <ElOption v-for="day in dates" :key="day" :label="dayTitle(day)" :value="day" />
         </ElSelect>
-        <ElRadioGroup v-model="mode" aria-label="路线出行方式">
-          <ElRadioButton v-for="value in modes" :key="value" :value="value">{{
-            travelModeLabels[value]
-          }}</ElRadioButton>
-        </ElRadioGroup>
       </div>
     </header>
     <ElSkeleton v-if="loading && !items.length" :rows="8" animated />
@@ -124,6 +130,13 @@ onScopeDispose(() => {
       <ElButton @click="reload">重新加载</ElButton>
     </div>
     <template v-else>
+      <ElAlert
+        v-if="routePlanError"
+        type="warning"
+        :closable="false"
+        show-icon
+        :title="routePlanError"
+      />
       <div class="route-summary" :aria-busy="calculating">
         <div>
           <span>已定位地点</span
@@ -138,7 +151,7 @@ onScopeDispose(() => {
           ><strong>{{ readyCount ? formatDistance(totals.distance) : '—' }}</strong>
         </div>
         <div>
-          <span>预计{{ travelModeLabels[mode] }}用时</span
+          <span>道路预计用时</span
           ><strong>{{ readyCount ? formatDuration(totals.duration) : '—' }}</strong>
         </div>
         <p role="status">
@@ -182,7 +195,8 @@ onScopeDispose(() => {
             @focus-point="markerSelected"
           />
           <p class="map-legend">
-            <span class="legend-road" />高德道路路线
+            <span class="legend-driving" />驾车 <span class="legend-walking" />步行
+            <span class="legend-cycling" />骑行
             <span class="legend-guide" />点位示意接续，不代表可通行道路
           </p>
         </div>
@@ -219,7 +233,7 @@ onScopeDispose(() => {
               />
               <div v-if="byOrigin.get(point.id)" class="stop-leg">
                 <template v-if="byOrigin.get(point.id)?.route"
-                  >{{ travelModeLabels[mode] }}
+                  >{{ travelModeLabels[byOrigin.get(point.id)!.mode] }}
                   {{ formatDistance(byOrigin.get(point.id)!.route!.distance_meters) }} ·
                   {{ formatDuration(byOrigin.get(point.id)!.route!.duration_seconds) }}</template
                 >
@@ -338,10 +352,20 @@ onScopeDispose(() => {
   color: var(--tf-text-2);
   margin: 10px 0 0;
 }
-.legend-road,
+.legend-driving,
+.legend-walking,
+.legend-cycling,
 .legend-guide {
   width: 24px;
   border-top: 3px solid var(--tf-accent);
+}
+.legend-walking {
+  border-top: 3px dashed var(--tf-chart-3);
+  margin-left: 8px;
+}
+.legend-cycling {
+  border-top-color: var(--tf-chart-2);
+  margin-left: 8px;
 }
 .legend-guide {
   border-top: 2px dashed var(--tf-text-3);

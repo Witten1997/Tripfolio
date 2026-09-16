@@ -15,13 +15,14 @@ import (
 
 // MemoryStore 是 Repo 与 Reader 的内存实现，供本包与传输层单元测试使用；配合 write.MemoryUnitOfWork 可回滚。
 type MemoryStore struct {
-	mu         sync.Mutex
-	items      map[uuid.UUID]Resource
-	owners     map[uuid.UUID]uuid.UUID
-	trips      map[uuid.UUID]TripInfo
-	tripOwners map[uuid.UUID]uuid.UUID
-	tombstones map[uuid.UUID]struct{}
-	merge      write.MergeSource
+	mu             sync.Mutex
+	items          map[uuid.UUID]Resource
+	owners         map[uuid.UUID]uuid.UUID
+	trips          map[uuid.UUID]TripInfo
+	tripOwners     map[uuid.UUID]uuid.UUID
+	tombstones     map[uuid.UUID]struct{}
+	merge          write.MergeSource
+	routeRevisions map[uuid.UUID]int64
 }
 
 // NewMemoryStore 创建空存储。
@@ -29,7 +30,8 @@ func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{
 		items: map[uuid.UUID]Resource{}, owners: map[uuid.UUID]uuid.UUID{},
 		trips: map[uuid.UUID]TripInfo{}, tripOwners: map[uuid.UUID]uuid.UUID{},
-		tombstones: map[uuid.UUID]struct{}{},
+		tombstones:     map[uuid.UUID]struct{}{},
+		routeRevisions: map[uuid.UUID]int64{},
 	}
 }
 
@@ -69,11 +71,22 @@ func (m *MemoryStore) Snapshot() func() {
 	for k, v := range m.owners {
 		owners[k] = v
 	}
+	routeRevisions := make(map[uuid.UUID]int64, len(m.routeRevisions))
+	for k, v := range m.routeRevisions {
+		routeRevisions[k] = v
+	}
 	return func() {
 		m.mu.Lock()
 		defer m.mu.Unlock()
-		m.items, m.owners = items, owners
+		m.items, m.owners, m.routeRevisions = items, owners, routeRevisions
 	}
+}
+
+func (m *MemoryStore) InvalidateRouteSummary(_ context.Context, _, tripID uuid.UUID, _ time.Time) (int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.routeRevisions[tripID]++
+	return m.routeRevisions[tripID], nil
 }
 
 // MergeSource 实现 Repo。

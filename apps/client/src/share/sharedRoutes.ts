@@ -58,7 +58,7 @@ export function buildSharedMap(
     out.readyCount++
     out.distanceMeters += leg.route.distance_meters
     out.durationSeconds += leg.route.duration_seconds
-    out.paths.push(...routeMapPaths(leg, { path: leg.route.path }))
+    out.paths.push(...routeMapPaths(leg, { path: leg.route.path, mode: routes?.mode ?? 'driving' }))
   }
   return out
 }

@@ -3,6 +3,7 @@ package itinerary
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -12,6 +13,7 @@ import (
 	"tripfolio/server/internal/foundation/paging"
 	"tripfolio/server/internal/foundation/types"
 	"tripfolio/server/internal/foundation/write"
+	"tripfolio/server/internal/modules/travel/routeplan"
 )
 
 // Service 实现每日行程用例（接口设计 2.3、3.3）。
@@ -37,6 +39,14 @@ func record(scope write.Scope, r Resource, kind write.ChangeKind, fields []strin
 		change.ChangedFields = fields
 	}
 	scope.Record(change)
+}
+
+func recalculateRoutes(ctx context.Context, scope write.Scope, repo Repo, accountID, tripID uuid.UUID, now time.Time) error {
+	revision, err := repo.InvalidateRouteSummary(ctx, accountID, tripID, now)
+	if err != nil {
+		return err
+	}
+	return scope.Enqueue(routeplan.RecalculateJobArgs{AccountID: accountID, TripID: tripID, Revision: revision})
 }
 
 // Get 返回有效行程项目；不存在或非本人 404，已删除 410 RESOURCE_GONE。
@@ -229,7 +239,7 @@ func (s *Service) Create(ctx context.Context, a actor.Actor, operationID, tripID
 		}
 		record(scope, created, write.ChangeUpsert, CreateFields)
 		scope.SetPrimary(ref(created))
-		return nil
+		return recalculateRoutes(ctx, scope, repo, a.AccountID, tripID, now)
 	}, s.reload(a, tripID, cmd.ID))
 }
 
@@ -424,6 +434,9 @@ func (s *Service) Update(ctx context.Context, a actor.Actor, operationID, tripID
 		}
 		record(scope, updated, write.ChangeUpsert, submitted)
 		scope.SetPrimary(ref(updated))
+		if patch.LatitudeSet || patch.LongitudeSet {
+			return recalculateRoutes(ctx, scope, repo, a.AccountID, tripID, s.clock.Now())
+		}
 		return nil
 	}, s.reload(a, tripID, id))
 }
@@ -443,13 +456,14 @@ func (s *Service) Delete(ctx context.Context, a actor.Actor, operationID, tripID
 		if err != nil {
 			return err
 		}
-		deleted, err := repo.SoftDelete(ctx, a.AccountID, tripID, current.ID, s.clock.Now())
+		now := s.clock.Now()
+		deleted, err := repo.SoftDelete(ctx, a.AccountID, tripID, current.ID, now)
 		if err != nil {
 			return err
 		}
 		record(scope, deleted, write.ChangeDelete, nil)
 		scope.SetPrimary(ref(deleted))
-		return nil
+		return recalculateRoutes(ctx, scope, repo, a.AccountID, tripID, now)
 	}, s.reload(a, tripID, id))
 }
 

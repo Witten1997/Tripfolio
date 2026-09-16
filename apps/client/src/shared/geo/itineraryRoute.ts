@@ -29,6 +29,7 @@ export interface MapPath {
   id: string
   points: GeoCoordinate[]
   kind: 'road' | 'illustrative'
+  mode?: TravelMode
 }
 
 export function isCoordinate(value: {
@@ -95,6 +96,19 @@ export function routeKey(from: GeoCoordinate, to: GeoCoordinate, mode: TravelMod
   ].join(':')
 }
 
+export function directDistanceMeters(from: GeoCoordinate, to: GeoCoordinate): number {
+  const earthRadius = 6_371_008.8
+  const radians = Math.PI / 180
+  const fromLatitude = from.latitude * radians
+  const toLatitude = to.latitude * radians
+  const latitudeDelta = (to.latitude - from.latitude) * radians
+  const longitudeDelta = (to.longitude - from.longitude) * radians
+  const haversine =
+    Math.sin(latitudeDelta / 2) ** 2 +
+    Math.cos(fromLatitude) * Math.cos(toLatitude) * Math.sin(longitudeDelta / 2) ** 2
+  return Math.round(earthRadius * 2 * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine)))
+}
+
 export function formatDistance(meters: number): string {
   return meters < 1000 ? `${Math.round(meters)} 米` : `${(meters / 1000).toFixed(1)} 公里`
 }
@@ -111,10 +125,10 @@ export function formatDuration(seconds: number): string {
 /** 高德可能把 POI 中心吸附到道路。端点接续用虚线，不能冒充实际道路。 */
 export function routeMapPaths<T extends RoutableItem>(
   leg: RouteLeg<T>,
-  route?: GeoRoute | Pick<GeoRoute, 'path'>,
+  route?: GeoRoute | Pick<GeoRoute, 'mode' | 'path'>,
 ): MapPath[] {
   if (!route) return [{ id: leg.id, points: [leg.from, leg.to], kind: 'illustrative' }]
-  const paths: MapPath[] = [{ id: leg.id, points: route.path, kind: 'road' }]
+  const paths: MapPath[] = [{ id: leg.id, points: route.path, kind: 'road', mode: route.mode }]
   const start = route.path[0]
   const end = route.path.at(-1)
   if (start && !samePoint(start, leg.from))

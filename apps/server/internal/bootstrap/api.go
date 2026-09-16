@@ -30,6 +30,7 @@ import (
 	"tripfolio/server/internal/modules/metadata"
 	"tripfolio/server/internal/modules/travel/itinerary"
 	"tripfolio/server/internal/modules/travel/packing"
+	"tripfolio/server/internal/modules/travel/routeplan"
 	"tripfolio/server/internal/modules/travel/share"
 	"tripfolio/server/internal/modules/travel/todo"
 	"tripfolio/server/internal/modules/travel/trip"
@@ -43,6 +44,7 @@ type Services struct {
 	Categories *finance.CategoryService
 	Trips      *trip.Service
 	Itinerary  *itinerary.Service
+	RoutePlans *routeplan.Service
 	Packing    *packing.Service
 	Todos      *todo.Service
 	Shares     *share.Service
@@ -102,6 +104,8 @@ func BuildServices(pool *pgxpool.Pool, cfg config.Config, logger *slog.Logger, m
 	if places != nil {
 		geoSvc = geoservice.NewService(places)
 	}
+	routeStore := travelpg.NewRoutePlanStore(pool)
+	routePlans := routeplan.NewService(travelpg.NewRoutePlanUnitOfWork(writer), routeStore, routeStore, geoSvc, clk)
 
 	shares := share.NewService(share.Deps{
 		Store: travelpg.NewShareStore(pool), Trips: travelpg.NewTripReader(pool), Itinerary: travelpg.NewItineraryReader(pool),
@@ -130,7 +134,7 @@ func BuildServices(pool *pgxpool.Pool, cfg config.Config, logger *slog.Logger, m
 
 	return Services{
 		Identity: identity, Sessions: sessions, Profile: profile, Categories: categories,
-		Trips: trips, Itinerary: itineraries, Packing: packings, Todos: todos, Ledger: ledger, Statistics: statistics,
+		Trips: trips, Itinerary: itineraries, RoutePlans: routePlans, Packing: packings, Todos: todos, Ledger: ledger, Statistics: statistics,
 		Assets: assetSvc, AssetVerifier: verifier, ObjectStore: objects, Geo: geoSvc, Shares: shares,
 	}, nil
 }

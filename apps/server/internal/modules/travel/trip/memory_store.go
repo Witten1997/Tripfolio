@@ -16,12 +16,13 @@ import (
 
 // MemoryStore 是 Repo 与 Reader 的内存实现，供本包与传输层单元测试使用；配合 write.MemoryUnitOfWork 可回滚。
 type MemoryStore struct {
-	mu         sync.Mutex
-	trips      map[uuid.UUID]Resource
-	owners     map[uuid.UUID]uuid.UUID
-	tombstones map[uuid.UUID]struct{}
-	jobs       map[uuid.UUID]DeletionJob
-	merge      write.MergeSource
+	mu             sync.Mutex
+	trips          map[uuid.UUID]Resource
+	owners         map[uuid.UUID]uuid.UUID
+	tombstones     map[uuid.UUID]struct{}
+	jobs           map[uuid.UUID]DeletionJob
+	merge          write.MergeSource
+	routeRevisions map[uuid.UUID]int64
 
 	// DefaultTimezone 是任何账号的默认时区。
 	DefaultTimezone string
@@ -36,6 +37,7 @@ func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{
 		trips: map[uuid.UUID]Resource{}, owners: map[uuid.UUID]uuid.UUID{}, tombstones: map[uuid.UUID]struct{}{},
 		jobs: map[uuid.UUID]DeletionJob{}, DefaultTimezone: "Asia/Shanghai",
+		routeRevisions:   map[uuid.UUID]int64{},
 		EstimatedAmounts: map[uuid.UUID]bool{}, LocalTimes: map[uuid.UUID]bool{}, ItineraryDates: map[uuid.UUID][]types.Date{},
 	}
 }
@@ -72,10 +74,14 @@ func (m *MemoryStore) Snapshot() func() {
 	for k, v := range m.jobs {
 		jobs[k] = v
 	}
+	routeRevisions := make(map[uuid.UUID]int64, len(m.routeRevisions))
+	for k, v := range m.routeRevisions {
+		routeRevisions[k] = v
+	}
 	return func() {
 		m.mu.Lock()
 		defer m.mu.Unlock()
-		m.trips, m.owners, m.jobs = trips, owners, jobs
+		m.trips, m.owners, m.jobs, m.routeRevisions = trips, owners, jobs, routeRevisions
 	}
 }
 
@@ -145,7 +151,15 @@ func (m *MemoryStore) Update(_ context.Context, accountID, id uuid.UUID, v Value
 	return m.mutate(accountID, id, func(r *Resource) {
 		r.Name, r.StartDate, r.EndDate, r.Destination, r.Notes = v.Name, v.StartDate, v.EndDate, v.Destination, v.Notes
 		r.Timezone, r.CurrencyCode, r.BudgetAmount, r.UpdatedAt = v.Timezone, v.CurrencyCode, v.BudgetAmount, now
+		r.RouteShortMode, r.RouteShortDistanceMeters = v.RouteShortMode, v.RouteShortDistanceMeters
 	})
+}
+
+func (m *MemoryStore) InvalidateRouteSummary(_ context.Context, _, tripID uuid.UUID, _ time.Time) (int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.routeRevisions[tripID]++
+	return m.routeRevisions[tripID], nil
 }
 
 func (m *MemoryStore) SetArchived(_ context.Context, accountID, id uuid.UUID, archivedAt *time.Time, now time.Time) (Resource, error) {
@@ -271,7 +285,7 @@ func (m *MemoryStore) List(_ context.Context, accountID uuid.UUID, q ListQuery) 
 		if !afterPosition(r, q.Filters.Sort, q.After) {
 			continue
 		}
-		rows = append(rows, ListItem{Resource: r, Phase: phase})
+		rows = append(rows, ListItem{Resource: r, Phase: phase, RouteStatus: "stale"})
 	}
 	sort.Slice(rows, func(i, j int) bool {
 		a, b := rows[i].Resource, rows[j].Resource
