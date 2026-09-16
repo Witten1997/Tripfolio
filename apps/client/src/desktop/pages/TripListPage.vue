@@ -675,7 +675,7 @@ defineExpose({ openCreate })
   position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 164px;
-  min-height: 270px;
+  min-height: 224px;
   overflow: hidden;
   border-radius: inherit;
 }
@@ -714,7 +714,7 @@ defineExpose({ openCreate })
   z-index: 2;
   display: flex;
   min-width: 0;
-  padding: 28px 28px 22px;
+  padding: 22px 24px 18px;
   flex-direction: column;
 }
 .trip-card-title {
@@ -793,7 +793,7 @@ defineExpose({ openCreate })
   z-index: 2;
   display: flex;
   min-width: 0;
-  padding: 23px 20px 21px;
+  padding: 18px 16px;
   flex-direction: column;
   background: color-mix(in srgb, var(--tf-warning-soft) 48%, transparent);
   border-left: 1px dashed color-mix(in srgb, var(--tf-accent) 34%, transparent);
@@ -825,7 +825,7 @@ defineExpose({ openCreate })
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding-bottom: 15px;
+  padding-bottom: 10px;
   border-bottom: 1px dashed color-mix(in srgb, var(--tf-text-1) 34%, transparent);
   color: var(--tf-text-2);
   font-size: 10px;
@@ -840,10 +840,10 @@ defineExpose({ openCreate })
   display: flex;
   flex: 1;
   margin: 0;
-  padding: 18px 0 0;
+  padding: 12px 0 0;
   flex-direction: column;
   justify-content: space-between;
-  gap: 14px;
+  gap: 10px;
   text-align: right;
 }
 .trip-metrics div {
@@ -851,13 +851,13 @@ defineExpose({ openCreate })
 }
 .trip-metrics dt {
   color: var(--tf-text-2);
-  font-size: 13px;
+  font-size: 11px;
   font-weight: 600;
 }
 .trip-metrics dd {
   margin: 3px 0 0;
   color: var(--tf-text-1);
-  font-size: 19px;
+  font-size: 16px;
   font-weight: 800;
   line-height: 1.25;
   overflow-wrap: anywhere;
@@ -895,13 +895,13 @@ defineExpose({ openCreate })
   }
   .trip-card-layout {
     grid-template-columns: minmax(0, 1fr) 112px;
-    min-height: 186px;
+    min-height: 160px;
   }
   .trip-card-main {
-    padding: 16px 14px 12px;
+    padding: 12px 12px 10px;
   }
   .trip-card-summary {
-    padding: 13px 11px 12px;
+    padding: 10px 9px;
   }
   .trip-summary-mark span {
     font-size: 9px;
@@ -919,16 +919,19 @@ defineExpose({ openCreate })
     justify-content: space-between;
     flex-wrap: nowrap;
     gap: 2px;
-    padding: 5px 6px;
+    padding: 3px 5px;
     border-radius: 17px;
   }
   .trip-actions :deep(.icon-action) {
-    width: 38px;
-    height: 38px;
-    min-height: 38px;
+    width: 36px;
+    height: 36px;
+    min-height: 36px;
+  }
+  .trip-metrics dt {
+    font-size: 10px;
   }
   .trip-metrics dd {
-    font-size: 16px;
+    font-size: 13px;
   }
   .filter-panel {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -937,14 +940,14 @@ defineExpose({ openCreate })
 @media (max-width: 360px) {
   .trip-card-layout {
     grid-template-columns: minmax(0, 1fr) 96px;
-    min-height: 206px;
+    min-height: 176px;
   }
   .trip-card-main {
     z-index: 3;
     padding-bottom: 60px;
   }
   .trip-card-summary {
-    padding: 10px 8px 65px 10px;
+    padding: 8px 7px 56px 9px;
   }
   .trip-summary-mark {
     padding-bottom: 8px;
@@ -972,7 +975,7 @@ defineExpose({ openCreate })
     min-height: 40px;
   }
   .trip-metrics dd {
-    font-size: 14px;
+    font-size: 12px;
     white-space: nowrap;
   }
 }
