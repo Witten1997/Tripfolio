@@ -64,13 +64,6 @@ function closePurge(done?: () => void) {
         <h1>旅行回收站</h1>
         <p>整趟旅行及关联内容可在恢复截止时间前一并恢复。</p>
       </div>
-      <IconAction
-        icon="refresh"
-        label="刷新回收站"
-        :loading="loading"
-        :disabled="purging || !!busy"
-        @click="recycle.reload"
-      />
     </header>
     <ElAlert
       title="旅行进入回收站后保留 30 天。永久清理一经请求，便无法恢复。"

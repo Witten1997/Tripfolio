@@ -118,6 +118,31 @@ WHERE t.account_id = sqlc.arg(account_id)
 ORDER BY t.start_date DESC, t.id DESC
 LIMIT sqlc.arg(row_limit);
 
+-- name: ListTripsByStartDateAsc :many
+SELECT sqlc.embed(t),
+       CASE
+           WHEN (sqlc.arg(now)::timestamptz AT TIME ZONE t.timezone)::date < t.start_date THEN 'planned'
+           WHEN (sqlc.arg(now)::timestamptz AT TIME ZONE t.timezone)::date > t.end_date THEN 'ended'
+           ELSE 'ongoing'
+       END::text AS phase
+FROM trips t
+WHERE t.account_id = sqlc.arg(account_id)
+  AND t.deleted_at IS NULL
+  AND (sqlc.arg(archived)::text = 'all'
+       OR (sqlc.arg(archived)::text = 'true' AND t.archived_at IS NOT NULL)
+       OR (sqlc.arg(archived)::text = 'false' AND t.archived_at IS NULL))
+  AND (sqlc.narg(q)::text IS NULL
+       OR t.name ILIKE '%' || sqlc.narg(q)::text || '%'
+       OR t.destination ILIKE '%' || sqlc.narg(q)::text || '%')
+  AND (sqlc.narg(phase)::text IS NULL
+       OR (sqlc.narg(phase)::text = 'planned' AND (sqlc.arg(now)::timestamptz AT TIME ZONE t.timezone)::date < t.start_date)
+       OR (sqlc.narg(phase)::text = 'ended' AND (sqlc.arg(now)::timestamptz AT TIME ZONE t.timezone)::date > t.end_date)
+       OR (sqlc.narg(phase)::text = 'ongoing' AND (sqlc.arg(now)::timestamptz AT TIME ZONE t.timezone)::date BETWEEN t.start_date AND t.end_date))
+  AND (sqlc.narg(cursor_start_date)::date IS NULL
+       OR (t.start_date, t.id) > (sqlc.narg(cursor_start_date)::date, sqlc.narg(cursor_id)::uuid))
+ORDER BY t.start_date ASC, t.id ASC
+LIMIT sqlc.arg(row_limit);
+
 -- name: ListTripsByUpdatedAt :many
 SELECT sqlc.embed(t),
        CASE

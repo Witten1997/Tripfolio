@@ -455,6 +455,7 @@ func (e ListTripsParamsArchived) Valid() bool {
 
 // Defines values for ListTripsParamsSort.
 const (
+	StartDateAsc  ListTripsParamsSort = "start_date_asc"
 	StartDateDesc ListTripsParamsSort = "start_date_desc"
 	UpdatedAtDesc ListTripsParamsSort = "updated_at_desc"
 )
@@ -462,6 +463,8 @@ const (
 // Valid indicates whether the value is a known member of the ListTripsParamsSort enum.
 func (e ListTripsParamsSort) Valid() bool {
 	switch e {
+	case StartDateAsc:
+		return true
 	case StartDateDesc:
 		return true
 	case UpdatedAtDesc:

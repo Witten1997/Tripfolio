@@ -12,11 +12,18 @@ withDefaults(
     icon: ActionIconName
     to?: RouteLocationRaw
     variant?: 'button' | 'navigation'
+    appearance?: 'outlined' | 'ghost'
     loading?: boolean
     disabled?: boolean
     static?: boolean
   }>(),
-  { variant: 'button', loading: false, disabled: false, static: false },
+  {
+    variant: 'button',
+    appearance: 'outlined',
+    loading: false,
+    disabled: false,
+    static: false,
+  },
 )
 </script>
 
@@ -34,7 +41,11 @@ withDefaults(
       :to="to"
       :aria-label="label"
       class="icon-action icon-action--link"
-      :class="{ 'is-static': static, 'icon-action--navigation': variant === 'navigation' }"
+      :class="{
+        'is-static': static,
+        'icon-action--navigation': variant === 'navigation',
+        'icon-action--ghost': appearance === 'ghost',
+      }"
     >
       <ActionIcon :name="icon" />
     </RouterLink>
@@ -47,7 +58,7 @@ withDefaults(
       :disabled="disabled || loading"
       :loading="loading"
       class="icon-action"
-      :class="{ 'is-static': static }"
+      :class="{ 'is-static': static, 'icon-action--ghost': appearance === 'ghost' }"
     >
       <template #loading>
         <ActionIcon name="loading" class="icon-action__spinner" />
@@ -82,6 +93,11 @@ withDefaults(
   border-color: transparent;
   background: transparent;
 }
+.icon-action.icon-action--ghost {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
 .icon-action--navigation.router-link-active {
   color: var(--tf-accent);
   box-shadow: inset 0 -2px 0 var(--tf-accent);
@@ -101,6 +117,11 @@ withDefaults(
   }
   .icon-action--navigation:hover {
     border-color: transparent;
+  }
+  .icon-action.icon-action--ghost:hover {
+    border: 0;
+    background: var(--tf-accent-soft);
+    color: var(--tf-accent);
   }
 }
 @media (prefers-reduced-motion: no-preference) {

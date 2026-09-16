@@ -158,7 +158,7 @@ func TestCursorCodecRoundTripAndTamper(t *testing.T) {
 	if err := codec.Decode(uuid.New(), "trips|sort=start_date_desc", token, &out); !errors.Is(err, paging.ErrInvalidCursor) {
 		t.Fatalf("other account must fail: %v", err)
 	}
-	if err := codec.Decode(account, "trips|sort=updated_at_desc", token, &out); !errors.Is(err, paging.ErrInvalidCursor) {
+	if err := codec.Decode(account, "trips|sort=start_date_asc", token, &out); !errors.Is(err, paging.ErrInvalidCursor) {
 		t.Fatalf("other scope must fail: %v", err)
 	}
 	body, sig, _ := strings.Cut(token, ".")

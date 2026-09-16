@@ -53,10 +53,10 @@ describe('移动壳底栏', () => {
     wrapper.unmount()
   })
 
-  it('旅行详情保持旅行入口高亮，我的页面高亮我的入口', async () => {
+  it('旅行详情隐藏底栏，返回我的页面后恢复并高亮我的入口', async () => {
     useSessionStore().setAccessToken('token', 3600)
     const { router, wrapper } = await shell('/trips/1/itinerary')
-    expect(wrapper.get('[aria-label="旅行"]').classes()).toContain('is-active')
+    expect(wrapper.find('.mobile-bottom-bar').exists()).toBe(false)
 
     await router.push('/account')
     await flushPromises()

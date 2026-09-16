@@ -178,7 +178,7 @@ func TestHTTPTripListRecycleBinAndPurge(t *testing.T) {
 	if items, _ := page2.Body["items"].([]any); len(items) != 1 || items[0].(map[string]any)["id"] != past["id"] || page2.Body["next_cursor"] != nil {
 		t.Fatalf("page 2: %s", page2.Raw)
 	}
-	expectStatus(t, f.do(request{method: http.MethodGet, path: "/trips?limit=2&cursor=" + cursor + "&sort=updated_at_desc", token: token}), http.StatusBadRequest, "INVALID_CURSOR")
+	expectStatus(t, f.do(request{method: http.MethodGet, path: "/trips?limit=2&cursor=" + cursor + "&sort=start_date_asc", token: token}), http.StatusBadRequest, "INVALID_CURSOR")
 	expectStatus(t, f.do(request{method: http.MethodGet, path: "/trips?cursor=garbage", token: token}), http.StatusBadRequest, "INVALID_CURSOR")
 	expectStatus(t, f.do(request{method: http.MethodGet, path: "/trips?limit=0", token: token}), http.StatusUnprocessableEntity, "VALIDATION_FAILED")
 	expectStatus(t, f.do(request{method: http.MethodGet, path: "/recycle-bin/trips?limit=101", token: token}), http.StatusUnprocessableEntity, "VALIDATION_FAILED")

@@ -237,13 +237,6 @@ onMounted(reload)
         </ElSelect>
       </div>
       <div class="tab-actions tf-actions">
-        <IconAction
-          icon="refresh"
-          label="刷新行李清单"
-          :loading="loading"
-          :disabled="!!busy"
-          @click="reload"
-        />
         <ElButton size="small" @click="library?.open(items)">从物品库添加</ElButton>
         <ElButton size="small" type="primary" @click="dialog?.open()">自定义物品</ElButton>
       </div>

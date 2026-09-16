@@ -13,7 +13,6 @@ import {
 } from 'element-plus'
 import { computed } from 'vue'
 
-import IconAction from '@/desktop/components/IconAction.vue'
 import { createTodo, getTodo, updateTodo, type Todo } from '@/shared/api/todos'
 import type { WriteOutcome } from '@/shared/api/writes'
 import {
@@ -205,13 +204,6 @@ defineExpose({ open: (todo?: Todo) => editor.open(todo) })
           </tbody>
         </table>
         <div class="conflict-actions tf-actions">
-          <IconAction
-            icon="refresh"
-            label="刷新待办最新内容"
-            :loading="loadingLatest"
-            :disabled="saving"
-            @click="editor.loadLatest"
-          />
           <ElButton :disabled="!latest || saving" @click="adoptLatest"
             >放弃输入，载入最新版本</ElButton
           >

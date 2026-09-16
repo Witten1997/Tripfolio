@@ -1,6 +1,7 @@
 package account_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"io"
@@ -57,6 +58,11 @@ type fixture struct {
 
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
+	return newFixtureWithLogger(t, slog.New(slog.NewTextHandler(io.Discard, nil)))
+}
+
+func newFixtureWithLogger(t *testing.T, logger *slog.Logger) *fixture {
+	t.Helper()
 	kr, err := security.ParseKeyring("k1=" + base64.StdEncoding.EncodeToString([]byte(strings.Repeat("k", 32))))
 	if err != nil {
 		t.Fatal(err)
@@ -68,9 +74,32 @@ func newFixture(t *testing.T) *fixture {
 	mailer := &captureMailer{}
 	identity := account.NewIdentityService(account.IdentityDeps{
 		Store: store, Sessions: sessions, Hasher: security.NewPasswordHasher(2), Keyring: kr, Mailer: mailer,
-		Limiter: ratelimit.New(), Clock: clk, Policy: policy, Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Limiter: ratelimit.New(), Clock: clk, Policy: policy, Logger: logger,
 	})
 	return &fixture{store: store, identity: identity, sessions: sessions, profile: account.NewProfileService(store, nil, clk), mailer: mailer, clock: clk}
+}
+
+func TestRequestEmailChallengeLogsVerificationCode(t *testing.T) {
+	var logs bytes.Buffer
+	f := newFixtureWithLogger(t, slog.New(slog.NewTextHandler(&logs, nil)))
+	ctx := context.Background()
+
+	for _, purpose := range []account.Purpose{account.PurposeRegister, account.PurposeResetPassword} {
+		result, err := f.identity.RequestEmailChallenge(ctx, purpose, string(purpose)+"@example.com", "1.2.3.4")
+		if err != nil {
+			t.Fatalf("request %s challenge: %v", purpose, err)
+		}
+		output := logs.String()
+		if !strings.Contains(output, "purpose="+string(purpose)) {
+			t.Errorf("log missing purpose %s: %s", purpose, output)
+		}
+		if !strings.Contains(output, "challenge_id="+result.ChallengeID.String()) {
+			t.Errorf("log missing challenge ID %s: %s", result.ChallengeID, output)
+		}
+		if !strings.Contains(output, "code="+f.mailer.last()) {
+			t.Errorf("log missing verification code for %s: %s", purpose, output)
+		}
+	}
 }
 
 func webClient() account.ClientInfo {

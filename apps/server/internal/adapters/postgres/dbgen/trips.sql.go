@@ -390,6 +390,97 @@ func (q *Queries) ListTripsByStartDate(ctx context.Context, arg ListTripsByStart
 	return items, nil
 }
 
+const listTripsByStartDateAsc = `-- name: ListTripsByStartDateAsc :many
+SELECT t.id, t.account_id, t.version, t.created_at, t.updated_at, t.deleted_at, t.name, t.start_date, t.end_date, t.destination, t.notes, t.timezone, t.currency_code, t.currency_locked_at, t.budget_amount, t.archived_at, t.purge_after_at, t.purge_requested_at,
+       CASE
+           WHEN ($1::timestamptz AT TIME ZONE t.timezone)::date < t.start_date THEN 'planned'
+           WHEN ($1::timestamptz AT TIME ZONE t.timezone)::date > t.end_date THEN 'ended'
+           ELSE 'ongoing'
+       END::text AS phase
+FROM trips t
+WHERE t.account_id = $2
+  AND t.deleted_at IS NULL
+  AND ($3::text = 'all'
+       OR ($3::text = 'true' AND t.archived_at IS NOT NULL)
+       OR ($3::text = 'false' AND t.archived_at IS NULL))
+  AND ($4::text IS NULL
+       OR t.name ILIKE '%' || $4::text || '%'
+       OR t.destination ILIKE '%' || $4::text || '%')
+  AND ($5::text IS NULL
+       OR ($5::text = 'planned' AND ($1::timestamptz AT TIME ZONE t.timezone)::date < t.start_date)
+       OR ($5::text = 'ended' AND ($1::timestamptz AT TIME ZONE t.timezone)::date > t.end_date)
+       OR ($5::text = 'ongoing' AND ($1::timestamptz AT TIME ZONE t.timezone)::date BETWEEN t.start_date AND t.end_date))
+  AND ($6::date IS NULL
+       OR (t.start_date, t.id) > ($6::date, $7::uuid))
+ORDER BY t.start_date ASC, t.id ASC
+LIMIT $8
+`
+
+type ListTripsByStartDateAscParams struct {
+	Now             time.Time
+	AccountID       uuid.UUID
+	Archived        string
+	Q               *string
+	Phase           *string
+	CursorStartDate *time.Time
+	CursorID        uuid.NullUUID
+	RowLimit        int32
+}
+
+type ListTripsByStartDateAscRow struct {
+	Trip  Trip
+	Phase string
+}
+
+func (q *Queries) ListTripsByStartDateAsc(ctx context.Context, arg ListTripsByStartDateAscParams) ([]ListTripsByStartDateAscRow, error) {
+	rows, err := q.db.Query(ctx, listTripsByStartDateAsc,
+		arg.Now,
+		arg.AccountID,
+		arg.Archived,
+		arg.Q,
+		arg.Phase,
+		arg.CursorStartDate,
+		arg.CursorID,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListTripsByStartDateAscRow{}
+	for rows.Next() {
+		var i ListTripsByStartDateAscRow
+		if err := rows.Scan(
+			&i.Trip.ID,
+			&i.Trip.AccountID,
+			&i.Trip.Version,
+			&i.Trip.CreatedAt,
+			&i.Trip.UpdatedAt,
+			&i.Trip.DeletedAt,
+			&i.Trip.Name,
+			&i.Trip.StartDate,
+			&i.Trip.EndDate,
+			&i.Trip.Destination,
+			&i.Trip.Notes,
+			&i.Trip.Timezone,
+			&i.Trip.CurrencyCode,
+			&i.Trip.CurrencyLockedAt,
+			&i.Trip.BudgetAmount,
+			&i.Trip.ArchivedAt,
+			&i.Trip.PurgeAfterAt,
+			&i.Trip.PurgeRequestedAt,
+			&i.Phase,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listTripsByUpdatedAt = `-- name: ListTripsByUpdatedAt :many
 SELECT t.id, t.account_id, t.version, t.created_at, t.updated_at, t.deleted_at, t.name, t.start_date, t.end_date, t.destination, t.notes, t.timezone, t.currency_code, t.currency_locked_at, t.budget_amount, t.archived_at, t.purge_after_at, t.purge_requested_at,
        CASE

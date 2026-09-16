@@ -32,7 +32,7 @@ collection:
         description: 排序；两种排序都以 id 降序作次序
         schema:
           type: string
-          enum: [start_date_desc, updated_at_desc]
+          enum: [start_date_desc, start_date_asc, updated_at_desc]
           default: start_date_desc
       - name: limit
         in: query

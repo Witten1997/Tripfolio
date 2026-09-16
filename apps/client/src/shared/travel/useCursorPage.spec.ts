@@ -51,7 +51,7 @@ describe('旅行游标列表并发', () => {
     await Promise.resolve()
     const load = page.loadMore()
     expect(fetchPage.mock.calls[1]![0]).toMatchObject({ cursor: 'cursor-1' })
-    query.sort = 'updated_at_desc'
+    query.sort = 'start_date_asc'
     expect(page.cursor.value).toBeNull()
     expect(page.items.value).toEqual([])
     expect(fetchPage.mock.calls[2]![0]).not.toHaveProperty('cursor')

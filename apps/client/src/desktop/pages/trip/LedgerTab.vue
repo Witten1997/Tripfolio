@@ -370,12 +370,6 @@ onMounted(async () => {
       </div>
       <div class="tab-actions tf-actions">
         <IconAction
-          icon="refresh"
-          label="刷新账单"
-          :loading="statsLoading || page.loading.value"
-          @click="reloadAll"
-        />
-        <IconAction
           icon="receipt"
           label="记一笔"
           type="primary"

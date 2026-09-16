@@ -223,7 +223,7 @@ func (s *Service) List(ctx context.Context, a actor.Actor, f Filters) (paging.Pa
 	if f.Sort == "" {
 		f.Sort = SortStartDateDesc
 	} else if !f.Sort.Valid() {
-		fields = append(fields, apperr.Field("sort", "INVALID", "须为 start_date_desc 或 updated_at_desc"))
+		fields = append(fields, apperr.Field("sort", "INVALID", "须为 start_date_desc、start_date_asc 或 updated_at_desc"))
 	}
 	limit, err := paging.Limit(f.Limit)
 	if err != nil {

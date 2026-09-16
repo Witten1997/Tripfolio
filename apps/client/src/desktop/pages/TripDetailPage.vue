@@ -96,7 +96,6 @@ onMounted(() => {
         </div>
         <div class="detail-actions tf-actions">
           <IconAction icon="edit" label="编辑旅行" type="primary" @click="editor?.open(trip)" />
-          <IconAction icon="refresh" label="刷新旅行" :loading="loading" @click="context.reload" />
           <IconAction icon="share" label="分享旅行" @click="shareDialog?.open()" />
         </div>
       </header>

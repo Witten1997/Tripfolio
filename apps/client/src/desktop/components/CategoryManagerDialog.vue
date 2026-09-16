@@ -135,13 +135,7 @@ defineExpose({ open: manager.open })
     <div class="category-toolbar">
       <span>{{ items.length }} 个分类</span>
       <div class="tf-actions">
-        <IconAction
-          icon="refresh"
-          label="刷新分类"
-          :loading="loading"
-          :disabled="saving || !!deleting || uncertainCreate"
-          @click="manager.load"
-        /><ElButton
+        <ElButton
           type="primary"
           :disabled="saving || !!deleting || loading || uncertainCreate"
           @click="start()"
@@ -246,12 +240,6 @@ defineExpose({ open: manager.open })
               {{ latest.sort_order }}
             </p>
             <div class="tf-actions">
-              <IconAction
-                icon="refresh"
-                label="刷新分类最新内容"
-                :loading="loadingLatest"
-                @click="manager.loadLatest"
-              />
               <ElButton size="small" :disabled="!latest" @click="adoptLatest"
                 >放弃输入并载入</ElButton
               >

@@ -261,6 +261,28 @@ func (r *TripReader) List(ctx context.Context, accountID uuid.UUID, q trip.ListQ
 		}
 		return out, nil
 	}
+	if q.Filters.Sort == trip.SortStartDateAsc {
+		var cursorDate *time.Time
+		if q.After != nil && q.After.StartDate != "" {
+			d := q.After.StartDate.Time()
+			cursorDate = &d
+		}
+		rows, err := r.q.ListTripsByStartDateAsc(ctx, dbgen.ListTripsByStartDateAscParams{
+			Now: q.Now, AccountID: accountID, Archived: archived, Q: needle, Phase: phase,
+			CursorStartDate: cursorDate, CursorID: cursorID, RowLimit: int32(q.Limit),
+		})
+		if err != nil {
+			return nil, err
+		}
+		for _, row := range rows {
+			res, err := toResource(row.Trip)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, trip.ListItem{Resource: res, Phase: trip.Phase(row.Phase)})
+		}
+		return out, nil
+	}
 	var cursorDate *time.Time
 	if q.After != nil && q.After.StartDate != "" {
 		d := q.After.StartDate.Time()

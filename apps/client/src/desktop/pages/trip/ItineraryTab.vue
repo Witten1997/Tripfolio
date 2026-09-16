@@ -180,7 +180,6 @@ onMounted(async () => {
         <ElButton v-if="days.some((d) => isToday(d.date))" size="small" @click="jumpToToday"
           >今日行程</ElButton
         >
-        <IconAction icon="refresh" label="刷新行程" :loading="loading" @click="reloadAll" />
         <IconAction
           icon="plus"
           label="新建行程"

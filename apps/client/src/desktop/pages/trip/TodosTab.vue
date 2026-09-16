@@ -199,7 +199,6 @@ onMounted(reload)
         }}</ElRadioButton>
       </ElRadioGroup>
       <div class="tab-actions tf-actions">
-        <IconAction icon="refresh" label="刷新待办" :loading="loading" @click="reload" />
         <IconAction icon="plus" label="新建待办" type="primary" @click="dialog?.open()" />
       </div>
     </div>

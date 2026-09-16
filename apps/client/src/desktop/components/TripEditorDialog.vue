@@ -14,7 +14,6 @@ import {
 } from 'element-plus'
 import { computed } from 'vue'
 
-import IconAction from '@/desktop/components/IconAction.vue'
 import type { Trip } from '@/shared/api/trips'
 import type { WriteOutcome } from '@/shared/api/writes'
 import { useMetadataStore } from '@/shared/stores/metadata'
@@ -262,13 +261,6 @@ defineExpose({ open: editor.open })
             </tbody>
           </table>
           <div class="conflict-actions tf-actions">
-            <IconAction
-              icon="refresh"
-              label="刷新旅行最新内容"
-              :loading="loadingLatest"
-              :disabled="saving"
-              @click="editor.loadLatest"
-            />
             <ElButton :disabled="!latest || saving" @click="adoptLatest"
               >放弃输入，载入最新版本</ElButton
             >

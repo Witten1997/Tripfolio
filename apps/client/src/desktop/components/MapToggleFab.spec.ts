@@ -75,7 +75,9 @@ describe('地图切换悬浮按钮', () => {
     const style = source.match(/<style[^>]*>([\s\S]*?)<\/style>/)?.[1] ?? ''
     expect(style).toMatch(/position: fixed/)
     expect(style).toMatch(/right: 16px/)
-    expect(style).toMatch(/bottom: calc\(16px \+ env\(safe-area-inset-bottom/)
+    expect(style).toMatch(
+      /bottom: calc\(var\(--tf-map-toggle-bottom, 16px\) \+ env\(safe-area-inset-bottom/,
+    )
     expect(style).toMatch(/min-height: var\(--tf-control-size\)/)
     expect(style).toMatch(/\.map-toggle__space/)
   })

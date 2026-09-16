@@ -57,9 +57,13 @@ type IdentityDeps struct {
 
 // NewIdentityService 创建服务。
 func NewIdentityService(d IdentityDeps) *IdentityService {
+	logger := d.Logger
+	if logger == nil {
+		logger = slog.Default()
+	}
 	return &IdentityService{
 		store: d.Store, sessions: d.Sessions, hasher: d.Hasher, keyring: d.Keyring, mailer: d.Mailer,
-		limiter: d.Limiter, clock: d.Clock, policy: d.Policy, logger: d.Logger, seedCategories: d.SeedCategories,
+		limiter: d.Limiter, clock: d.Clock, policy: d.Policy, logger: logger, seedCategories: d.SeedCategories,
 	}
 }
 
@@ -139,6 +143,12 @@ func (s *IdentityService) RequestEmailChallenge(ctx context.Context, purpose Pur
 	case err != nil:
 		return ChallengeResult{}, apperr.Internal(err)
 	}
+	s.logger.InfoContext(ctx, "邮箱验证码已生成",
+		"challenge_id", challenge.ID,
+		"purpose", purpose,
+		"email", email,
+		"code", code,
+	)
 
 	subject, text := challengeMail(purpose, code, s.policy.ChallengeTTL)
 	status := "sent"

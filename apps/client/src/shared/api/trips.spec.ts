@@ -31,7 +31,7 @@ describe('旅行列表与状态写入契约', () => {
         q: '京都',
         phase: 'ongoing',
         archived: 'true',
-        sort: 'updated_at_desc',
+        sort: 'start_date_asc',
         cursor: 'opaque-cursor',
         limit: '30',
       })
@@ -44,7 +44,7 @@ describe('旅行列表与状态写入契约', () => {
       q: '京都',
       phase: 'ongoing',
       archived: 'true',
-      sort: 'updated_at_desc',
+      sort: 'start_date_asc',
       cursor: 'opaque-cursor',
       limit: 30,
     })

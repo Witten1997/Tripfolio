@@ -88,11 +88,14 @@ type Sort string
 
 const (
 	SortStartDateDesc Sort = "start_date_desc"
+	SortStartDateAsc  Sort = "start_date_asc"
 	SortUpdatedAtDesc Sort = "updated_at_desc"
 )
 
 // Valid 判断是否为已知排序。
-func (s Sort) Valid() bool { return s == SortStartDateDesc || s == SortUpdatedAtDesc }
+func (s Sort) Valid() bool {
+	return s == SortStartDateDesc || s == SortStartDateAsc || s == SortUpdatedAtDesc
+}
 
 // ArchivedFilter 是归档筛选。
 type ArchivedFilter string

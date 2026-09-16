@@ -16,7 +16,21 @@ const route = useRoute()
 const router = useRouter()
 const session = useSessionStore()
 
-const showBottomBar = computed(() => session.isAuthenticated && !route.meta.guestOnly)
+const detailRoutes = new Set([
+  'trip-detail',
+  'trip-itinerary',
+  'trip-ledger',
+  'trip-map',
+  'trip-packing',
+  'trip-album',
+  'trip-todos',
+])
+const showBottomBar = computed(
+  () =>
+    session.isAuthenticated &&
+    !route.meta.guestOnly &&
+    !detailRoutes.has(String(route.name ?? '')),
+)
 const travelActive = computed(() =>
   ['trips', 'trip-detail', 'trip-itinerary', 'trip-ledger', 'trip-map', 'trip-packing', 'trip-album', 'trip-todos'].includes(
     String(route.name ?? ''),
@@ -33,7 +47,7 @@ function createTrip() {
 
 <template>
   <ElConfigProvider :locale="zhCn">
-    <div class="mobile-shell">
+    <div class="mobile-shell" :class="{ 'mobile-shell--has-bottom-bar': showBottomBar }">
       <div class="tf-backdrop" aria-hidden="true"></div>
       <main class="mobile-shell__main">
         <RouterView :key="String($route.params.tripId ?? '')" />
@@ -67,14 +81,20 @@ function createTrip() {
 
 <style scoped>
 .mobile-shell {
-  --tf-map-toggle-bottom: 84px;
   min-height: 100dvh;
   background: transparent;
 }
 
 .mobile-shell__main {
   min-height: 100dvh;
-  padding-bottom: calc(88px + env(safe-area-inset-bottom));
+}
+
+.mobile-shell--has-bottom-bar {
+  --tf-map-toggle-bottom: 68px;
+}
+
+.mobile-shell--has-bottom-bar .mobile-shell__main {
+  padding-bottom: calc(68px + env(safe-area-inset-bottom));
 }
 
 .mobile-shell__main :deep(.trip-detail) {
@@ -88,10 +108,10 @@ function createTrip() {
   left: 0;
   z-index: 30;
   display: grid;
-  grid-template-columns: 1fr 88px 1fr;
+  grid-template-columns: 1fr 72px 1fr;
   align-items: end;
-  min-height: 64px;
-  padding: 6px max(18px, env(safe-area-inset-right)) env(safe-area-inset-bottom)
+  min-height: 52px;
+  padding: 3px max(18px, env(safe-area-inset-right)) env(safe-area-inset-bottom)
     max(18px, env(safe-area-inset-left));
   background: var(--tf-surface-raised);
   border-top: 1px solid var(--tf-line-soft);
@@ -100,11 +120,11 @@ function createTrip() {
 
 .mobile-bottom-bar__item {
   display: flex;
-  min-height: 54px;
+  min-height: 46px;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 3px;
+  gap: 1px;
   color: var(--tf-text-3);
   font-size: 12px;
   font-weight: 600;
@@ -113,8 +133,8 @@ function createTrip() {
 }
 
 .mobile-bottom-bar__item :deep(svg) {
-  width: 23px;
-  height: 23px;
+  width: 21px;
+  height: 21px;
 }
 
 .mobile-bottom-bar__item.is-active {
@@ -126,9 +146,9 @@ function createTrip() {
   justify-self: center;
   display: grid;
   place-items: center;
-  width: 64px;
-  height: 64px;
-  margin-top: -24px;
+  width: 54px;
+  height: 54px;
+  margin-top: -18px;
   padding: 0;
   border: 0;
   border-radius: 50%;
@@ -140,8 +160,8 @@ function createTrip() {
 }
 
 .mobile-bottom-bar__create :deep(svg) {
-  width: 30px;
-  height: 30px;
+  width: 27px;
+  height: 27px;
 }
 
 .mobile-bottom-bar__create:focus-visible,

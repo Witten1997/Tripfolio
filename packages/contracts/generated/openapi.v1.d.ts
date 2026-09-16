@@ -3353,7 +3353,7 @@ export interface operations {
                 /** @description 匹配名称或目的地（不区分大小写的子串），最多 100 字符 */
                 q?: string;
                 /** @description 排序；两种排序都以 id 降序作次序 */
-                sort?: "start_date_desc" | "updated_at_desc";
+                sort?: "start_date_desc" | "start_date_asc" | "updated_at_desc";
             };
             header?: never;
             path?: never;

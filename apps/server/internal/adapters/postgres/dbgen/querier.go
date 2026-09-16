@@ -120,6 +120,7 @@ type Querier interface {
 	ListTripImageAssetIDs(ctx context.Context, arg ListTripImageAssetIDsParams) ([]uuid.UUID, error)
 	// 列表：接口设计 3.9 TripFilters。q 由应用转义 LIKE 通配符；游标用行比较走 (account_id, start_date DESC, id DESC) 索引。
 	ListTripsByStartDate(ctx context.Context, arg ListTripsByStartDateParams) ([]ListTripsByStartDateRow, error)
+	ListTripsByStartDateAsc(ctx context.Context, arg ListTripsByStartDateAscParams) ([]ListTripsByStartDateAscRow, error)
 	ListTripsByUpdatedAt(ctx context.Context, arg ListTripsByUpdatedAtParams) ([]ListTripsByUpdatedAtRow, error)
 	// 统一写事务：账号锁、变更日志、操作收据、字段级合并读取。
 	LockAccountForWrite(ctx context.Context, accountID uuid.UUID) (LockAccountForWriteRow, error)

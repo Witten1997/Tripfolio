@@ -227,12 +227,19 @@ func afterPosition(r Resource, sortBy Sort, after *Position) bool {
 		if !r.UpdatedAt.Equal(*after.UpdatedAt) {
 			return r.UpdatedAt.Before(*after.UpdatedAt)
 		}
-	default:
+		return compareIDs(r.ID, after.ID) < 0
+	case SortStartDateAsc:
+		if r.StartDate != after.StartDate {
+			return r.StartDate.After(after.StartDate)
+		}
+		return compareIDs(r.ID, after.ID) > 0
+	case SortStartDateDesc:
 		if r.StartDate != after.StartDate {
 			return r.StartDate.Before(after.StartDate)
 		}
+		return compareIDs(r.ID, after.ID) < 0
 	}
-	return compareIDs(r.ID, after.ID) < 0
+	return false
 }
 
 func (m *MemoryStore) List(_ context.Context, accountID uuid.UUID, q ListQuery) ([]ListItem, error) {
@@ -272,7 +279,15 @@ func (m *MemoryStore) List(_ context.Context, accountID uuid.UUID, q ListQuery) 
 			if !a.UpdatedAt.Equal(b.UpdatedAt) {
 				return a.UpdatedAt.After(b.UpdatedAt)
 			}
-		} else if a.StartDate != b.StartDate {
+			return compareIDs(a.ID, b.ID) > 0
+		}
+		if q.Filters.Sort == SortStartDateAsc {
+			if a.StartDate != b.StartDate {
+				return a.StartDate.Before(b.StartDate)
+			}
+			return compareIDs(a.ID, b.ID) < 0
+		}
+		if a.StartDate != b.StartDate {
 			return a.StartDate.After(b.StartDate)
 		}
 		return compareIDs(a.ID, b.ID) > 0

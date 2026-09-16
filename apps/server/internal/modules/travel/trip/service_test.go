@@ -470,7 +470,12 @@ func TestListFiltersSortAndPaging(t *testing.T) {
 		t.Fatalf("case-insensitive query: %+v", page.Items)
 	}
 
-	// updated_at 排序：刚归档的 ended 最新
+	// 开始日期升序：已结束旅行最早，跨页仍保持顺序。
+	page, _ = f.svc.List(ctx, f.actor, trip.Filters{Sort: trip.SortStartDateAsc})
+	if page.Items[0].ID != ended.ID || page.Items[3].ID != planned2.ID {
+		t.Fatalf("ascending start date sort: %+v", page.Items)
+	}
+	// 最近更新排序保留兼容：刚归档的 ended 最新。
 	page, _ = f.svc.List(ctx, f.actor, trip.Filters{Sort: trip.SortUpdatedAtDesc})
 	if page.Items[0].ID != ended.ID {
 		t.Fatalf("updated sort: %+v", page.Items)

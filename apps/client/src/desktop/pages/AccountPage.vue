@@ -16,7 +16,6 @@ import {
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
-import IconAction from '@/desktop/components/IconAction.vue'
 import {
   changePassword,
   fetchAccount,
@@ -394,12 +393,6 @@ onMounted(async () => {
         <template #header>
           <div class="account-card-header">
             <span>登录设备</span>
-            <IconAction
-              icon="refresh"
-              label="刷新登录设备"
-              :loading="loadingSessions"
-              @click="loadSessions"
-            />
           </div>
         </template>
         <div :aria-busy="loadingSessions">

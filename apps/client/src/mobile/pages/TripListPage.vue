@@ -67,41 +67,31 @@ watch(
 }
 
 .mobile-trip-list :deep(.heading-actions) {
+  display: flex;
+  gap: 0;
+}
+
+.mobile-trip-list :deep(.heading-primary-actions) {
   display: none;
 }
 
-.mobile-trip-list :deep(.filters-card) {
-  border-radius: var(--tf-radius-card);
+.mobile-trip-list :deep(.heading-tool-actions) {
+  gap: 3px;
 }
 
-.mobile-trip-list :deep(.filters-card .el-card__body) {
-  padding: 14px;
+.mobile-trip-list :deep(.heading-tool-actions .icon-action) {
+  width: 40px;
+  height: 40px;
+  min-height: 40px;
 }
 
-.mobile-trip-list :deep(.trip-filters) {
+.mobile-trip-list :deep(.trip-tool-panel) {
+  gap: 8px;
+  padding: 10px;
+}
+
+.mobile-trip-list :deep(.filter-panel) {
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.mobile-trip-list :deep(.trip-filters > .search-filter) {
-  grid-column: 1 / -1;
-}
-
-.mobile-trip-list :deep(.trip-filters > div:last-child) {
-  grid-column: 1 / -1;
-}
-
-.mobile-trip-list :deep(.trip-filters .el-select) {
-  width: 100%;
-}
-
-.mobile-trip-list :deep(.list-toolbar > span) {
-  display: none;
-}
-
-.mobile-trip-list :deep(.list-toolbar) {
-  justify-content: flex-end;
-  min-height: var(--tf-control-size);
 }
 
 .mobile-trip-list :deep(.trip-group h2) {
@@ -115,15 +105,11 @@ watch(
 }
 
 .mobile-trip-list :deep(.trip-card .el-card__body) {
-  padding: 18px;
+  padding: 0;
 }
 
 .mobile-trip-list :deep(.trip-card h3) {
   font-size: 19px;
-}
-
-.mobile-trip-list :deep(.trip-destination) {
-  margin: 6px 0 14px;
 }
 
 .mobile-trip-list :deep(.trip-dates) {
@@ -133,15 +119,8 @@ watch(
 
 .mobile-trip-list :deep(.trip-actions) {
   align-items: center;
-  margin-top: 16px;
-}
-
-.mobile-trip-list :deep(.trip-actions > a:first-child) {
-  flex: 1;
-}
-
-.mobile-trip-list :deep(.trip-actions > a:first-child .el-button) {
-  width: 100%;
+  justify-content: flex-start;
+  margin-top: auto;
 }
 
 .mobile-trip-list :deep(.el-dialog) {
@@ -151,13 +130,14 @@ watch(
 }
 
 @media (max-width: 380px) {
-  .mobile-trip-list :deep(.trip-filters) {
-    grid-template-columns: 1fr;
+  .mobile-trip-list :deep(.page-heading p) {
+    display: none;
   }
 
-  .mobile-trip-list :deep(.trip-filters > .search-filter),
-  .mobile-trip-list :deep(.trip-filters > div:last-child) {
-    grid-column: auto;
+  .mobile-trip-list :deep(.heading-tool-actions .icon-action) {
+    width: 38px;
+    height: 38px;
+    min-height: 38px;
   }
 }
 </style>

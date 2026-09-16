@@ -687,6 +687,7 @@ paths:
             type: string
             enum:
               - start_date_desc
+              - start_date_asc
               - updated_at_desc
             default: start_date_desc
         - name: limit
