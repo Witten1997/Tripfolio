@@ -111,11 +111,11 @@ function createTrip() {
 }
 
 .mobile-shell--has-bottom-bar {
-  --tf-map-toggle-bottom: 92px;
+  --tf-map-toggle-bottom: 64px;
 }
 
 .mobile-shell--has-bottom-bar .mobile-shell__main {
-  padding-bottom: calc(92px + env(safe-area-inset-bottom));
+  padding-bottom: calc(64px + env(safe-area-inset-bottom));
 }
 
 .mobile-shell__main :deep(.trip-detail) {
@@ -197,11 +197,12 @@ function createTrip() {
 }
 
 .mobile-bottom-bar--trips {
+  box-sizing: border-box;
   right: max(12px, env(safe-area-inset-right));
   bottom: max(10px, env(safe-area-inset-bottom));
   left: max(12px, env(safe-area-inset-left));
-  min-height: 66px;
-  padding: 7px 18px 5px;
+  min-height: 44px;
+  padding: 0 14px;
   border: 1px solid color-mix(in srgb, var(--tf-surface-raised) 58%, transparent);
   border-radius: 28px 28px 20px 20px;
   background: color-mix(in srgb, var(--tf-surface-raised) 42%, transparent);
@@ -214,25 +215,26 @@ function createTrip() {
 }
 
 .mobile-bottom-bar--trips .mobile-bottom-bar__item {
-  min-height: 54px;
+  min-height: 42px;
+  font-size: 11px;
 }
 
 .mobile-bottom-bar--trips .mobile-bottom-bar__item.is-active::after {
   position: absolute;
   right: 30%;
-  bottom: -1px;
-  left: 30%;
-  height: 3px;
+  bottom: 0;
+  left: 32%;
+  height: 2px;
   border-radius: 999px;
   background: var(--tf-accent);
   content: '';
 }
 
 .mobile-bottom-bar--trips .mobile-bottom-bar__create {
-  width: 62px;
-  height: 62px;
-  margin-top: -27px;
-  border: 4px solid color-mix(in srgb, var(--tf-surface-raised) 72%, transparent);
+  width: 48px;
+  height: 48px;
+  margin-top: -18px;
+  border: 3px solid color-mix(in srgb, var(--tf-surface-raised) 72%, transparent);
   background: var(--tf-accent);
   color: var(--tf-accent-contrast);
   box-shadow:
@@ -242,8 +244,8 @@ function createTrip() {
 }
 
 .mobile-bottom-bar--trips .mobile-bottom-bar__create :deep(svg) {
-  width: 29px;
-  height: 29px;
+  width: 23px;
+  height: 23px;
 }
 
 @media (prefers-reduced-motion: no-preference) {
