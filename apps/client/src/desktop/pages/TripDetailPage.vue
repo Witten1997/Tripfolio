@@ -77,7 +77,10 @@ onMounted(() => {
     <template v-else-if="trip">
       <header class="detail-heading">
         <div class="detail-title">
-          <RouterLink :to="{ name: 'trips' }" class="detail-back">← 我的旅行</RouterLink>
+          <RouterLink :to="{ name: 'trips' }" class="detail-back" aria-label="返回我的旅行">
+            <span class="detail-back-arrow" aria-hidden="true">←</span>
+            <span class="detail-back-label">我的旅行</span>
+          </RouterLink>
           <h1>
             {{ trip.name }}
             <ElTag v-if="phase" :type="phase.type" effect="plain" size="small">{{
@@ -92,9 +95,9 @@ onMounted(() => {
           </p>
         </div>
         <div class="detail-actions tf-actions">
+          <IconAction icon="edit" label="编辑旅行" type="primary" @click="editor?.open(trip)" />
           <IconAction icon="refresh" label="刷新旅行" :loading="loading" @click="context.reload" />
           <IconAction icon="share" label="分享旅行" @click="shareDialog?.open()" />
-          <IconAction icon="edit" label="编辑旅行" type="primary" @click="editor?.open(trip)" />
         </div>
       </header>
       <ElAlert
@@ -151,6 +154,9 @@ onMounted(() => {
   padding: 8px 0 0;
 }
 .detail-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   font-size: 13px;
   color: var(--tf-text-3);
   text-decoration: none;
@@ -211,11 +217,68 @@ onMounted(() => {
 }
 @media (max-width: 700px) {
   .detail-heading {
-    flex-direction: column;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 18px 12px;
+    padding-top: 0;
+  }
+  .detail-title {
+    display: contents;
+  }
+  .detail-back {
+    grid-column: 1;
+    grid-row: 1;
+    width: var(--tf-control-size);
+    height: var(--tf-control-size);
+    justify-content: center;
+    border-radius: 50%;
+    color: var(--tf-text-1);
+    font-size: 27px;
+  }
+  .detail-back-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+  .detail-actions {
+    grid-column: 2;
+    grid-row: 1;
+    gap: 4px;
+  }
+  .detail-title h1 {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    margin: 0 0 4px;
+    font-size: 28px;
+    line-height: 1.25;
+  }
+  .detail-meta {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    gap: 7px 12px;
   }
   .detail-tabs {
+    margin-inline: -16px;
+    padding-inline: 16px;
     overflow-x: auto;
     scrollbar-width: none;
+  }
+  .detail-tab {
+    padding: 11px 15px;
+  }
+  .detail-actions :deep(.icon-action) {
+    width: 42px;
+    height: 42px;
+    min-height: 42px;
+    border-color: transparent;
+    background: transparent;
+  }
+  .detail-actions :deep(svg) {
+    width: 20px;
+    height: 20px;
   }
 }
 </style>

@@ -151,6 +151,12 @@ async function confirmTrash(trip: TripListItem) {
 onMounted(() => {
   if (metadata.status === 'idle' || metadata.status === 'error') void metadata.load()
 })
+
+function openCreate() {
+  editor.value?.open()
+}
+
+defineExpose({ openCreate })
 </script>
 
 <template>

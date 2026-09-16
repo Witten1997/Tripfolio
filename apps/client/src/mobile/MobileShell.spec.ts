@@ -14,6 +14,11 @@ async function shell(path: string) {
     history: createMemoryHistory(),
     routes: [
       { path: '/trips', name: 'trips', component: { template: '<div data-page="trips" />' } },
+      {
+        path: '/trips/:tripId/itinerary',
+        name: 'trip-itinerary',
+        component: { template: '<div />' },
+      },
       { path: '/themes', name: 'themes', component: { template: '<div />' } },
       { path: '/recycle-bin', name: 'recycle-bin', component: { template: '<div />' } },
       { path: '/account', name: 'account', component: { template: '<div />' } },
@@ -31,46 +36,41 @@ beforeEach(() => {
   setActivePinia(pinia)
 })
 
-describe('移动壳顶栏', () => {
-  it('用项目 Logo 图片替代文字品牌名', async () => {
-    const { wrapper } = await shell('/trips')
-    const logo = wrapper.get('.van-nav-bar__title img')
-    expect(logo.attributes('alt')).toBe('Tripfolio')
-    expect(logo.attributes('src')).toContain('logo.png')
-    expect(wrapper.get('.van-nav-bar__title').text()).toBe('')
-    wrapper.unmount()
-  })
-
-  it('登录后右上角给出主题中心、回收站与账号三个图标入口', async () => {
+describe('移动壳底栏', () => {
+  it('登录后显示旅行、新建与我的三个入口，不显示顶栏', async () => {
     useSessionStore().setAccessToken('token', 3600)
     const { wrapper } = await shell('/trips')
-    expect(wrapper.get('[aria-label="主题中心"]').attributes('href')).toBe('/themes')
-    expect(wrapper.get('[aria-label="回收站"]').attributes('href')).toBe('/recycle-bin')
-    expect(wrapper.get('[aria-label="账号"]').attributes('href')).toBe('/account')
+    expect(wrapper.find('.van-nav-bar').exists()).toBe(false)
+    expect(wrapper.get('[aria-label="旅行"]').attributes('href')).toBe('/trips')
+    expect(wrapper.get('[aria-label="新建旅行"]').element.tagName).toBe('BUTTON')
+    expect(wrapper.get('[aria-label="我的"]').attributes('href')).toBe('/account')
     wrapper.unmount()
   })
 
-  it('未登录时只保留主题中心，隐藏回收站与账号', async () => {
+  it('未登录时隐藏业务底栏', async () => {
     const { wrapper } = await shell('/themes')
-    expect(wrapper.find('[aria-label="主题中心"]').exists()).toBe(true)
-    expect(wrapper.find('[aria-label="回收站"]').exists()).toBe(false)
-    expect(wrapper.find('[aria-label="账号"]').exists()).toBe(false)
+    expect(wrapper.find('.mobile-bottom-bar').exists()).toBe(false)
     wrapper.unmount()
   })
 
-  it('根页面不显示返回，进入子页面后可返回；无历史时退回旅行列表', async () => {
+  it('旅行详情保持旅行入口高亮，我的页面高亮我的入口', async () => {
     useSessionStore().setAccessToken('token', 3600)
-    const { router, wrapper } = await shell('/trips')
-    expect(wrapper.find('.van-nav-bar__arrow').exists()).toBe(false)
+    const { router, wrapper } = await shell('/trips/1/itinerary')
+    expect(wrapper.get('[aria-label="旅行"]').classes()).toContain('is-active')
 
     await router.push('/account')
     await flushPromises()
-    expect(wrapper.find('.van-nav-bar__arrow').exists()).toBe(true)
+    expect(wrapper.get('[aria-label="我的"]').classes()).toContain('is-active')
+    wrapper.unmount()
+  })
 
-    // 内存历史不带 back 游标，等同于从链接直接进入子页面，应退回旅行列表而不是留在原地。
-    await wrapper.get('.van-nav-bar__left').trigger('click')
+  it('点击中间加号进入旅行列表并携带新建指令', async () => {
+    useSessionStore().setAccessToken('token', 3600)
+    const { router, wrapper } = await shell('/account')
+    await wrapper.get('[aria-label="新建旅行"]').trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.name).toBe('trips')
+    expect(router.currentRoute.value.query.create).toBeTypeOf('string')
     wrapper.unmount()
   })
 })

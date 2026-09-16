@@ -52,7 +52,7 @@ const action = computed(() =>
 .map-toggle {
   position: fixed;
   right: 16px;
-  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  bottom: calc(var(--tf-map-toggle-bottom, 16px) + env(safe-area-inset-bottom, 0px));
   z-index: 20;
   display: inline-flex;
   align-items: center;
@@ -87,6 +87,11 @@ const action = computed(() =>
       background-color min(var(--tf-duration-fast), 150ms) var(--tf-ease),
       color min(var(--tf-duration-fast), 150ms) var(--tf-ease),
       border-color min(var(--tf-duration-fast), 150ms) var(--tf-ease);
+  }
+}
+@media (max-width: 767px) {
+  .map-toggle__space {
+    height: calc(var(--tf-control-size) + 92px);
   }
 }
 @media print {
