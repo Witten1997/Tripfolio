@@ -871,6 +871,81 @@ defineExpose({ openCreate })
   font-size: 12px;
   padding: 8px;
 }
+@media (min-width: 601px) {
+  .trip-grid {
+    grid-template-columns: repeat(auto-fill, minmax(347px, 1fr));
+    gap: 16px;
+  }
+  .trip-card {
+    border-radius: 19px;
+  }
+  .trip-card-layout {
+    grid-template-columns: minmax(0, 1fr) 109px;
+    min-height: 149px;
+  }
+  .trip-card-main {
+    padding: 15px 16px 12px;
+  }
+  .trip-card-title {
+    gap: 7px;
+  }
+  .trip-title-icon {
+    width: 17px;
+    height: 17px;
+    stroke-width: 2;
+  }
+  .trip-card h3 {
+    font-size: 16px;
+  }
+  .trip-dates {
+    gap: 5px;
+    margin: 9px 0 0 24px;
+    font-size: 10px;
+  }
+  .trip-dates svg {
+    width: 12px;
+    height: 12px;
+  }
+  .trip-actions {
+    gap: 7px;
+    padding: 5px 6px;
+    border-radius: 12px;
+  }
+  .trip-actions :deep(.icon-action) {
+    width: 27px;
+    height: 27px;
+    min-height: 27px;
+    border-radius: 8px;
+  }
+  .trip-card-summary {
+    padding: 12px 11px;
+  }
+  .trip-card-summary::before,
+  .trip-card-summary::after {
+    width: 13px;
+    height: 13px;
+  }
+  .trip-summary-mark {
+    gap: 5px;
+    padding-bottom: 7px;
+    font-size: 8px;
+  }
+  .trip-summary-mark svg {
+    width: 13px;
+    height: 13px;
+  }
+  .trip-metrics {
+    gap: 7px;
+    padding-top: 8px;
+  }
+  .trip-metrics dt {
+    font-size: 9px;
+  }
+  .trip-metrics dd {
+    margin-top: 2px;
+    font-size: 11px;
+  }
+}
 @media (max-width: 600px) {
   .trip-list-page {
     gap: 20px;
