@@ -1,9 +1,18 @@
 /* 跨主题不变的基础规则与钩子类。主题只给 --tf-* 赋值，页面只引用 --tf-*。 */
+@font-face {
+  font-family: 'LQXianEr';
+  src: url('../../../../font/LQXianEr.ttf') format('truetype');
+  font-display: swap;
+  font-style: normal;
+  font-weight: 400;
+}
+
 :root {
   --tf-font-body:
     system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC',
     sans-serif;
-  --tf-font-display: var(--tf-font-body);
+  --tf-font-display:
+    'STKaiti', 'KaiTi', 'FZKai-Z03', 'Segoe Script', 'Songti SC', 'Noto Serif CJK SC', serif;
   --tf-control-size: 40px;
   font-family: var(--tf-font-body);
 }

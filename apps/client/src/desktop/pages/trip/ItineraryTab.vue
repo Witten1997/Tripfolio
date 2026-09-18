@@ -14,7 +14,7 @@ import {
   ElTag,
 } from 'element-plus'
 import { Bike, CarFront, ChevronRight, Footprints, RotateCcw, Route, Settings2 } from '@lucide/vue'
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { VueDraggable, type DraggableEvent } from 'vue-draggable-plus'
 
 import IconAction from '@/desktop/components/IconAction.vue'
@@ -73,6 +73,9 @@ let mediaQuery: MediaQueryList | undefined
 let mediaQueryListener: (() => void) | undefined
 let routePollAttempts = 0
 let recalculationRequested = false
+let scrollFrame: number | undefined
+let scrollListener: (() => void) | undefined
+const dragging = ref(false)
 
 const modeMeta = {
   auto: { label: '自动选择', icon: RotateCcw },
@@ -84,9 +87,6 @@ const routeModes = Object.keys(modeMeta) as RouteLegMode[]
 const byOrigin = computed(
   () => new Map((routePlan.value?.legs ?? []).map((leg) => [leg.from_item_id, leg])),
 )
-const byDestination = computed(
-  () => new Map((routePlan.value?.legs ?? []).map((leg) => [leg.to_item_id, leg])),
-)
 const itemById = computed(() => new Map(board.items.value.map((item) => [item.id, item])))
 const selectedLeg = computed(
   () => routePlan.value?.legs.find((leg) => leg.id === selectedLegId.value) ?? null,
@@ -94,6 +94,8 @@ const selectedLeg = computed(
 const selectedMode = computed<RouteLegMode>(() =>
   selectedLeg.value?.mode_source === 'preference' ? 'auto' : (selectedLeg.value?.mode ?? 'auto'),
 )
+const activeDay = ref('')
+const isToday = (date: string) => date === context.today.value
 
 /**
  * 拖动组件需要可变数组：每天维护一份镜像。VueDraggable 在挂载时读取 v-model，
@@ -105,11 +107,69 @@ watch(
   days,
   (next) => {
     lists.value = Object.fromEntries(next.map((d) => [d.date, [...d.items]]))
+    if (!next.some((day) => day.date === activeDay.value)) {
+      activeDay.value = next.find((day) => isToday(day.date))?.date ?? next[0]?.date ?? ''
+    }
   },
   { immediate: true, flush: 'sync' },
 )
+function syncActiveDay() {
+  if (!days.value.length) return
+  const navBottom = document
+    .querySelector<HTMLElement>('.day-jump-nav')
+    ?.getBoundingClientRect().bottom
+  const sections = Array.from(document.querySelectorAll<HTMLElement>('.day-list > .day'))
+  const scrollMarginTop = sections[0]
+    ? Number.parseFloat(window.getComputedStyle(sections[0]).scrollMarginTop)
+    : 0
+  // 选择锚点至少落在日期区块的滚动留白之后，避免 sticky 日期栏遮住旧日期内容时仍维持旧高亮。
+  const anchor = Math.max(
+    (navBottom ?? 0) + 16,
+    Number.isFinite(scrollMarginTop) ? scrollMarginTop : 0,
+  )
+  const contentTop = (navBottom ?? 0) + 4
+  const visibleContent = Array.from(
+    document.querySelectorAll<HTMLElement>('.day-list .item, .day-list .route-connector'),
+  ).find((element) => {
+    const rect = element.getBoundingClientRect()
+    return rect.bottom > contentTop && rect.top < window.innerHeight
+  })
+  const contentDay = visibleContent?.closest('.day') as HTMLElement | null
+  const current =
+    contentDay ??
+    sections.reduce<HTMLElement | null>((selected, section) => {
+      const top = section.getBoundingClientRect().top
+      if (top > anchor) return selected
+      return !selected || top > selected.getBoundingClientRect().top ? section : selected
+    }, null)
+  const section = current ?? sections[0]
+  const date = section?.id.replace(/^day-/, '')
+  if (!date || date === activeDay.value) return
+  activeDay.value = date
+  document.querySelector<HTMLElement>(`[data-day-jump="${date}"]`)?.scrollIntoView({
+    behavior: 'smooth',
+    block: 'nearest',
+    inline: 'nearest',
+  })
+}
+
+function handleScroll() {
+  if (scrollFrame !== undefined) return
+  scrollFrame = window.requestAnimationFrame(() => {
+    scrollFrame = undefined
+    syncActiveDay()
+  })
+}
+
+watch(
+  days,
+  async () => {
+    await nextTick()
+    syncActiveDay()
+  },
+  { flush: 'post' },
+)
 const total = computed(() => board.items.value.length)
-const isToday = (date: string) => date === context.today.value
 
 async function reloadAll() {
   await board.reload()
@@ -170,8 +230,8 @@ function compactLegDescription(leg: RouteLeg) {
       minutes === 0
         ? '0min'
         : minutes < 60
-        ? `${minutes}min`
-        : `${Math.floor(minutes / 60)}h${minutes % 60 ? `${minutes % 60}min` : ''}`
+          ? `${minutes}min`
+          : `${Math.floor(minutes / 60)}h${minutes % 60 ? `${minutes % 60}min` : ''}`
     return `${distance} · ${duration}`
   }
   if (leg.status === 'failed') return '路线暂未算出'
@@ -240,12 +300,28 @@ async function savePreferences() {
   }
 }
 
-function jumpToToday() {
-  const el = document.getElementById(`day-${context.today.value}`)
+function jumpToDay(date: string) {
+  activeDay.value = date
+  document.querySelector<HTMLElement>(`[data-day-jump="${date}"]`)?.scrollIntoView({
+    behavior: 'smooth',
+    block: 'nearest',
+    inline: 'center',
+  })
+  const el = document.getElementById(`day-${date}`)
   el?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
+function jumpToToday() {
+  jumpToDay(context.today.value)
+}
+
+function dayTitlePart(title: string, part: 'date' | 'weekday') {
+  const [date, weekday] = title.split(' ')
+  return part === 'date' ? date : weekday
+}
+
 async function onDragEnd(event: DraggableEvent<ItineraryItem>) {
+  dragging.value = false
   const from = event.from.dataset.date
   const to = event.to.dataset.date
   const id = event.data?.id
@@ -255,6 +331,7 @@ async function onDragEnd(event: DraggableEvent<ItineraryItem>) {
   }
   // moveItem 成功或失败都会重载 board，镜像由 days 的 watcher 重建
   const moved = await board.moveItem(id, to, event.newIndex)
+  if (moved) await loadRoutePlan()
   if (moved && feedback.value.length) {
     noticeType.value = 'warning'
     notice.value = feedback.value
@@ -325,6 +402,10 @@ function timeLabel(item: ItineraryItem) {
 }
 
 onMounted(async () => {
+  if (typeof window !== 'undefined') {
+    scrollListener = handleScroll
+    window.addEventListener('scroll', scrollListener, { passive: true })
+  }
   if (typeof window !== 'undefined' && window.matchMedia) {
     mediaQuery = window.matchMedia('(max-width: 767px)')
     mediaQueryListener = () => (isMobile.value = mediaQuery?.matches ?? false)
@@ -332,39 +413,49 @@ onMounted(async () => {
     mediaQuery.addEventListener('change', mediaQueryListener)
   }
   await reloadAll()
+  await nextTick()
+  syncActiveDay()
 })
 
 onUnmounted(() => {
   if (routePoll) clearTimeout(routePoll)
   if (mediaQueryListener) mediaQuery?.removeEventListener('change', mediaQueryListener)
+  if (scrollListener) window.removeEventListener('scroll', scrollListener)
+  if (scrollFrame !== undefined) window.cancelAnimationFrame(scrollFrame)
 })
 </script>
 
 <template>
   <div class="itinerary-tab">
+    <nav v-if="days.length" class="day-jump-nav tf-surface" aria-label="快速跳转到日期">
+      <div class="day-jump-track">
+        <button
+          v-for="day in days"
+          :key="day.date"
+          type="button"
+          class="day-jump"
+          :data-day-jump="day.date"
+          :class="{
+            'is-active': activeDay === day.date,
+            'is-today': isToday(day.date),
+            'is-outside': day.outside,
+          }"
+          :aria-current="activeDay === day.date ? 'date' : undefined"
+          @click="jumpToDay(day.date)"
+        >
+          {{ day.title }}
+        </button>
+      </div>
+    </nav>
     <div class="tab-toolbar">
       <span class="tab-summary">
         共 {{ total }} 条行程 · 拖动卡片调整顺序或移到其他日期
         <template v-if="reordering">，正在保存排序…</template>
       </span>
       <div class="tab-actions tf-actions">
-        <IconAction
-          icon="globe"
-          label="地图视图"
-          :to="{
-            name: 'trip-map',
-            params: { tripId: context.tripId },
-          }"
-        />
         <ElButton v-if="days.some((d) => isToday(d.date))" size="small" @click="jumpToToday"
           >今日行程</ElButton
         >
-        <IconAction
-          icon="plus"
-          label="新建行程"
-          type="primary"
-          @click="dialog?.open(undefined, trip?.start_date)"
-        />
       </div>
     </div>
     <div v-if="routePlan" class="route-options">
@@ -410,133 +501,140 @@ onUnmounted(() => {
       <ElAlert :title="error" type="error" :closable="false" show-icon />
       <ElButton class="retry-button" @click="reloadAll">重新加载</ElButton>
     </ElCard>
-    <div v-else class="day-list" :class="{ 'day-list--busy': reordering }">
+    <div
+      v-else
+      class="day-list"
+      :class="{ 'day-list--busy': reordering, 'day-list--dragging': dragging }"
+    >
       <section
         v-for="day in days"
         :id="`day-${day.date}`"
         :key="day.date"
-        class="day tf-surface"
-        :class="{ 'day--today': isToday(day.date), 'day--outside': day.outside }"
+        class="day"
+        :class="{
+          'day--active': activeDay === day.date,
+          'day--today': isToday(day.date),
+          'day--outside': day.outside,
+        }"
       >
-        <header class="day-header">
-          <h2>
-            {{ day.title }}
-            <ElTag v-if="isToday(day.date)" type="success" size="small" effect="plain">今天</ElTag>
-            <ElTag v-if="day.outside" type="warning" size="small" effect="plain">旅行日期外</ElTag>
+        <div class="day-rail">
+          <h2 class="day-badge">
+            <span>{{ dayTitlePart(day.title, 'date') }}</span>
+            <small>{{ dayTitlePart(day.title, 'weekday') }}</small>
           </h2>
-          <span class="day-count">{{ day.items.length }} 项</span>
-          <IconAction
-            icon="plus"
-            :label="`为 ${day.title} 添加行程`"
-            text
-            :disabled="reordering"
-            @click="dialog?.open(undefined, day.date)"
-          />
-        </header>
-        <VueDraggable
-          v-model="lists[day.date]"
-          group="itinerary"
-          :data-date="day.date"
-          :disabled="reordering || !!busy"
-          :animation="150"
-          :force-fallback="true"
-          handle=".drag-handle"
-          class="day-items"
-          ghost-class="item--ghost"
-          @end="onDragEnd"
-        >
-          <div
-            v-for="item in lists[day.date] ?? []"
-            :key="item.id"
-            class="item-group"
+          <span class="day-timeline" aria-hidden="true"></span>
+        </div>
+        <div class="day-panel">
+          <span class="day-node" aria-hidden="true"></span>
+          <VueDraggable
+            v-model="lists[day.date]"
+            group="itinerary"
+            :data-date="day.date"
+            :disabled="reordering || !!busy"
+            :animation="150"
+            :force-fallback="true"
+            handle=".drag-handle"
+            class="day-items"
+            ghost-class="item--ghost"
+            @start="dragging = true"
+            @end="onDragEnd"
           >
-            <button
-              v-if="byDestination.get(item.id) && isCrossDayLeg(byDestination.get(item.id)!)"
-              type="button"
-              class="route-connector route-connector--cross-day"
-              :aria-label="routeAriaLabel(byDestination.get(item.id)!)"
-              @click="openRouteLeg(byDestination.get(item.id)!)"
-            >
-              <component
-                :is="modeMeta[byDestination.get(item.id)!.mode].icon"
-                aria-hidden="true"
-              />
-              <span>{{ modeMeta[byDestination.get(item.id)!.mode].label }}</span>
-              <strong>{{ compactLegDescription(byDestination.get(item.id)!) }}</strong>
-              <ChevronRight aria-hidden="true" />
-            </button>
-            <article
-              class="item"
-              :class="[`item--${item.status}`, `item--kind-${item.kind}`]"
-            >
-            <button
-              type="button"
-              class="drag-handle"
-              :aria-label="`拖动 ${item.title}`"
-              :disabled="reordering"
-            >
-              ⋮⋮
-            </button>
-            <div class="item-body">
-              <div class="item-title">
-                <ElTag size="small" effect="plain">{{ itineraryKindLabels[item.kind] }}</ElTag>
-                <strong>{{ item.title }}</strong>
-                <ElTag
-                  v-if="item.status !== 'pending'"
-                  size="small"
-                  :type="item.status === 'completed' ? 'success' : 'info'"
-                  >{{ itineraryStatusLabels[item.status] }}</ElTag
+            <div v-for="item in lists[day.date] ?? []" :key="item.id" class="item-group">
+              <article class="item" :class="[`item--${item.status}`, `item--kind-${item.kind}`]">
+                <button
+                  type="button"
+                  class="drag-handle"
+                  :aria-label="`拖动 ${item.title}`"
+                  :disabled="reordering"
                 >
-              </div>
-              <p v-if="timeLabel(item)" class="item-time">{{ timeLabel(item) }}</p>
-              <p v-if="item.place_name || item.address" class="item-place">
-                {{ item.place_name }}<span v-if="item.place_name && item.address"> · </span
-                >{{ item.address }}
-              </p>
-              <p v-if="item.estimated_amount" class="item-amount">
-                预计 {{ item.currency_code }} {{ item.estimated_amount }}
-              </p>
-              <p v-if="item.notes" class="item-notes">{{ item.notes }}</p>
+                  ⋮⋮
+                </button>
+                <div class="item-body">
+                  <div class="item-title">
+                    <strong>{{ item.title }}</strong>
+                    <ElTag size="small" effect="plain">{{ itineraryKindLabels[item.kind] }}</ElTag>
+                    <ElTag
+                      v-if="item.status !== 'pending'"
+                      size="small"
+                      :type="item.status === 'completed' ? 'success' : 'info'"
+                      >{{ itineraryStatusLabels[item.status] }}</ElTag
+                    >
+                  </div>
+                  <p v-if="item.place_name || item.address" class="item-place">
+                    {{ item.place_name }}<span v-if="item.place_name && item.address"> · </span
+                    >{{ item.address }}
+                  </p>
+                  <p v-if="item.notes" class="item-notes">{{ item.notes }}</p>
+                  <div v-if="timeLabel(item) || item.estimated_amount" class="item-meta">
+                    <span v-if="timeLabel(item)" class="item-time">{{ timeLabel(item) }}</span>
+                    <span v-if="item.estimated_amount" class="item-amount">
+                      预计 {{ item.currency_code }} {{ item.estimated_amount }}
+                    </span>
+                  </div>
+                </div>
+                <div class="item-actions tf-actions">
+                  <IconAction
+                    icon="edit"
+                    :label="`编辑行程：${item.title}`"
+                    appearance="ghost"
+                    text
+                    :disabled="!!busy || reordering"
+                    @click="dialog?.open(item)"
+                  />
+                  <IconAction
+                    icon="trash"
+                    :label="`删除行程：${item.title}`"
+                    appearance="ghost"
+                    text
+                    type="danger"
+                    :loading="busy === item.id"
+                    :disabled="(!!busy && busy !== item.id) || reordering"
+                    @click="remove(item)"
+                  />
+                </div>
+              </article>
+              <button
+                v-if="byOrigin.get(item.id)"
+                type="button"
+                class="route-connector"
+                :class="{
+                  'route-connector--cross-day': isCrossDayLeg(byOrigin.get(item.id)!),
+                }"
+                :aria-label="routeAriaLabel(byOrigin.get(item.id)!)"
+                @click="openRouteLeg(byOrigin.get(item.id)!)"
+              >
+                <component :is="modeMeta[byOrigin.get(item.id)!.mode].icon" aria-hidden="true" />
+                <span>{{ modeMeta[byOrigin.get(item.id)!.mode].label }}</span>
+                <strong>{{ compactLegDescription(byOrigin.get(item.id)!) }}</strong>
+                <ChevronRight aria-hidden="true" />
+              </button>
             </div>
-            <div class="item-actions tf-actions">
-              <IconAction
-                icon="edit"
-                :label="`编辑行程：${item.title}`"
-                text
-                :disabled="!!busy || reordering"
-                @click="dialog?.open(item)"
-              />
-              <IconAction
-                icon="trash"
-                :label="`删除行程：${item.title}`"
-                text
-                type="danger"
-                :loading="busy === item.id"
-                :disabled="(!!busy && busy !== item.id) || reordering"
-                @click="remove(item)"
-              />
+          </VueDraggable>
+          <ElEmpty
+            v-if="!lists[day.date]?.length"
+            description="这一天还没有安排"
+            :image-size="48"
+            class="day-empty"
+          />
+          <footer class="day-add-row">
+            <div class="day-heading">
+              <ElTag v-if="isToday(day.date)" type="success" size="small" effect="plain"
+                >今天</ElTag
+              >
+              <ElTag v-if="day.outside" type="warning" size="small" effect="plain"
+                >旅行日期外</ElTag
+              >
             </div>
-            </article>
-            <button
-              v-if="byOrigin.get(item.id) && !isCrossDayLeg(byOrigin.get(item.id)!)"
-              type="button"
-              class="route-connector"
-              :aria-label="routeAriaLabel(byOrigin.get(item.id)!)"
-              @click="openRouteLeg(byOrigin.get(item.id)!)"
-            >
-              <component :is="modeMeta[byOrigin.get(item.id)!.mode].icon" aria-hidden="true" />
-              <span>{{ modeMeta[byOrigin.get(item.id)!.mode].label }}</span>
-              <strong>{{ compactLegDescription(byOrigin.get(item.id)!) }}</strong>
-              <ChevronRight aria-hidden="true" />
-            </button>
-          </div>
-        </VueDraggable>
-        <ElEmpty
-          v-if="!lists[day.date]?.length"
-          description="这一天还没有安排"
-          :image-size="48"
-          class="day-empty"
-        />
+            <IconAction
+              icon="plus"
+              :label="`为 ${day.title} 添加行程`"
+              appearance="ghost"
+              text
+              :disabled="reordering"
+              @click="dialog?.open(undefined, day.date)"
+            />
+          </footer>
+        </div>
       </section>
     </div>
     <ItineraryItemDialog ref="dialog" @saved="saved" />
@@ -695,6 +793,101 @@ onUnmounted(() => {
   flex-direction: column;
   gap: 16px;
 }
+.day-jump-nav {
+  position: sticky;
+  top: 24px;
+  z-index: 5;
+  min-width: 0;
+  padding: 8px;
+  overflow: hidden;
+  border-radius: var(--tf-radius-control);
+}
+.day-jump-track {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  scroll-snap-type: x proximity;
+}
+.day-jump-track::-webkit-scrollbar {
+  display: none;
+}
+.day-jump {
+  flex: 1 0 112px;
+  min-height: 42px;
+  padding: 8px 12px;
+  border: 1px solid transparent;
+  border-radius: calc(var(--tf-radius-control) - 2px);
+  background: transparent;
+  color: var(--tf-text-2);
+  font: inherit;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  letter-spacing: 0;
+  scroll-snap-align: start;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color var(--tf-duration-fast) var(--tf-ease),
+    border-color var(--tf-duration-fast) var(--tf-ease),
+    color var(--tf-duration-fast) var(--tf-ease),
+    transform var(--tf-duration-fast) var(--tf-ease);
+}
+.day-jump:hover {
+  border-color: var(--tf-line-soft);
+  background: var(--tf-surface-inset);
+  color: var(--tf-text-1);
+}
+.day-jump:focus-visible {
+  outline: 2px solid var(--tf-accent);
+  outline-offset: -2px;
+}
+.day-jump:active {
+  transform: scale(0.98);
+}
+.day-jump.is-active {
+  border-color: var(--tf-accent);
+  background: var(--tf-accent);
+  color: var(--tf-accent-contrast);
+  box-shadow: var(--tf-shadow-1);
+}
+.day-jump.is-today:not(.is-active) {
+  border-color: var(--tf-success);
+  color: var(--tf-success);
+}
+.day-jump.is-outside {
+  border-style: dashed;
+}
+:global([data-theme='glass']) .day-jump-nav {
+  border-radius: 22px 16px 20px 14px / 16px 21px 14px 19px;
+  background-color: color-mix(in srgb, var(--tf-surface-raised) 64%, transparent);
+  box-shadow:
+    0 12px 28px -20px color-mix(in srgb, var(--tf-accent) 48%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--tf-surface-raised) 86%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, var(--tf-accent) 8%, transparent);
+}
+:global([data-theme='glass']) .day-jump {
+  border-radius: 17px 13px 18px 12px / 13px 18px 12px 17px;
+}
+:global([data-theme='glass']) .day-jump:nth-child(even) {
+  border-radius: 13px 18px 12px 17px / 17px 13px 18px 12px;
+}
+:global([data-theme='glass']) .day-jump.is-active {
+  border-color: color-mix(in srgb, var(--tf-surface-raised) 68%, transparent);
+  background-color: var(--tf-accent);
+  background-image: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--tf-surface-raised) 20%, transparent),
+    transparent 46%,
+    color-mix(in srgb, var(--tf-accent) 8%, transparent)
+  );
+  box-shadow:
+    0 10px 20px -12px color-mix(in srgb, var(--tf-accent) 70%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--tf-surface-raised) 46%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, var(--tf-accent) 20%, transparent);
+}
 .tab-toolbar {
   display: flex;
   justify-content: space-between;
@@ -730,33 +923,124 @@ onUnmounted(() => {
 .day-list--busy {
   pointer-events: none;
 }
+.day-list--dragging .route-connector {
+  visibility: hidden;
+}
 .day {
-  padding: 16px 18px;
-  scroll-margin-top: 80px;
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 16px;
+  min-width: 0;
+  scroll-margin-top: 104px;
 }
-.day--today {
-  border-color: var(--tf-success);
+.day-rail {
+  position: relative;
+  display: flex;
+  justify-content: center;
 }
-.day--outside {
-  border-style: dashed;
+.day-badge {
+  position: relative;
+  z-index: 1;
+  box-sizing: border-box;
+  display: flex;
+  width: 58px;
+  height: 58px;
+  margin: 0;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--tf-line-soft);
+  border-radius: 17px;
+  background: var(--tf-surface-sunken);
+  color: var(--tf-text-1);
+  box-shadow: var(--tf-shadow-1), var(--tf-surface-highlight);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.05;
 }
-.day-header {
+.day-badge span {
+  font-size: 15px;
+  font-weight: 750;
+}
+.day-badge small {
+  margin-top: 5px;
+  color: var(--tf-text-3);
+  font-size: 11px;
+  font-weight: 600;
+}
+.day--active .day-badge {
+  border-color: var(--tf-accent);
+  background: var(--tf-accent);
+  color: var(--tf-accent-contrast);
+}
+.day--active .day-badge small {
+  color: var(--tf-accent-contrast);
+}
+:global([data-theme='glass']) .day-badge {
+  border-radius: 18px 13px 19px 14px / 15px 19px 13px 18px;
+}
+:global([data-theme='glass']) .day--active .day-badge {
+  border-color: color-mix(in srgb, var(--tf-surface-raised) 66%, transparent);
+  background-color: var(--tf-accent);
+  background-image: linear-gradient(
+    140deg,
+    color-mix(in srgb, var(--tf-surface-raised) 20%, transparent),
+    transparent 48%,
+    color-mix(in srgb, var(--tf-accent) 9%, transparent)
+  );
+  box-shadow:
+    0 12px 22px -13px color-mix(in srgb, var(--tf-accent) 74%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--tf-surface-raised) 48%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, var(--tf-accent) 20%, transparent);
+}
+.day-timeline {
+  position: absolute;
+  top: 58px;
+  bottom: -16px;
+  left: 50%;
+  border-left: 1px solid color-mix(in srgb, var(--tf-accent) 42%, var(--tf-line-soft));
+}
+.day:last-child .day-timeline {
+  display: none;
+}
+.day-panel {
+  position: relative;
+  min-width: 0;
+  padding: 0 0 6px;
+}
+.day-node {
+  position: absolute;
+  top: 27px;
+  left: -14px;
+  width: 9px;
+  height: 9px;
+  border: 2px solid var(--tf-surface-raised);
+  border-radius: 50%;
+  background: var(--tf-accent);
+  box-shadow: 0 0 0 1px var(--tf-accent);
+}
+.day-node::before {
+  position: absolute;
+  top: 3px;
+  right: 7px;
+  width: 16px;
+  border-top: 1px solid color-mix(in srgb, var(--tf-accent) 42%, var(--tf-line-soft));
+  content: '';
+}
+.day-add-row {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 12px;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: var(--tf-control-size);
+  margin-top: 8px;
+  padding-left: 4px;
 }
-.day-header h2 {
-  margin: 0;
-  font-size: 17px;
+.day-heading {
   display: flex;
   align-items: center;
   gap: 8px;
-}
-.day-count {
-  font-size: 12px;
-  color: var(--tf-text-3);
-  margin-right: auto;
+  min-width: 0;
+  flex-wrap: wrap;
 }
 .day-items {
   display: flex;
@@ -775,22 +1059,41 @@ onUnmounted(() => {
   outline-offset: -1px;
 }
 .item {
-  display: flex;
-  gap: 10px;
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  gap: 8px;
   align-items: flex-start;
-  padding: 9px 12px;
+  padding: 12px 12px 13px;
   border: 1px solid color-mix(in srgb, var(--item-kind, var(--tf-line)) 24%, var(--tf-line-soft));
   border-radius: var(--tf-radius-control);
-  background: color-mix(in srgb, var(--item-kind, var(--tf-surface-inset)) 12%, var(--tf-surface));
-  box-shadow: inset 4px 0 0 var(--item-kind, transparent);
-  transition: transform var(--tf-duration-fast) var(--tf-ease), box-shadow var(--tf-duration-fast) var(--tf-ease);
+  background: var(--tf-surface-raised);
+  box-shadow:
+    inset 3px 0 0 var(--item-kind, transparent),
+    var(--tf-shadow-1),
+    var(--tf-surface-highlight);
+  transition:
+    border-color var(--tf-duration-fast) var(--tf-ease),
+    transform var(--tf-duration-fast) var(--tf-ease);
 }
-.item--kind-transport { --item-kind: var(--tf-chart-4); }
-.item--kind-attraction { --item-kind: var(--tf-chart-6); }
-.item--kind-lodging { --item-kind: var(--tf-chart-2); }
-.item--kind-dining { --item-kind: var(--tf-chart-5); }
-.item--kind-other { --item-kind: var(--tf-info); }
-.item:hover { transform: translateY(-1px); box-shadow: inset 4px 0 0 var(--item-kind, transparent), var(--tf-shadow-1); }
+.item--kind-transport {
+  --item-kind: var(--tf-chart-4);
+}
+.item--kind-attraction {
+  --item-kind: var(--tf-chart-6);
+}
+.item--kind-lodging {
+  --item-kind: var(--tf-chart-2);
+}
+.item--kind-dining {
+  --item-kind: var(--tf-chart-5);
+}
+.item--kind-other {
+  --item-kind: var(--tf-info);
+}
+.item:hover {
+  border-color: color-mix(in srgb, var(--item-kind) 48%, var(--tf-line-soft));
+  transform: translateY(-1px);
+}
 .item--completed .item-title strong,
 .item--skipped .item-title strong {
   color: var(--tf-text-2);
@@ -811,7 +1114,7 @@ onUnmounted(() => {
   font-size: 14px;
   line-height: 1;
   padding: 6px 2px;
-  letter-spacing: -2px;
+  letter-spacing: 0;
 }
 .drag-handle:disabled {
   cursor: default;
@@ -827,14 +1130,18 @@ onUnmounted(() => {
   flex-wrap: wrap;
 }
 .item-title strong {
+  color: var(--tf-text-1);
+  font-family: var(--tf-font-display);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.45;
   overflow-wrap: anywhere;
 }
-.item-time,
 .item-place,
-.item-amount,
 .item-notes {
   margin: 4px 0 0;
   font-size: 13px;
+  line-height: 1.55;
   color: var(--tf-text-2);
   overflow-wrap: anywhere;
 }
@@ -846,9 +1153,25 @@ onUnmounted(() => {
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+.item-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px 16px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+  color: var(--tf-text-2);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.item-time,
+.item-amount {
+  overflow-wrap: anywhere;
+}
 .item-actions {
   display: flex;
   flex-shrink: 0;
+  gap: 0;
+  flex-wrap: nowrap;
 }
 .item-actions .el-button {
   margin-left: 0;
@@ -991,13 +1314,67 @@ onUnmounted(() => {
   color: var(--tf-accent);
 }
 @media (max-width: 600px) {
+  .day-jump-nav {
+    top: 8px;
+    margin-inline: -8px;
+    padding: 6px;
+  }
+  .day-jump {
+    flex-basis: 104px;
+    min-height: 44px;
+    padding-inline: 10px;
+    font-size: 12px;
+  }
+  .day-list {
+    gap: 14px;
+  }
+  .day {
+    grid-template-columns: 46px minmax(0, 1fr);
+    gap: 8px;
+    scroll-margin-top: 84px;
+  }
+  .day-badge {
+    width: 44px;
+    height: 50px;
+    border-radius: 14px;
+  }
+  .day-badge span {
+    font-size: 13px;
+  }
+  .day-badge small {
+    margin-top: 4px;
+    font-size: 10px;
+  }
+  .day-timeline {
+    top: 50px;
+    bottom: -14px;
+  }
+  .day-panel {
+    padding: 0 0 4px;
+  }
+  .day-node {
+    top: 22px;
+    left: -6px;
+    width: 7px;
+    height: 7px;
+  }
+  .day-node::before {
+    top: 2px;
+    right: 6px;
+    width: 7px;
+  }
+  .day-add-row {
+    margin-top: 6px;
+    padding-left: 2px;
+  }
   .item {
-    display: grid;
     grid-template-columns: auto minmax(0, 1fr);
+    padding: 10px 10px 11px;
   }
   .item-actions {
     grid-column: 2;
     justify-self: end;
+    margin-top: -2px;
   }
   .route-options {
     align-items: flex-start;

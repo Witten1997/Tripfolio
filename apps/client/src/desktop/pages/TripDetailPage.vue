@@ -166,12 +166,16 @@ onMounted(() => {
 .detail-title h1 {
   margin: 6px 0 8px;
   font-size: 28px;
-  color: var(--tf-text-1);
+  font-family: 'LQXianEr', var(--tf-font-body);
+  color: var(--tf-accent);
   display: flex;
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
   overflow-wrap: anywhere;
+}
+.detail-title h1 :deep(.el-tag) {
+  font-family: var(--tf-font-body);
 }
 .detail-meta {
   margin: 0;

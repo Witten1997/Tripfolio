@@ -1,20 +1,18 @@
 /* 玻璃材质仅作用于既有表面清单，不声明组件库变量或页面私有选择器。
    --glass-* 是装饰层私有参数；公共颜色、边线和阴影仍由 --tf-* 提供。 */
 [data-theme='glass'] .tf-backdrop {
+  background-color: var(--tf-backdrop);
   background-image:
-    radial-gradient(ellipse at 8% 40%, #83b89b 0, rgb(131 184 155 / 0) 66%),
-    radial-gradient(ellipse at 98% 73%, #dfbb8b 0, rgb(223 187 139 / 0) 64%),
-    radial-gradient(ellipse at 76% 3%, #cfe3c4 0, rgb(207 227 196 / 0) 62%);
+    linear-gradient(rgb(207 240 235 / 0.34), rgb(216 239 218 / 0.38)),
+    url('../../assets/trip-card-landscape.jpg');
+  background-position: center;
+  background-size: cover;
 }
 [data-theme='glass'] .tf-backdrop::before {
   content: '';
   position: absolute;
   inset: 0;
-  background-image:
-    linear-gradient(rgb(28 32 30 / 0.025) 1px, transparent 1px),
-    linear-gradient(90deg, rgb(28 32 30 / 0.025) 1px, transparent 1px);
-  background-size: 64px 64px;
-  mask-image: radial-gradient(ellipse at 50% 40%, #000000 30%, transparent 75%);
+  background: radial-gradient(ellipse at 50% 35%, rgb(255 255 255 / 0.22), transparent 70%);
 }
 
 /* 卡片级玻璃：弱宽反光、轻磨砂、接触影与扩散影。 */
@@ -121,6 +119,42 @@
     inset 0 1px 0 rgb(255 255 255 / 0.45);
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(115%);
   backdrop-filter: blur(var(--glass-blur)) saturate(115%);
+}
+
+/* 图标操作按钮使用参考图的轻微不对称玻璃边框，保留紧凑的图标点击区域。 */
+[data-theme='glass'] .icon-action:not(.icon-action--ghost) {
+  border: 1px solid color-mix(in srgb, var(--tf-accent) 22%, white);
+  border-radius: 18px 14px 20px 15px / 15px 19px 14px 18px;
+  background: rgb(255 255 255 / 0.56);
+  color: color-mix(in srgb, var(--tf-accent) 74%, white);
+  box-shadow:
+    0 8px 18px -12px color-mix(in srgb, var(--tf-accent) 52%, transparent),
+    inset 0 1px 0 rgb(255 255 255 / 0.86),
+    inset 0 -1px 0 rgb(20 90 82 / 0.08);
+  -webkit-backdrop-filter: blur(8px) saturate(120%);
+  backdrop-filter: blur(8px) saturate(120%);
+}
+[data-theme='glass'] .icon-action.el-button--primary:not(.icon-action--ghost) {
+  border-color: color-mix(in srgb, var(--tf-accent) 22%, white);
+  background: rgb(255 255 255 / 0.56);
+  color: color-mix(in srgb, var(--tf-accent) 74%, white);
+}
+[data-theme='glass'] .icon-action.el-button--danger:not(.icon-action--ghost) {
+  border-color: color-mix(in srgb, var(--tf-danger) 24%, white);
+  color: color-mix(in srgb, var(--tf-danger) 78%, white);
+}
+[data-theme='glass'] .icon-action:not(.icon-action--ghost):hover {
+  border-color: color-mix(in srgb, var(--tf-accent) 42%, white);
+  background: rgb(255 255 255 / 0.72);
+  color: var(--tf-accent);
+  transform: translateY(-1px);
+}
+[data-theme='glass'] .icon-action.el-button--danger:not(.icon-action--ghost):hover {
+  border-color: color-mix(in srgb, var(--tf-danger) 44%, white);
+  color: var(--tf-danger);
+}
+[data-theme='glass'] .icon-action:not(.icon-action--ghost):active {
+  transform: translateY(0) scale(0.96);
 }
 
 @media (max-width: 767px) {
