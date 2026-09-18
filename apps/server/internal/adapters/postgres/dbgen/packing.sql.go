@@ -326,3 +326,48 @@ func (q *Queries) UpdatePackingItem(ctx context.Context, arg UpdatePackingItemPa
 	)
 	return i, err
 }
+
+const updatePackingStatusIfVersion = `-- name: UpdatePackingStatusIfVersion :one
+UPDATE packing_items p
+SET status = $1, version = p.version + 1, updated_at = $2
+WHERE p.account_id = $3 AND p.trip_id = $4 AND p.id = $5
+  AND p.version = $6 AND p.deleted_at IS NULL
+  AND EXISTS (SELECT 1 FROM trips t WHERE t.account_id = p.account_id AND t.id = p.trip_id AND t.deleted_at IS NULL)
+RETURNING id, account_id, version, created_at, updated_at, deleted_at, trip_id, name, category, quantity, notes, status
+`
+
+type UpdatePackingStatusIfVersionParams struct {
+	Status    string
+	UpdatedAt time.Time
+	AccountID uuid.UUID
+	TripID    uuid.UUID
+	ID        uuid.UUID
+	Version   int64
+}
+
+func (q *Queries) UpdatePackingStatusIfVersion(ctx context.Context, arg UpdatePackingStatusIfVersionParams) (PackingItem, error) {
+	row := q.db.QueryRow(ctx, updatePackingStatusIfVersion,
+		arg.Status,
+		arg.UpdatedAt,
+		arg.AccountID,
+		arg.TripID,
+		arg.ID,
+		arg.Version,
+	)
+	var i PackingItem
+	err := row.Scan(
+		&i.ID,
+		&i.AccountID,
+		&i.Version,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+		&i.TripID,
+		&i.Name,
+		&i.Category,
+		&i.Quantity,
+		&i.Notes,
+		&i.Status,
+	)
+	return i, err
+}

@@ -38,11 +38,19 @@ type Repo interface {
 	IDExists(ctx context.Context, id uuid.UUID) (bool, error)
 	// NameTaken 判断本旅行同分类下是否已有同名（去首尾空格、大小写不敏感）有效物品；exclude 为要排除的自身 ID。
 	NameTaken(ctx context.Context, accountID, tripID uuid.UUID, category Category, name string, exclude uuid.UUID) (bool, error)
+	ProbeBatch(ctx context.Context, accountID, tripID uuid.UUID, items []BatchItem) (map[uuid.UUID]BatchProbe, error)
 	Insert(ctx context.Context, accountID uuid.UUID, r Resource) (Resource, error)
+	InsertBatch(ctx context.Context, accountID uuid.UUID, items []Resource) ([]Resource, error)
 	Update(ctx context.Context, accountID, tripID, id uuid.UUID, v Values, now time.Time) (Resource, error)
+	UpdateStatusIfVersion(ctx context.Context, accountID, tripID, id uuid.UUID, version int64, status Status, now time.Time) (Resource, bool, error)
 	SoftDelete(ctx context.Context, accountID, tripID, id uuid.UUID, now time.Time) (Resource, error)
 	// MergeSource 提供字段级合并所需的变更历史。
 	MergeSource() write.MergeSource
+}
+
+type BatchProbe struct {
+	NameTaken bool
+	IDUsed    bool
 }
 
 // Position 是键集分页的位置：分类、创建时间与 ID。

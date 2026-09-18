@@ -4,15 +4,17 @@ import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import 'element-plus/dist/index.css'
 import '@/styles/bridge/element-plus.css'
 import { computed, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 
 import ActionIcon from '@/desktop/components/ActionIcon.vue'
 import { authorizeAssetDownload } from '@/shared/api/assets'
 import BrandLogo from '@/shared/components/BrandLogo.vue'
+import { logout } from '@/shared/api/account'
 import { useSessionStore } from '@/shared/stores/session'
 
 const session = useSessionStore()
 const route = useRoute()
+const router = useRouter()
 const avatarUrl = ref<string | null>(null)
 const avatarInitial = computed(() => (session.account?.nickname ?? '').trim().slice(0, 1) || '·')
 const travelActive = computed(() =>
@@ -27,6 +29,11 @@ const travelActive = computed(() =>
     'trip-todos',
   ].includes(String(route.name ?? '')),
 )
+
+async function signOut() {
+  await logout()
+  await router.replace({ name: 'login' })
+}
 
 watch(
   () => session.account?.avatar_asset_id,
@@ -77,25 +84,35 @@ watch(
           </RouterLink>
         </nav>
         <div class="desktop-shell__sidebar-spacer"></div>
-        <div class="desktop-shell__account-wrap">
-          <RouterLink
-            v-if="session.isAuthenticated"
-            :to="{ name: 'account' }"
-            class="desktop-shell__account"
-            aria-label="账号"
-          >
-            <span class="desktop-shell__avatar">
-              <img
-                v-if="avatarUrl"
-                :src="avatarUrl"
-                :alt="session.account?.nickname ?? '账号头像'"
-              />
-              <span v-else>{{ avatarInitial }}</span>
-            </span>
-            <span class="desktop-shell__account-name">{{
-              session.account?.nickname ?? '账号'
-            }}</span>
-          </RouterLink>
+        <div v-if="session.isAuthenticated" class="desktop-shell__account-wrap">
+          <details class="desktop-shell__account-menu">
+            <summary class="desktop-shell__account" aria-label="打开个人设置菜单">
+              <span class="desktop-shell__avatar">
+                <img
+                  v-if="avatarUrl"
+                  :src="avatarUrl"
+                  :alt="session.account?.nickname ?? '账号头像'"
+                />
+                <span v-else>{{ avatarInitial }}</span>
+              </span>
+              <span class="desktop-shell__account-name">{{
+                session.account?.nickname ?? '账号'
+              }}</span>
+              <span class="desktop-shell__account-chevron" aria-hidden="true">⌄</span>
+            </summary>
+            <div class="desktop-shell__account-panel" role="menu">
+              <RouterLink :to="{ name: 'personal-settings' }" role="menuitem">
+                个人设置
+              </RouterLink>
+              <RouterLink :to="{ name: 'change-password' }" role="menuitem">
+                修改密码
+              </RouterLink>
+              <RouterLink :to="{ name: 'login-devices' }" role="menuitem">
+                登录设备管理
+              </RouterLink>
+              <button type="button" role="menuitem" @click="signOut">退出</button>
+            </div>
+          </details>
         </div>
       </aside>
       <main class="desktop-shell__main">
@@ -213,12 +230,74 @@ watch(
   border-radius: var(--tf-radius-control);
   color: var(--tf-text-2);
   text-decoration: none;
+  cursor: pointer;
+  list-style: none;
+}
+
+.desktop-shell__account::-webkit-details-marker {
+  display: none;
 }
 
 .desktop-shell__account:hover,
-.desktop-shell__account.router-link-active {
+.desktop-shell__account-menu[open] .desktop-shell__account {
   background: var(--tf-surface-inset);
   color: var(--tf-accent);
+}
+
+.desktop-shell__account-menu {
+  position: relative;
+}
+
+.desktop-shell__account-chevron {
+  margin-left: auto;
+  color: var(--tf-text-3);
+  font-size: 17px;
+  line-height: 1;
+  transform: translateY(-2px);
+}
+
+.desktop-shell__account-panel {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 10px);
+  display: flex;
+  min-width: 170px;
+  padding: 8px;
+  flex-direction: column;
+  gap: 3px;
+  border: 1px solid var(--tf-line-soft);
+  border-radius: var(--tf-radius-card);
+  background: var(--tf-surface-raised);
+  box-shadow: var(--tf-shadow-2);
+}
+
+.desktop-shell__account-panel a,
+.desktop-shell__account-panel button {
+  display: block;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: var(--tf-radius-control);
+  background: transparent;
+  color: var(--tf-text-2);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.desktop-shell__account-panel a:hover,
+.desktop-shell__account-panel button:hover {
+  background: var(--tf-surface-inset);
+  color: var(--tf-accent);
+}
+
+.desktop-shell__account-panel button {
+  border-top: 1px solid var(--tf-line-soft);
+  border-radius: 0;
+  color: var(--tf-danger);
+  margin-top: 3px;
+  padding-top: 11px;
 }
 
 .desktop-shell__avatar {

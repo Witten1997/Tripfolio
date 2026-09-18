@@ -1,7 +1,15 @@
 <script setup lang="ts">
-import { Cell as VanCell, CellGroup as VanCellGroup } from 'vant'
+import { Button as VanButton, Cell as VanCell, CellGroup as VanCellGroup } from 'vant'
+import { useRouter } from 'vue-router'
 
-import DesktopAccountPage from '@/desktop/pages/AccountPage.vue'
+import { logout } from '@/shared/api/account'
+
+const router = useRouter()
+
+async function signOut() {
+  await logout()
+  await router.replace({ name: 'login' })
+}
 </script>
 
 <template>
@@ -12,8 +20,13 @@ import DesktopAccountPage from '@/desktop/pages/AccountPage.vue'
     <VanCellGroup inset title="旅行设置" class="mobile-account-page__links">
       <VanCell title="主题" label="切换界面外观" is-link :to="{ name: 'themes' }" />
       <VanCell title="回收站" label="恢复或清理已删除的旅行" is-link :to="{ name: 'recycle-bin' }" />
+      <VanCell title="个人设置" label="管理头像、昵称和默认时区" is-link :to="{ name: 'personal-settings' }" />
+      <VanCell title="修改密码" label="更新账号密码" is-link :to="{ name: 'change-password' }" />
+      <VanCell title="登录设备管理" label="查看并撤销已登录的设备" is-link :to="{ name: 'login-devices' }" />
     </VanCellGroup>
-    <DesktopAccountPage />
+    <div class="mobile-account-page__logout tf-surface">
+      <VanButton type="danger" plain block @click="signOut">退出登录</VanButton>
+    </div>
   </div>
 </template>
 
@@ -40,50 +53,9 @@ import DesktopAccountPage from '@/desktop/pages/AccountPage.vue'
   margin: 0;
 }
 
-.mobile-account-page :deep(.account-page) {
-  width: 100%;
-  gap: 14px;
-}
-
-.mobile-account-page :deep(.el-card) {
+.mobile-account-page__logout {
+  padding: 14px 16px;
   border-radius: var(--tf-radius-card);
 }
 
-.mobile-account-page :deep(.el-card__body) {
-  padding: 16px;
-}
-
-.mobile-account-page :deep(.account-form) {
-  max-width: none;
-}
-
-.mobile-account-page :deep(.account-form .el-form-item) {
-  display: block;
-}
-
-.mobile-account-page :deep(.account-form .el-form-item__label) {
-  display: block;
-  width: auto !important;
-  height: auto;
-  margin-bottom: 6px;
-  line-height: 1.5;
-  text-align: left;
-}
-
-.mobile-account-page :deep(.account-form .el-form-item__content) {
-  margin-left: 0 !important;
-}
-
-.mobile-account-page :deep(.avatar-field) {
-  flex-direction: column;
-}
-
-.mobile-account-page :deep(.session-item) {
-  grid-template-columns: 40px minmax(0, 1fr);
-}
-
-.mobile-account-page :deep(.session-revoke) {
-  grid-column: 2;
-  justify-self: start;
-}
 </style>

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ElAlert, ElButton } from 'element-plus'
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { Maximize2, Minimize2 } from '@lucide/vue'
+import { h, onBeforeUnmount, onMounted, ref, render, watch } from 'vue'
 
 import type { GeoCoordinate, TravelMode } from '@/shared/api/geo'
 import {
@@ -16,6 +17,8 @@ import {
 } from '@/shared/geo/amap'
 import type { MapPath, MapPoint } from '@/shared/geo/itineraryRoute'
 import { useThemeStore } from '@/shared/stores/theme'
+import { itineraryKindIcons } from '@/shared/travel/itineraryKindVisuals'
+import { itineraryKindLabels } from '@/shared/travel/itineraryKinds'
 
 const props = withDefaults(
   defineProps<{
@@ -28,9 +31,11 @@ const props = withDefaults(
 )
 const emit = defineEmits<{ choose: [point: GeoCoordinate]; focusPoint: [id: string] }>()
 const container = ref<HTMLElement>()
+const view = ref<HTMLElement>()
 const theme = useThemeStore()
 const loading = ref(true)
 const error = ref<string | null>(null)
+const isFullscreen = ref(false)
 let sdk: AmapNamespace | undefined
 let map: AmapMap | undefined
 let overlays: AmapOverlay[] = []
@@ -53,6 +58,20 @@ function fit() {
 
 function focus(point: GeoCoordinate) {
   map?.setZoomAndCenter(16, lngLat(point), true)
+}
+
+function syncFullscreen() {
+  isFullscreen.value = document.fullscreenElement === view.value
+}
+
+async function toggleFullscreen() {
+  if (!view.value) return
+  try {
+    if (document.fullscreenElement) await document.exitFullscreen()
+    else await view.value.requestFullscreen()
+  } catch {
+    // 浏览器未授权全屏时保留地图的其他操作。
+  }
 }
 
 /** 以指针位置为锚点：把指针下的经纬度留在原像素；容器无布局或 SDK 不支持换算时退回地图中心。 */
@@ -98,15 +117,6 @@ function draw() {
   const cycling = css.getPropertyValue('--tf-chart-2').trim()
   const muted = css.getPropertyValue('--tf-text-3').trim()
   const outline = css.getPropertyValue('--tf-surface').trim()
-  const contrast = css.getPropertyValue('--tf-accent-contrast').trim()
-  const text = css.getPropertyValue('--tf-text-1').trim()
-  const kindColors: Record<string, string> = {
-    transport: css.getPropertyValue('--tf-chart-4').trim(),
-    attraction: css.getPropertyValue('--tf-chart-6').trim(),
-    lodging: css.getPropertyValue('--tf-chart-2').trim(),
-    dining: css.getPropertyValue('--tf-chart-5').trim(),
-    other: css.getPropertyValue('--tf-info').trim(),
-  }
   const roadStyles: Record<TravelMode, { color: string; weight: number; dashed: boolean }> = {
     driving: { color: accent, weight: 5, dashed: false },
     walking: { color: walking, weight: 4, dashed: true },
@@ -134,14 +144,36 @@ function draw() {
       })
     })
   markers = props.points.map((point) => {
+    const kind = point.kind ?? 'other'
     const button = document.createElement('button')
+    const badge = document.createElement('span')
+    const icon = document.createElement('span')
+    const number = document.createElement('span')
+    const title = document.createElement('span')
     button.type = 'button'
-    button.className = 'tf-map-marker'
-    button.style.backgroundColor = kindColors[point.kind ?? ''] || accent
-    button.style.color = point.kind === 'lodging' ? text : contrast
-    button.textContent = String(point.number)
-    button.title = `${point.number}. ${point.title}`
-    button.setAttribute('aria-label', `查看第 ${point.number} 站：${point.title}`)
+    button.className = `tf-map-marker tf-itinerary-kind--${kind}`
+    badge.className = 'tf-map-marker__badge'
+    icon.className = 'tf-map-marker__icon'
+    number.className = 'tf-map-marker__number'
+    title.className = 'tf-map-marker__title'
+    number.textContent = String(point.number)
+    title.textContent = point.title
+    render(
+      h(itineraryKindIcons[kind], {
+        'aria-hidden': 'true',
+        focusable: 'false',
+        size: 14,
+        strokeWidth: 2,
+      }),
+      icon,
+    )
+    badge.append(icon, number)
+    button.append(badge, title)
+    button.title = `${point.number}. ${itineraryKindLabels[kind]}：${point.title}`
+    button.setAttribute(
+      'aria-label',
+      `查看第 ${point.number} 站，${itineraryKindLabels[kind]}：${point.title}`,
+    )
     button.addEventListener('click', (event) => {
       event.stopPropagation()
       emit('focusPoint', point.id)
@@ -206,10 +238,12 @@ async function initialize() {
 
 watch(() => [props.points, props.paths, theme.current], draw, { deep: true })
 onMounted(() => {
+  document.addEventListener('fullscreenchange', syncFullscreen)
   void initialize()
 })
 onBeforeUnmount(() => {
   generation++
+  document.removeEventListener('fullscreenchange', syncFullscreen)
   resizeObserver?.disconnect()
   map?.off('click', choose)
   map?.destroy()
@@ -219,7 +253,7 @@ defineExpose({ focus, fit })
 </script>
 
 <template>
-  <div class="amap-view" @wheel.capture="containWheel">
+  <div ref="view" class="amap-view" @wheel.capture="containWheel">
     <div
       ref="container"
       class="amap-canvas"
@@ -236,7 +270,17 @@ defineExpose({ focus, fit })
       <ElButton @click="initialize">重新加载地图</ElButton>
     </div>
     <div v-if="!loading && !error" class="amap-controls" aria-label="地图操作">
-      <button type="button" @click="fit">查看全部</button>
+      <button
+        type="button"
+        class="amap-control-icon"
+        :aria-label="isFullscreen ? '退出全屏' : '全屏'"
+        :title="isFullscreen ? '退出全屏' : '全屏'"
+        @click="toggleFullscreen"
+      >
+        <Minimize2 v-if="isFullscreen" aria-hidden="true" />
+        <Maximize2 v-else aria-hidden="true" />
+      </button>
+      <button type="button" @click="fit">总览</button>
     </div>
   </div>
 </template>
@@ -294,27 +338,104 @@ defineExpose({ focus, fit })
   cursor: pointer;
   font: inherit;
 }
+.amap-controls .amap-control-icon {
+  display: grid;
+  place-items: center;
+  padding: 8px;
+}
+.amap-control-icon svg {
+  width: 18px;
+  height: 18px;
+}
 .amap-controls button:focus-visible {
   outline: 2px solid var(--tf-accent);
   outline-offset: -3px;
 }
 :deep(.tf-map-marker) {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  border: 3px solid var(--tf-surface);
-  background: var(--tf-accent);
-  color: var(--tf-accent-contrast);
-  box-shadow: var(--tf-shadow-2);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: auto;
+  max-width: 180px;
+  min-height: 25px;
+  padding: 0 8px 0 0;
+  border: 0;
+  border-radius: 22px;
+  background: transparent;
+  color: var(--tf-text-1);
+  box-shadow: none;
   cursor: pointer;
-  font-weight: 600;
-  font-size: 14px;
-  line-height: 1;
   font-family: inherit;
+}
+:deep(.tf-map-marker__badge) {
+  position: relative;
+  display: grid;
+  flex: 0 0 25px;
+  place-items: center;
+  box-sizing: border-box;
+  width: 25px;
+  height: 25px;
+  border: 1px solid var(--tf-surface);
+  border-radius: 50%;
+  background: var(--tf-itinerary-kind-color, var(--tf-accent));
+  color: var(--tf-itinerary-icon);
+  box-shadow: var(--tf-shadow-2);
+}
+:deep(.tf-map-marker__icon) {
+  display: grid;
+  place-items: center;
+}
+:deep(.tf-map-marker__icon svg) {
+  width: 14px;
+  height: 14px;
+}
+:deep(.tf-map-marker__number) {
+  position: absolute;
+  right: -6px;
+  bottom: -6px;
+  display: grid;
+  width: auto;
+  min-width: 20px;
+  height: 20px;
+  place-items: center;
+  box-sizing: border-box;
+  padding: 0 2px;
+  border: 1px solid var(--tf-surface);
+  border-radius: 50%;
+  background: var(--tf-itinerary-kind-color, var(--tf-accent));
+  color: var(--tf-itinerary-icon);
+  font-size: 15px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+:deep(.tf-map-marker__title) {
+  display: block;
+  max-width: 122px;
+  overflow: hidden;
+  padding: 5px 8px;
+  border: 1px solid var(--tf-line-soft);
+  border-radius: 999px;
+  background: var(--tf-surface-raised);
+  color: var(--tf-text-1);
+  font-size: 12px;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  box-shadow: var(--tf-shadow-1);
 }
 :deep(.tf-map-marker:focus-visible) {
   outline: 3px solid var(--tf-text-1);
   outline-offset: 3px;
+}
+.amap-view:fullscreen {
+  width: 100vw;
+  height: 100vh;
+  min-height: 100vh;
+  border-radius: 0;
+}
+.amap-view:fullscreen .amap-canvas {
+  min-height: 100vh;
 }
 @media (hover: hover) {
   .amap-controls button:hover {

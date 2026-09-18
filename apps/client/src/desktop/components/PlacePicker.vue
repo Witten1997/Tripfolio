@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { MapPin, Search } from '@lucide/vue'
 import { ElAlert, ElButton, ElInput } from 'element-plus'
 import { computed, nextTick, onScopeDispose, ref, useId, watch } from 'vue'
 
@@ -137,18 +138,18 @@ onScopeDispose(() => {
 <template>
   <section class="place-picker" aria-label="高德地点选择">
     <div class="place-heading">
-      <h3>搜索地点</h3>
+      <h3><MapPin aria-hidden="true" />搜索地点</h3>
       <ElButton
         :disabled="disabled"
         :aria-expanded="mapOpened"
         :aria-controls="`${id}-map`"
         @click="mapOpened = !mapOpened"
-        >{{ mapOpened ? '收起地图' : '地图选点' }}</ElButton
+        ><MapPin aria-hidden="true" />{{ mapOpened ? '收起地图' : '地图选点' }}</ElButton
       >
     </div>
     <div class="place-search">
       <div class="search-field">
-        <label :for="`${id}-keyword`">景点、餐厅或酒店</label>
+        <label :for="`${id}-keyword`" class="visually-hidden">景点、餐厅或酒店</label>
         <ElInput
           ref="searchInput"
           :id="`${id}-keyword`"
@@ -156,37 +157,43 @@ onScopeDispose(() => {
           :disabled="disabled"
           maxlength="50"
           clearable
-          placeholder="例如：故宫博物院"
+          placeholder="搜索景点、餐厅或酒店"
           :aria-invalid="!!validationError"
           :aria-describedby="validationError ? `${id}-error` : undefined"
           @keydown.enter.prevent.stop="searcher.search"
         />
       </div>
       <div class="city-field">
-        <label :for="`${id}-city`">城市（可选）</label>
+        <label :for="`${id}-city`" class="visually-hidden">城市（可选）</label>
         <ElInput
           :id="`${id}-city`"
           v-model="city"
           :disabled="disabled"
           maxlength="40"
           clearable
-          placeholder="例如：北京"
+          placeholder="城市（可选）"
           @keydown.enter.prevent.stop="searcher.search"
         />
       </div>
-      <ElButton :disabled="disabled" :loading="loading" @click="searcher.search">搜索</ElButton>
+      <ElButton
+        class="place-search-button"
+        :disabled="disabled"
+        :loading="loading"
+        aria-label="搜索地点"
+        @click="searcher.search"
+        ><Search v-if="!loading" aria-hidden="true"
+      /></ElButton>
     </div>
     <p v-if="validationError" :id="`${id}-error`" class="place-error" role="alert">
       {{ validationError }}
     </p>
-    <p class="place-status" role="status">
+    <p v-if="loading || searched" class="place-status" role="status">
       <template v-if="loading">正在搜索地点…</template>
       <template v-else-if="searched && !error">{{
         results.length
           ? `找到 ${results.length} 个地点，选择一个填入行程`
           : '没有找到匹配地点，换个关键词或城市试试'
       }}</template>
-      <template v-else>从高德选择地点后，可以自动计算路程。</template>
     </p>
     <ElAlert v-if="error" :title="error" type="warning" :closable="false" show-icon />
     <ul v-if="results.length" class="place-results" aria-label="高德地点搜索结果">
@@ -250,8 +257,8 @@ onScopeDispose(() => {
 .place-picker {
   margin: 0 0 18px;
   padding: 16px;
-  background: var(--tf-surface-sunken);
-  border-radius: calc(var(--tf-radius-control) + 16px);
+  background: color-mix(in srgb, var(--tf-surface-inset) 64%, transparent);
+  border-radius: calc(var(--tf-radius-control) + 4px);
 }
 .place-heading,
 .place-search,
@@ -267,9 +274,19 @@ onScopeDispose(() => {
   margin-bottom: 12px;
 }
 .place-heading h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin: 0;
   font-size: 15px;
   color: var(--tf-text-1);
+}
+.place-heading h3 svg,
+.place-heading .el-button svg,
+.place-search-button svg {
+  width: 18px;
+  height: 18px;
+  stroke-width: 1.5;
 }
 .search-field {
   flex: 1;
@@ -279,11 +296,26 @@ onScopeDispose(() => {
   flex: 0 1 150px;
   min-width: 0;
 }
+.place-search-button {
+  width: var(--tf-control-size);
+  min-width: var(--tf-control-size);
+  padding: 0;
+}
 label {
   display: block;
   margin-bottom: 6px;
   font-size: 12px;
   color: var(--tf-text-2);
+}
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 .place-status,
 .place-hint {

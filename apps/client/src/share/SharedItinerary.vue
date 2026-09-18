@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { ElAlert, ElRadioButton, ElRadioGroup } from 'element-plus'
+import { ElAlert } from 'element-plus'
 import { computed } from 'vue'
 
 import { formatDistance, formatDuration } from '@/shared/geo/itineraryRoute'
+import SlidingSegmented from '@/desktop/components/SlidingSegmented.vue'
 import { travelModeLabels, type TravelMode } from '@/shared/geo/travelModes'
 import { itineraryKindLabels } from '@/shared/travel/itineraryKinds'
 import { groupByDay } from '@/shared/travel/tripDays'
@@ -20,6 +21,7 @@ const props = defineProps<{
 // 出行方式与地图视图共用：在两个视图里切换哪个都是同一份选择。
 const mode = defineModel<TravelMode>('mode', { required: true })
 const modes = Object.keys(travelModeLabels) as TravelMode[]
+const modeOptions = modes.map((value) => ({ value, label: travelModeLabels[value] }))
 
 const days = computed(() => groupByDay(props.trip.start_date, props.trip.end_date, props.items))
 const shared = computed(() =>
@@ -51,11 +53,7 @@ function legText(leg: SharedLeg): string {
   <div class="share-itinerary">
     <div v-if="hasLegs" class="share-route-options">
       <span>相邻地点路程</span>
-      <ElRadioGroup v-model="mode" size="small" aria-label="行程距离计算方式">
-        <ElRadioButton v-for="m in modes" :key="m" :value="m">{{
-          travelModeLabels[m]
-        }}</ElRadioButton>
-      </ElRadioGroup>
+      <SlidingSegmented v-model="mode" :options="modeOptions" label="行程距离计算方式" />
       <span class="share-route-options__hint">按排列顺序估算，不含停留时间</span>
     </div>
     <ElAlert

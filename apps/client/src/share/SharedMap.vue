@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { ElAlert, ElOption, ElRadioButton, ElRadioGroup, ElSelect } from 'element-plus'
+import { ElAlert, ElOption, ElSelect } from 'element-plus'
 import { computed, ref } from 'vue'
 
 import AmapView from '@/desktop/components/AmapView.vue'
+import SlidingSegmented from '@/desktop/components/SlidingSegmented.vue'
 import {
   formatDistance,
   formatDuration,
@@ -23,6 +24,7 @@ const props = defineProps<{
 }>()
 const mode = defineModel<TravelMode>('mode', { required: true })
 const modes = Object.keys(travelModeLabels) as TravelMode[]
+const modeOptions = modes.map((value) => ({ value, label: travelModeLabels[value] }))
 const map = ref<InstanceType<typeof AmapView>>()
 const focused = ref('')
 const date = ref('all')
@@ -76,11 +78,7 @@ function focus(point: Waypoint<PublicItineraryItem>) {
         <ElOption label="整趟旅行" value="all" />
         <ElOption v-for="day in dates" :key="day" :label="dayTitle(day)" :value="day" />
       </ElSelect>
-      <ElRadioGroup v-model="mode" aria-label="出行方式" size="small">
-        <ElRadioButton v-for="m in modes" :key="m" :value="m">{{
-          travelModeLabels[m]
-        }}</ElRadioButton>
-      </ElRadioGroup>
+      <SlidingSegmented v-model="mode" :options="modeOptions" label="出行方式" />
     </div>
     <ElAlert
       v-if="unlocated > 0"

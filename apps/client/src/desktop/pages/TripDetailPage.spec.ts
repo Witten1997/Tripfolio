@@ -61,7 +61,7 @@ async function page(path: string) {
 }
 
 describe('旅行详情页的地图悬浮按钮', () => {
-  it('不在图页签时指向地图页签，在地图页签时指回行程页签', async () => {
+  it('只在行程与地图页签显示，并指向另一个视图', async () => {
     const { router, wrapper } = await page('/trips/t1/itinerary')
     expect(wrapper.get('.map-toggle').attributes('aria-label')).toBe('看地图')
     expect(wrapper.get('.map-toggle').attributes('href')).toBe('/trips/t1/map')
@@ -74,8 +74,7 @@ describe('旅行详情页的地图悬浮按钮', () => {
 
     await router.push('/trips/t1/ledger')
     await flushPromises()
-    expect(wrapper.get('.map-toggle').attributes('aria-label')).toBe('看地图')
-    expect(wrapper.get('.map-toggle').attributes('href')).toBe('/trips/t1/map')
+    expect(wrapper.find('.map-toggle').exists()).toBe(false)
     wrapper.unmount()
   })
 

@@ -99,7 +99,9 @@ func (s *TxScope) ChangedFieldsSince(ctx context.Context, accountID uuid.UUID, e
 
 // Run 执行一次写事务。fn 在账号锁内执行业务写入；reload 读取 primary 的当前资源填充 Data。
 func (w *Writer) Run(ctx context.Context, req write.Request, fn func(ctx context.Context, scope *TxScope) error, reload func(ctx context.Context, scope *TxScope) (any, error)) (write.Result, error) {
+	started := time.Now()
 	tx, err := w.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.ReadCommitted})
+	write.RecordTiming(ctx, "pool_begin", time.Since(started))
 	if err != nil {
 		return write.Result{}, apperr.Dependency(err)
 	}
@@ -107,7 +109,9 @@ func (w *Writer) Run(ctx context.Context, req write.Request, fn func(ctx context
 
 	q := dbgen.New(tx)
 	now := w.clock.Now()
+	started = time.Now()
 	lock, err := q.LockAccountForWrite(ctx, req.AccountID)
+	write.RecordTiming(ctx, "account_lock", time.Since(started))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return write.Result{}, apperr.Unauthorized("SESSION_EXPIRED", "")
@@ -120,7 +124,9 @@ func (w *Writer) Run(ctx context.Context, req write.Request, fn func(ctx context
 	scope := &TxScope{Tx: tx, Queries: q, AccountID: req.AccountID, Now: now}
 
 	// 幂等：已成功的相同操作直接重放
+	started = time.Now()
 	receipt, err := q.GetMutationReceipt(ctx, dbgen.GetMutationReceiptParams{AccountID: req.AccountID, OperationID: req.OperationID})
+	write.RecordTiming(ctx, "receipt_lookup", time.Since(started))
 	switch {
 	case err == nil:
 		if string(receipt.RequestHash) != string(req.Fingerprint[:]) {
@@ -132,13 +138,19 @@ func (w *Writer) Run(ctx context.Context, req write.Request, fn func(ctx context
 		}
 		result.Replayed = true
 		if reload != nil {
-			if data, err := reload(ctx, scope); err == nil {
+			started = time.Now()
+			data, reloadErr := reload(ctx, scope)
+			write.RecordTiming(ctx, "reload", time.Since(started))
+			if reloadErr == nil {
 				result.Data = data
-			} else if e, ok := apperr.As(err); !ok || e.Status != 404 && e.Status != 410 {
-				return write.Result{}, err
+			} else if e, ok := apperr.As(reloadErr); !ok || e.Status != 404 && e.Status != 410 {
+				return write.Result{}, reloadErr
 			}
 		}
-		if err := tx.Commit(ctx); err != nil {
+		started = time.Now()
+		err = tx.Commit(ctx)
+		write.RecordTiming(ctx, "commit", time.Since(started))
+		if err != nil {
 			return write.Result{}, apperr.Dependency(err)
 		}
 		return result, nil
@@ -146,7 +158,10 @@ func (w *Writer) Run(ctx context.Context, req write.Request, fn func(ctx context
 		return write.Result{}, apperr.Internal(err)
 	}
 
-	if err := fn(ctx, scope); err != nil {
+	started = time.Now()
+	fnErr := fn(ctx, scope)
+	write.RecordTiming(ctx, "business", time.Since(started))
+	if err := fnErr; err != nil {
 		if _, ok := apperr.As(err); ok {
 			return write.Result{}, err
 		}
@@ -154,12 +169,17 @@ func (w *Writer) Run(ctx context.Context, req write.Request, fn func(ctx context
 	}
 
 	// 变更日志：连续序列，同一批次
+	started = time.Now()
 	endSeq, err := RecordChanges(ctx, q, req.AccountID, req.OperationID, lock.LastSeq, scope.changes, now)
+	write.RecordTiming(ctx, "sync_changes", time.Since(started))
 	if err != nil {
 		return write.Result{}, apperr.Internal(err)
 	}
 	if endSeq != lock.LastSeq {
-		if err := q.AdvanceAccountSeq(ctx, dbgen.AdvanceAccountSeqParams{AccountID: req.AccountID, LastSeq: endSeq, UpdatedAt: now}); err != nil {
+		started = time.Now()
+		err = q.AdvanceAccountSeq(ctx, dbgen.AdvanceAccountSeqParams{AccountID: req.AccountID, LastSeq: endSeq, UpdatedAt: now})
+		write.RecordTiming(ctx, "advance_seq", time.Since(started))
+		if err != nil {
 			return write.Result{}, apperr.Internal(err)
 		}
 	}
@@ -178,10 +198,13 @@ func (w *Writer) Run(ctx context.Context, req write.Request, fn func(ctx context
 	if err != nil {
 		return write.Result{}, apperr.Internal(err)
 	}
-	if err := q.InsertMutationReceipt(ctx, dbgen.InsertMutationReceiptParams{
+	started = time.Now()
+	err = q.InsertMutationReceipt(ctx, dbgen.InsertMutationReceiptParams{
 		AccountID: req.AccountID, OperationID: req.OperationID, OperationType: req.OperationType,
 		RequestHash: req.Fingerprint[:], Result: stored, CreatedAt: now,
-	}); err != nil {
+	})
+	write.RecordTiming(ctx, "receipt_insert", time.Since(started))
+	if err != nil {
 		return write.Result{}, apperr.Internal(err)
 	}
 
@@ -203,13 +226,18 @@ func (w *Writer) Run(ctx context.Context, req write.Request, fn func(ctx context
 	}
 
 	if reload != nil {
+		started = time.Now()
 		data, err := reload(ctx, scope)
+		write.RecordTiming(ctx, "reload", time.Since(started))
 		if err != nil {
 			return write.Result{}, err
 		}
 		result.Data = data
 	}
-	if err := tx.Commit(ctx); err != nil {
+	started = time.Now()
+	err = tx.Commit(ctx)
+	write.RecordTiming(ctx, "commit", time.Since(started))
+	if err != nil {
 		return write.Result{}, apperr.Dependency(err)
 	}
 	return result, nil

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ElAlert, ElButton, ElCard, ElSkeleton, ElTag } from 'element-plus'
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onScopeDispose, ref } from 'vue'
 import { useRoute } from 'vue-router'
 
 import IconAction from '@/desktop/components/IconAction.vue'
@@ -20,15 +20,15 @@ const context = provideTripContext(tripId)
 const { trip, loading, error, errorCode } = context
 const editor = ref<InstanceType<typeof TripEditorDialog>>()
 const shareDialog = ref<InstanceType<typeof TripShareDialog>>()
+const detailRoot = ref<HTMLElement>()
+const mapToggleRight = ref<number>()
 const feedback = ref<string[]>([])
 const feedbackType = ref<'success' | 'warning'>('success')
 
 const tabs = [
   { name: 'trip-itinerary', label: '行程' },
   { name: 'trip-ledger', label: '账单' },
-  { name: 'trip-map', label: '地图' },
   { name: 'trip-packing', label: '行李清单' },
-  { name: 'trip-album', label: '相册' },
   { name: 'trip-todos', label: '待办' },
 ] as const
 
@@ -41,11 +41,31 @@ const phase = computed(() => {
 })
 const gone = computed(() => errorCode.value === 'TRIP_DELETED')
 const onMap = computed(() => route.name === 'trip-map')
+const showMapToggle = computed(() => route.name === 'trip-itinerary' || onMap.value)
 /** 悬浮按钮是页签之外的快捷入口：在地图页签时指回行程，否则指向地图。 */
 const mapToggleTarget = computed(() => ({
   name: onMap.value ? 'trip-itinerary' : 'trip-map',
   params: { tripId },
 }))
+const mapToggleStyle = computed(() =>
+  mapToggleRight.value == null
+    ? undefined
+    : ({ '--trip-map-toggle-right': `${mapToggleRight.value}px` } as Record<string, string>),
+)
+
+function updateMapTogglePosition() {
+  if (window.innerWidth <= 700) {
+    mapToggleRight.value = undefined
+    return
+  }
+  const root = detailRoot.value
+  if (!root) return
+  const card = root.querySelector<HTMLElement>('.itinerary-tab .item')
+  const right = card?.getBoundingClientRect().right ?? root.getBoundingClientRect().right
+  mapToggleRight.value = Math.max(16, window.innerWidth - right)
+}
+
+let resizeObserver: ResizeObserver | undefined
 
 async function saved(outcome: WriteOutcome<Trip>) {
   const warnings = writeWarnings(outcome.result)
@@ -58,11 +78,21 @@ async function saved(outcome: WriteOutcome<Trip>) {
 onMounted(() => {
   if (metadata.status === 'idle' || metadata.status === 'error') void metadata.load()
   void context.reload()
+  void nextTick(updateMapTogglePosition)
+  window.addEventListener('resize', updateMapTogglePosition)
+  if (typeof ResizeObserver !== 'undefined' && detailRoot.value) {
+    resizeObserver = new ResizeObserver(updateMapTogglePosition)
+    resizeObserver.observe(detailRoot.value)
+  }
+})
+onScopeDispose(() => {
+  window.removeEventListener('resize', updateMapTogglePosition)
+  resizeObserver?.disconnect()
 })
 </script>
 
 <template>
-  <div class="trip-detail">
+  <div ref="detailRoot" class="trip-detail">
     <ElSkeleton v-if="loading && !trip" :rows="4" animated class="detail-skeleton" />
     <ElCard v-else-if="error && !trip" shadow="never" class="detail-error">
       <ElAlert :title="error" type="error" :closable="false" show-icon />
@@ -117,7 +147,13 @@ onMounted(() => {
         >
       </nav>
       <RouterView />
-      <MapToggleFab :on-map="onMap" :to="mapToggleTarget" />
+      <MapToggleFab
+        v-if="showMapToggle"
+        class="trip-map-toggle"
+        :style="mapToggleStyle"
+        :on-map="onMap"
+        :to="mapToggleTarget"
+      />
     </template>
     <TripEditorDialog ref="editor" @saved="saved" />
     <TripShareDialog ref="shareDialog" :trip-id="tripId" />
@@ -218,6 +254,10 @@ onMounted(() => {
   border-bottom-color: var(--tf-accent);
   font-weight: 600;
 }
+/* 按实际行程卡片右边缘定位，避免桌面壳的侧栏影响按钮位置。 */
+.trip-map-toggle :deep(.map-toggle) {
+  right: var(--trip-map-toggle-right, 16px);
+}
 @media (max-width: 700px) {
   .detail-heading {
     display: grid;
@@ -282,6 +322,9 @@ onMounted(() => {
   .detail-actions :deep(svg) {
     width: 20px;
     height: 20px;
+  }
+  .trip-map-toggle :deep(.map-toggle) {
+    right: 16px;
   }
 }
 </style>

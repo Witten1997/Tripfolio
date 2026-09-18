@@ -3,20 +3,19 @@ import {
   ElAlert,
   ElButton,
   ElDatePicker,
-  ElDialog,
   ElForm,
   ElFormItem,
   ElInput,
   ElInputNumber,
   ElMessageBox,
   ElOption,
-  ElRadioButton,
-  ElRadioGroup,
   ElSelect,
   ElSkeleton,
 } from 'element-plus'
 import { computed, ref, watch } from 'vue'
 
+import ResponsiveEditorShell from '@/desktop/components/ResponsiveEditorShell.vue'
+import SlidingSegmented from '@/desktop/components/SlidingSegmented.vue'
 import type { ExpenseCategory } from '@/shared/api/categories'
 import {
   createLedgerEntry,
@@ -86,6 +85,7 @@ const {
 } = editor
 
 const kinds = Object.keys(ledgerKindLabels) as LedgerKind[]
+const kindOptions = kinds.map((value) => ({ value, label: ledgerKindLabels[value] }))
 watch(opened, (value) => emit('update:opened', value), { flush: 'sync' })
 
 /** 可关联的原支出：同旅行有效支出，退款时按需拉取一次。 */
@@ -218,15 +218,13 @@ defineExpose({ open })
 </script>
 
 <template>
-  <ElDialog
+  <ResponsiveEditorShell
     :model-value="opened"
     :title="isEditing ? '编辑账目' : draft.kind === 'refund' ? '记录退款' : '记一笔'"
-    width="min(560px, calc(100vw - 32px))"
+    desktop-width="min(560px, calc(100vw - 32px))"
     :close-on-click-modal="false"
     :close-on-press-escape="!saving"
     :before-close="requestClose"
-    append-to-body
-    destroy-on-close
   >
     <ElSkeleton v-if="loading" :rows="6" animated />
     <template v-else>
@@ -246,26 +244,52 @@ defineExpose({ open })
         @submit.prevent="save()"
       >
         <ElFormItem label="类型" :error="errors.kind">
-          <ElRadioGroup v-model="draft.kind" :disabled="isEditing" aria-label="类型">
-            <ElRadioButton v-for="kind in kinds" :key="kind" :value="kind">{{
-              ledgerKindLabels[kind]
-            }}</ElRadioButton>
-          </ElRadioGroup>
+          <SlidingSegmented
+            v-model="draft.kind"
+            :options="kindOptions"
+            :disabled="isEditing"
+            label="类型"
+          />
           <span v-if="isEditing" class="editor-hint">账目类型保存后不可更改。</span>
         </ElFormItem>
-        <div class="editor-columns">
+        <div class="amount-row" :class="{ 'amount-row--refund': draft.kind === 'refund' }">
           <ElFormItem label="金额" required :error="errors.amount">
-            <ElInput v-model="draft.amount" inputmode="decimal" placeholder="0.00" autofocus>
-              <template #append>{{ currency }}</template>
+            <ElInput
+              v-model="draft.amount"
+              class="amount-input"
+              inputmode="decimal"
+              placeholder="0.00"
+              autofocus
+            >
+              <template #suffix
+                ><span class="amount-currency">{{ currency }}</span></template
+              >
             </ElInput>
             <span v-if="draft.kind === 'expense' && draft.split_count > 1" class="editor-hint">
               此处填写整笔总金额。
             </span>
           </ElFormItem>
+          <ElFormItem v-if="draft.kind === 'expense'" label="均摊人数" :error="errors.split_count">
+            <ElInputNumber
+              v-model="draft.split_count"
+              class="split-stepper"
+              :min="1"
+              :max="9999"
+              :step="1"
+              :precision="0"
+              aria-label="均摊人数"
+            />
+            <span v-if="draft.split_count > 1 && personalPreview" class="editor-hint">
+              人均 {{ formatMoney(personalPreview) }} {{ currency }}
+            </span>
+          </ElFormItem>
+        </div>
+        <div class="editor-columns editor-columns--single">
           <ElFormItem label="实际日期" required :error="errors.occurred_on">
             <ElDatePicker
               :model-value="draft.occurred_on"
               type="date"
+              :editable="false"
               value-format="YYYY-MM-DD"
               format="YYYY-MM-DD"
               placeholder="选择日期"
@@ -273,19 +297,6 @@ defineExpose({ open })
             />
           </ElFormItem>
         </div>
-        <ElFormItem v-if="draft.kind === 'expense'" label="均摊人数" :error="errors.split_count">
-          <ElInputNumber
-            v-model="draft.split_count"
-            :min="1"
-            :max="9999"
-            :step="1"
-            :precision="0"
-            aria-label="均摊人数"
-          />
-          <span v-if="draft.split_count > 1 && personalPreview" class="editor-hint">
-            人均 {{ formatMoney(personalPreview) }} {{ currency }}
-          </span>
-        </ElFormItem>
         <ElFormItem
           v-if="draft.kind === 'refund'"
           label="关联原支出（可选）"
@@ -367,7 +378,6 @@ defineExpose({ open })
       </section>
     </template>
     <template #footer>
-      <ElButton :disabled="saving" @click="requestClose()">取消</ElButton>
       <ElButton
         v-if="conflict"
         type="primary"
@@ -385,7 +395,7 @@ defineExpose({ open })
         >{{ uncertainCreate ? '重试保存' : isEditing ? '保存修改' : '保存' }}</ElButton
       >
     </template>
-  </ElDialog>
+  </ResponsiveEditorShell>
 </template>
 
 <style scoped>
@@ -397,9 +407,53 @@ defineExpose({ open })
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 20px;
 }
+.editor-columns--single {
+  grid-template-columns: minmax(0, 1fr);
+}
 .editor-columns :deep(.el-date-editor),
 .editor-columns :deep(.el-select) {
   width: 100%;
+}
+.amount-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 148px;
+  gap: 20px;
+}
+.amount-row--refund {
+  grid-template-columns: minmax(0, 1fr);
+}
+.amount-currency {
+  color: var(--tf-text-3);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+}
+.split-stepper {
+  width: 100%;
+}
+.split-stepper :deep(.el-input__wrapper) {
+  padding-inline: 38px;
+}
+.split-stepper :deep(.el-input-number__decrease),
+.split-stepper :deep(.el-input-number__increase) {
+  top: 5px;
+  bottom: 5px;
+  width: 30px;
+  height: auto;
+  border: 0;
+  border-radius: calc(var(--tf-radius-control) - 3px);
+  background: var(--tf-surface-sunken);
+  color: var(--tf-text-2);
+}
+.split-stepper :deep(.el-input-number__decrease) {
+  left: 5px;
+}
+.split-stepper :deep(.el-input-number__increase) {
+  right: 5px;
+}
+.split-stepper :deep(.el-input-number__decrease:hover),
+.split-stepper :deep(.el-input-number__increase:hover) {
+  color: var(--tf-accent);
 }
 .editor-hint {
   display: block;
@@ -462,6 +516,10 @@ defineExpose({ open })
   .editor-columns {
     grid-template-columns: 1fr;
     gap: 0;
+  }
+  .amount-row {
+    grid-template-columns: minmax(0, 1fr) 116px;
+    gap: 12px;
   }
 }
 </style>

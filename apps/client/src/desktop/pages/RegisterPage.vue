@@ -78,6 +78,10 @@ async function submit() {
     submitting.value = false
   }
 }
+
+function goToLogin() {
+  void router.replace({ name: 'login' })
+}
 </script>
 
 <template>
@@ -147,7 +151,7 @@ async function submit() {
         </ElButton>
       </ElForm>
       <div class="auth-links">
-        <RouterLink :to="{ name: 'login' }">已有账号，去登录</RouterLink>
+        <a href="/login" @click.prevent="goToLogin">已有账号，去登录</a>
       </div>
     </ElCard>
   </div>

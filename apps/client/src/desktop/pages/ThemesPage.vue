@@ -22,6 +22,10 @@ async function choose(id: ThemeId) {
 <template>
   <div class="themes-page">
     <header class="page-heading">
+      <RouterLink class="page-back" :to="{ name: 'account' }">
+        <span aria-hidden="true">←</span>
+        <span>返回我的</span>
+      </RouterLink>
       <div>
         <h1>主题中心</h1>
         <p>选择一套界面风格，网页与手机端都会记住你的选择。</p>
@@ -72,6 +76,27 @@ async function choose(id: ThemeId) {
 }
 .page-heading {
   padding: 8px 0;
+}
+.page-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 12px;
+  color: var(--tf-text-2);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+}
+.page-back:hover {
+  color: var(--tf-accent);
+}
+.page-back:focus-visible {
+  outline: 2px solid var(--tf-accent);
+  outline-offset: 3px;
+}
+.page-back span:first-child {
+  font-size: 18px;
+  line-height: 1;
 }
 .page-heading h1 {
   margin: 0;

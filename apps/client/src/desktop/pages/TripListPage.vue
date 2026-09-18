@@ -568,6 +568,7 @@ defineExpose({ openCreate })
   transform: translateY(-4px);
 }
 .list-skeleton {
+  box-sizing: border-box;
   padding: 24px;
   background: var(--tf-surface);
   border-radius: var(--tf-radius-control);

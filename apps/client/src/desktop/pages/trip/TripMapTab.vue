@@ -209,10 +209,7 @@ onScopeDispose(() => {
             <li
               v-for="point in points"
               :key="point.id"
-              :class="[
-                { 'stop--focused': focused === point.id },
-                `stop--kind-${point.item.kind}`,
-              ]"
+              :class="[{ 'stop--focused': focused === point.id }, `stop--kind-${point.item.kind}`]"
             >
               <button
                 type="button"
@@ -405,11 +402,21 @@ onScopeDispose(() => {
   border-bottom: 1px solid var(--tf-line-soft);
   border-left: 3px solid var(--stop-kind, transparent);
 }
-.stop--kind-transport { --stop-kind: var(--tf-chart-4); }
-.stop--kind-attraction { --stop-kind: var(--tf-chart-6); }
-.stop--kind-lodging { --stop-kind: var(--tf-chart-2); }
-.stop--kind-dining { --stop-kind: var(--tf-chart-5); }
-.stop--kind-other { --stop-kind: var(--tf-info); }
+.stop--kind-transport {
+  --stop-kind: var(--tf-itinerary-transport);
+}
+.stop--kind-attraction {
+  --stop-kind: var(--tf-itinerary-attraction);
+}
+.stop--kind-lodging {
+  --stop-kind: var(--tf-itinerary-lodging);
+}
+.stop--kind-dining {
+  --stop-kind: var(--tf-itinerary-dining);
+}
+.stop--kind-other {
+  --stop-kind: var(--tf-itinerary-other);
+}
 .stop-list li:last-child {
   border-bottom: 0;
 }
@@ -445,7 +452,9 @@ onScopeDispose(() => {
   font-size: 12px;
   font-weight: 600;
 }
-.stop--kind-lodging { --stop-number-contrast: var(--tf-text-1); }
+.stop--kind-lodging {
+  --stop-number-contrast: var(--tf-text-1);
+}
 .stop-info {
   display: flex;
   flex-direction: column;

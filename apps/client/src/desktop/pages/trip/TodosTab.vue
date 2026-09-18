@@ -7,14 +7,13 @@ import {
   ElEmpty,
   ElMessageBox,
   ElProgress,
-  ElRadioButton,
-  ElRadioGroup,
   ElSkeleton,
   ElTag,
 } from 'element-plus'
 import { computed, onMounted, ref, shallowRef, watch } from 'vue'
 
 import IconAction from '@/desktop/components/IconAction.vue'
+import SlidingSegmented from '@/desktop/components/SlidingSegmented.vue'
 import TodoDialog from '@/desktop/components/TodoDialog.vue'
 import { ApiError } from '@/shared/api/auth'
 import {
@@ -49,6 +48,7 @@ const intents = new Map<string, ReturnType<typeof createWriteIntent>>()
 let generation = 0
 
 const states = Object.keys(todoStateLabels) as TodoState[]
+const stateOptions = states.map((value) => ({ value, label: todoStateLabels[value] }))
 const progress = computed(() => {
   const total = items.value.length
   const done = items.value.filter((i) => i.completed).length
@@ -193,11 +193,7 @@ onMounted(reload)
       </div>
     </ElCard>
     <div class="tab-toolbar tf-filter-controls">
-      <ElRadioGroup v-model="state" size="small" aria-label="筛选待办">
-        <ElRadioButton v-for="s in states" :key="s" :value="s">{{
-          todoStateLabels[s]
-        }}</ElRadioButton>
-      </ElRadioGroup>
+      <SlidingSegmented v-model="state" :options="stateOptions" label="筛选待办" />
       <div class="tab-actions tf-actions">
         <IconAction icon="plus" label="新建待办" type="primary" @click="dialog?.open()" />
       </div>

@@ -25,10 +25,21 @@ const detailRoutes = new Set([
   'trip-album',
   'trip-todos',
 ])
-const showBottomBar = computed(
-  () =>
-    session.isAuthenticated && !route.meta.guestOnly && !detailRoutes.has(String(route.name ?? '')),
-)
+const protectedBottomBarRoutes = new Set([
+  'trips',
+  'account',
+  'personal-settings',
+  'change-password',
+  'login-devices',
+  'recycle-bin',
+])
+// 受保护页面已由路由守卫完成会话校验，底栏显示只跟当前页面有关，避免接口加载或令牌刷新时跳动。
+const showBottomBar = computed(() => {
+  if (route.meta.guestOnly || detailRoutes.has(String(route.name ?? ''))) return false
+  // 受保护页通过路由守卫进入，即使加载请求期间令牌短暂刷新，底栏也不能消失。
+  if (protectedBottomBarRoutes.has(String(route.name ?? ''))) return true
+  return session.isAuthenticated
+})
 const travelActive = computed(() =>
   [
     'trips',
@@ -42,7 +53,14 @@ const travelActive = computed(() =>
   ].includes(String(route.name ?? '')),
 )
 const accountActive = computed(() =>
-  ['account', 'themes', 'recycle-bin'].includes(String(route.name ?? '')),
+  [
+    'account',
+    'personal-settings',
+    'change-password',
+    'login-devices',
+    'themes',
+    'recycle-bin',
+  ].includes(String(route.name ?? '')),
 )
 
 function createTrip() {
@@ -122,11 +140,6 @@ function createTrip() {
 }
 
 .mobile-bottom-bar {
-  position: fixed;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  z-index: 30;
   display: grid;
   grid-template-columns: 1fr 72px 1fr;
   align-items: end;
@@ -201,6 +214,7 @@ function createTrip() {
   bottom: max(10px, env(safe-area-inset-bottom));
   left: max(12px, env(safe-area-inset-left));
   min-height: 44px;
+  height: 44px;
   padding: 0 14px;
   border: 1px solid color-mix(in srgb, var(--tf-surface-raised) 58%, transparent);
   border-radius: 28px 28px 20px 20px;

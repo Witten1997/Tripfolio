@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/google/uuid"
@@ -342,11 +343,31 @@ func (s *Service) Update(ctx context.Context, a actor.Actor, operationID, tripID
 		AccountID: a.AccountID, OperationID: operationID, OperationType: "packing.update",
 		Fingerprint: write.Fingerprint("packing.update", id.String(), &base, patch),
 	}
+	var saved *Resource
 	return s.uow.Run(ctx, req, func(ctx context.Context, scope write.Scope, repo Repo) error {
-		if err := loadTrip(ctx, repo, a.AccountID, tripID); err != nil {
+		if len(submitted) == 1 && patch.Status != nil {
+			started := time.Now()
+			updated, matched, err := repo.UpdateStatusIfVersion(ctx, a.AccountID, tripID, id, baseVersion, *patch.Status, s.clock.Now())
+			write.RecordTiming(ctx, "status_update_fast", time.Since(started))
+			if err != nil {
+				return err
+			}
+			if matched {
+				saved = &updated
+				record(scope, updated, write.ChangeUpsert, submitted)
+				scope.SetPrimary(ref(updated))
+				return nil
+			}
+		}
+		started := time.Now()
+		tripErr := loadTrip(ctx, repo, a.AccountID, tripID)
+		write.RecordTiming(ctx, "trip_lookup", time.Since(started))
+		if err := tripErr; err != nil {
 			return err
 		}
+		started = time.Now()
 		current, found, err := repo.GetForUpdate(ctx, a.AccountID, tripID, id)
+		write.RecordTiming(ctx, "item_lock", time.Since(started))
 		if err != nil {
 			return err
 		}
@@ -356,7 +377,9 @@ func (s *Service) Update(ctx context.Context, a actor.Actor, operationID, tripID
 		if current.DeletedAt != nil {
 			return resourceGone()
 		}
+		started = time.Now()
 		decision, err := write.ResolvePatch(ctx, repo.MergeSource(), a.AccountID, EntityType, id, baseVersion, int64(current.Version), submitted)
+		write.RecordTiming(ctx, "merge_check", time.Since(started))
 		if err != nil {
 			return err
 		}
@@ -386,7 +409,9 @@ func (s *Service) Update(ctx context.Context, a actor.Actor, operationID, tripID
 			v.Status = *patch.Status
 		}
 		if v.Name != current.Name || v.Category != current.Category {
+			started = time.Now()
 			taken, err := repo.NameTaken(ctx, a.AccountID, tripID, v.Category, v.Name, id)
+			write.RecordTiming(ctx, "name_check", time.Since(started))
 			if err != nil {
 				return err
 			}
@@ -394,14 +419,22 @@ func (s *Service) Update(ctx context.Context, a actor.Actor, operationID, tripID
 				return apperr.Validation(apperr.Field("name", "DUPLICATE", "该分类下已存在同名物品"))
 			}
 		}
+		started = time.Now()
 		updated, err := repo.Update(ctx, a.AccountID, tripID, id, v, s.clock.Now())
+		write.RecordTiming(ctx, "item_update", time.Since(started))
 		if err != nil {
 			return err
 		}
+		saved = &updated
 		record(scope, updated, write.ChangeUpsert, submitted)
 		scope.SetPrimary(ref(updated))
 		return nil
-	}, s.reload(a, tripID, id))
+	}, func(ctx context.Context, repo Repo) (any, error) {
+		if saved != nil {
+			return *saved, nil
+		}
+		return s.reload(a, tripID, id)(ctx, repo)
+	})
 }
 
 // Delete 软删除物品；要求版本相等。

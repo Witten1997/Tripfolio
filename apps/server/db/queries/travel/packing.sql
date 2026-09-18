@@ -34,6 +34,14 @@ SET name = sqlc.arg(name), category = sqlc.arg(category), quantity = sqlc.arg(qu
 WHERE account_id = sqlc.arg(account_id) AND trip_id = sqlc.arg(trip_id) AND id = sqlc.arg(id)
 RETURNING *;
 
+-- name: UpdatePackingStatusIfVersion :one
+UPDATE packing_items p
+SET status = sqlc.arg(status), version = p.version + 1, updated_at = sqlc.arg(updated_at)
+WHERE p.account_id = sqlc.arg(account_id) AND p.trip_id = sqlc.arg(trip_id) AND p.id = sqlc.arg(id)
+  AND p.version = sqlc.arg(version) AND p.deleted_at IS NULL
+  AND EXISTS (SELECT 1 FROM trips t WHERE t.account_id = p.account_id AND t.id = p.trip_id AND t.deleted_at IS NULL)
+RETURNING *;
+
 -- name: SoftDeletePackingItem :one
 UPDATE packing_items
 SET deleted_at = sqlc.arg(deleted_at), version = version + 1, updated_at = sqlc.arg(deleted_at)

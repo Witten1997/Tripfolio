@@ -14,7 +14,33 @@
   --tf-font-display:
     'STKaiti', 'KaiTi', 'FZKai-Z03', 'Segoe Script', 'Songti SC', 'Noto Serif CJK SC', serif;
   --tf-control-size: 40px;
+  --tf-itinerary-attraction: #0f766e;
+  --tf-itinerary-transport: #4d8edb;
+  --tf-itinerary-lodging: #6d4cb3;
+  --tf-itinerary-dining: #c2410c;
+  --tf-itinerary-other: #4b5563;
+  --tf-itinerary-icon: #ffffff;
   font-family: var(--tf-font-body);
+}
+
+.tf-itinerary-kind--attraction {
+  --tf-itinerary-kind-color: var(--tf-itinerary-attraction);
+}
+
+.tf-itinerary-kind--transport {
+  --tf-itinerary-kind-color: var(--tf-itinerary-transport);
+}
+
+.tf-itinerary-kind--lodging {
+  --tf-itinerary-kind-color: var(--tf-itinerary-lodging);
+}
+
+.tf-itinerary-kind--dining {
+  --tf-itinerary-kind-color: var(--tf-itinerary-dining);
+}
+
+.tf-itinerary-kind--other {
+  --tf-itinerary-kind-color: var(--tf-itinerary-other);
 }
 
 html,
@@ -31,6 +57,25 @@ body {
   background: var(--tf-canvas);
   color: var(--tf-text-1);
   transition: background-color var(--tf-duration) var(--tf-ease);
+}
+
+/* 移动壳是异步加载的，底栏的固定定位必须在页面骨架出现前就生效。 */
+.mobile-bottom-bar {
+  position: fixed !important;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 1000;
+  box-sizing: border-box;
+  isolation: isolate;
+}
+
+.mobile-bottom-bar--trips {
+  right: max(12px, env(safe-area-inset-right));
+  bottom: max(10px, env(safe-area-inset-bottom));
+  left: max(12px, env(safe-area-inset-left));
+  min-height: 44px;
+  height: 44px;
 }
 
 /* 壳层固定背景：主题 decor.css 在其上叠加装饰。 */

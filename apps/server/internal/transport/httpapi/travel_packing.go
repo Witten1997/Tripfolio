@@ -2,12 +2,17 @@ package httpapi
 
 import (
 	"context"
+	"log/slog"
+	"sort"
+	"time"
 
 	"github.com/google/uuid"
 
 	"tripfolio/server/internal/foundation/apperr"
+	"tripfolio/server/internal/foundation/write"
 	"tripfolio/server/internal/modules/travel/packing"
 	"tripfolio/server/internal/transport/httpapi/generated"
+	"tripfolio/server/internal/transport/httpapi/middleware"
 )
 
 // 行李清单处理器（接口设计 2.4）。只做参数转换与分发，规则在 packing.Service。
@@ -115,7 +120,10 @@ func (h *Handler) UpdatePackingItem(ctx context.Context, req generated.UpdatePac
 		s := packing.Status(*b.Status)
 		patch.Status = &s
 	}
+	ctx, timings := write.WithTimings(ctx)
+	started := time.Now()
 	res, err := h.packing.Update(ctx, a, uuid.UUID(req.Params.IdempotencyKey), uuid.UUID(req.TripId), uuid.UUID(req.ItemId), base, patch)
+	h.logPackingTiming(ctx, "packing.update", uuid.UUID(req.TripId), uuid.UUID(req.Params.IdempotencyKey), 1, len(res.Affected), res.Replayed, started, timings, err)
 	if err != nil {
 		return nil, err
 	}
@@ -158,9 +166,44 @@ func (h *Handler) CreatePackingItems(ctx context.Context, req generated.CreatePa
 	for i, it := range req.Body.Items {
 		cmd.Items[i] = packing.BatchItem{ID: uuid.UUID(it.Id), Name: it.Name, Category: packing.Category(it.Category), Quantity: it.Quantity, Notes: it.Notes}
 	}
+	ctx, timings := write.WithTimings(ctx)
+	started := time.Now()
 	res, err := h.packing.CreateBatch(ctx, a, uuid.UUID(req.Params.IdempotencyKey), uuid.UUID(req.TripId), cmd)
+	h.logPackingTiming(ctx, "packing.batch_create", uuid.UUID(req.TripId), uuid.UUID(req.Params.IdempotencyKey), len(cmd.Items), len(res.CreatedIDs), res.Replayed, started, timings, err)
 	if err != nil {
 		return nil, err
 	}
 	return generated.CreatePackingItems201JSONResponse{Data: res}, nil
+}
+
+func (h *Handler) logPackingTiming(ctx context.Context, operation string, tripID, operationID uuid.UUID, items, changed int, replayed bool, started time.Time, timings *write.Timings, err error) {
+	stages := timings.Stages()
+	keys := make([]string, 0, len(stages))
+	for key := range stages {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	attrs := make([]slog.Attr, 0, len(keys))
+	for _, key := range keys {
+		attrs = append(attrs, slog.Float64(key, float64(stages[key].Microseconds())/1000))
+	}
+	code := ""
+	if err != nil {
+		code = "INTERNAL_ERROR"
+		if appErr, ok := apperr.As(err); ok {
+			code = appErr.Code
+		}
+	}
+	h.logger.InfoContext(ctx, "行李清单写入耗时",
+		"request_id", middleware.RequestIDFrom(ctx),
+		"operation", operation,
+		"trip_id", tripID,
+		"operation_id", operationID,
+		"items", items,
+		"changed", changed,
+		"replayed", replayed,
+		"error_code", code,
+		"service_ms", float64(time.Since(started).Microseconds())/1000,
+		"stages_ms", slog.GroupValue(attrs...),
+	)
 }

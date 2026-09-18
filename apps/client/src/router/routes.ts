@@ -43,12 +43,24 @@ const pages = {
     mobile: () => import('@/desktop/pages/ResetPasswordPage.vue'),
   },
   account: {
-    desktop: () => import('@/desktop/pages/AccountPage.vue'),
+    desktop: () => import('@/desktop/pages/AccountSectionPage.vue'),
     mobile: () => import('@/mobile/pages/AccountPage.vue'),
+  },
+  personalSettings: {
+    desktop: () => import('@/desktop/pages/AccountSectionPage.vue'),
+    mobile: () => import('@/mobile/pages/AccountSectionPage.vue'),
+  },
+  changePassword: {
+    desktop: () => import('@/desktop/pages/AccountSectionPage.vue'),
+    mobile: () => import('@/mobile/pages/AccountSectionPage.vue'),
+  },
+  loginDevices: {
+    desktop: () => import('@/desktop/pages/AccountSectionPage.vue'),
+    mobile: () => import('@/mobile/pages/AccountSectionPage.vue'),
   },
   recycleBin: {
     desktop: () => import('@/desktop/pages/RecycleBinPage.vue'),
-    mobile: () => import('@/desktop/pages/RecycleBinPage.vue'),
+    mobile: () => import('@/mobile/pages/RecycleBinPage.vue'),
   },
   themes: {
     desktop: () => import('@/desktop/pages/ThemesPage.vue'),
@@ -128,7 +140,30 @@ export function buildRoutes(shell: Shell): RouteRecordRaw[] {
         { path: 'todos', name: 'trip-todos', component: pick(pages.tripTodos) },
       ],
     },
-    { path: '/account', name: 'account', component: pick(pages.account) },
+    {
+      path: '/account',
+      name: 'account',
+      component: pick(pages.account),
+      props: shell === 'desktop' ? { section: 'profile' } : undefined,
+    },
+    {
+      path: '/personal-settings',
+      name: 'personal-settings',
+      component: pick(pages.personalSettings),
+      props: { section: 'profile' },
+    },
+    {
+      path: '/change-password',
+      name: 'change-password',
+      component: pick(pages.changePassword),
+      props: { section: 'password' },
+    },
+    {
+      path: '/login-devices',
+      name: 'login-devices',
+      component: pick(pages.loginDevices),
+      props: { section: 'sessions' },
+    },
     { path: '/recycle-bin', name: 'recycle-bin', component: pick(pages.recycleBin) },
     { path: '/themes', name: 'themes', component: pick(pages.themes), meta: { public: true } },
     {

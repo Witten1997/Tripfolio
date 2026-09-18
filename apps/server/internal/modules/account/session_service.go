@@ -5,6 +5,7 @@ import (
 	"crypto/hmac"
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -173,7 +174,9 @@ func (s *SessionService) Authenticate(ctx context.Context, accessToken string) (
 	if !found {
 		return actor.Actor{}, apperr.Unauthorized("SESSION_EXPIRED", "")
 	}
-	_ = s.store.TouchSession(ctx, sess.ID, now)
+	if now.Sub(sess.LastSeenAt) >= time.Minute {
+		_ = s.store.TouchSession(ctx, sess.ID, now)
+	}
 	return actor.Actor{
 		AccountID: acc.ID, SessionID: sess.ID, ClientKind: sess.ClientKind,
 		AccountStatus: acc.Status, ReauthenticatedAt: sess.ReauthenticatedAt,

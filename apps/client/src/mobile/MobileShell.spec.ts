@@ -47,6 +47,16 @@ describe('移动壳底栏', () => {
     wrapper.unmount()
   })
 
+  it('旅行列表加载期间会话状态变化也保持底栏固定显示', async () => {
+    const session = useSessionStore()
+    session.setAccessToken('token', 3600)
+    const { wrapper } = await shell('/trips')
+    session.clear()
+    await flushPromises()
+    expect(wrapper.find('.mobile-bottom-bar').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
   it('未登录时隐藏业务底栏', async () => {
     const { wrapper } = await shell('/themes')
     expect(wrapper.find('.mobile-bottom-bar').exists()).toBe(false)

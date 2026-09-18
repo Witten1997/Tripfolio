@@ -130,7 +130,7 @@ describe('地图实例与安全边界', () => {
     expect(mapOptions).toHaveLength(0)
   })
 
-  it('查看全部与自动适配包含道路折线，迟到的绕行路线也不会被裁掉', async () => {
+  it('总览与自动适配包含道路折线，迟到的绕行路线也不会被裁掉', async () => {
     const points = [
       { id: 'a', title: '起点', number: 1, latitude: 39, longitude: 116 },
       { id: 'b', title: '终点', number: 2, latitude: 39.01, longitude: 116.01 },
@@ -151,7 +151,7 @@ describe('地图实例与安全边界', () => {
     expect(fitView.mock.lastCall?.[0]).toHaveLength(3)
     await view
       .findAll('button')
-      .find((button) => button.text() === '查看全部')!
+      .find((button) => button.text() === '总览')!
       .trigger('click')
     expect(fitView.mock.lastCall?.[0]).toHaveLength(3)
     view.unmount()
@@ -167,7 +167,7 @@ describe('地图实例与安全边界', () => {
       .find((b) => b.text().includes('重新加载'))!
       .trigger('click')
     await flushPromises()
-    expect(view.text()).toContain('查看全部')
+    expect(view.text()).toContain('总览')
     expect(view.find('button[aria-label="放大地图"]').exists()).toBe(false)
     view.unmount()
   })
@@ -195,7 +195,7 @@ describe('地图实例与安全边界', () => {
     // jsdom 里容器没有布局尺寸，退回按地图中心缩放。
     expect(geoOfPixel).not.toHaveBeenCalled()
     expect(receiveWheel).toHaveBeenCalledTimes(2)
-    expect(view.findAll('.amap-controls button')).toHaveLength(1)
+    expect(view.findAll('.amap-controls button')).toHaveLength(2)
     view.unmount()
   })
 

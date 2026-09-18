@@ -3,6 +3,7 @@ package packing
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -77,29 +78,32 @@ func (s *Service) CreateBatch(ctx context.Context, a actor.Actor, operationID, t
 		Fingerprint: write.Fingerprint("packing.batch_create", tripID.String(), nil, cmd),
 	}
 	res, err := s.uow.Run(ctx, req, func(ctx context.Context, scope write.Scope, repo Repo) error {
-		if err := loadTrip(ctx, repo, a.AccountID, tripID); err != nil {
+		started := time.Now()
+		tripErr := loadTrip(ctx, repo, a.AccountID, tripID)
+		write.RecordTiming(ctx, "trip_lookup", time.Since(started))
+		if err := tripErr; err != nil {
 			return err
 		}
 		now := s.clock.Now()
+		started = time.Now()
+		probes, err := repo.ProbeBatch(ctx, a.AccountID, tripID, cmd.Items)
+		write.RecordTiming(ctx, "batch_probe", time.Since(started))
+		if err != nil {
+			return err
+		}
 		taken := map[string]struct{}{}
+		toInsert := make([]Resource, 0, len(cmd.Items))
 		for _, item := range cmd.Items {
 			key := string(item.Category) + "\x00" + normalizeName(item.Name)
 			if _, dup := taken[key]; dup {
 				continue
 			}
-			exists, err := repo.NameTaken(ctx, a.AccountID, tripID, item.Category, item.Name, uuid.Nil)
-			if err != nil {
-				return err
-			}
-			if exists {
+			probe := probes[item.ID]
+			if probe.NameTaken {
 				taken[key] = struct{}{}
 				continue
 			}
-			used, err := repo.IDExists(ctx, item.ID)
-			if err != nil {
-				return err
-			}
-			if used {
+			if probe.IDUsed {
 				return apperr.Conflicted(codeIDAlreadyUsed, "该 ID 已被使用")
 			}
 			quantity := int32(1)
@@ -110,15 +114,20 @@ func (s *Service) CreateBatch(ctx context.Context, a actor.Actor, operationID, t
 			if item.Notes != nil {
 				notes = *item.Notes
 			}
-			created, err := repo.Insert(ctx, a.AccountID, Resource{
+			toInsert = append(toInsert, Resource{
 				ID: item.ID, TripID: tripID, Name: item.Name, Category: item.Category, Quantity: quantity,
 				Notes: notes, Status: StatusPending, Version: 1, CreatedAt: now, UpdatedAt: now,
 			})
-			if err != nil {
-				return err
-			}
-			record(scope, created, write.ChangeUpsert, Fields)
 			taken[key] = struct{}{}
+		}
+		started = time.Now()
+		created, err := repo.InsertBatch(ctx, a.AccountID, toInsert)
+		write.RecordTiming(ctx, "batch_insert", time.Since(started))
+		if err != nil {
+			return err
+		}
+		for _, item := range created {
+			record(scope, item, write.ChangeUpsert, Fields)
 		}
 		return nil
 	}, nil)

@@ -1,18 +1,17 @@
 <script setup lang="ts">
+import { Clock3, ReceiptText } from '@lucide/vue'
 import {
   ElAlert,
   ElButton,
   ElDatePicker,
-  ElDialog,
   ElForm,
   ElFormItem,
   ElInput,
   ElMessageBox,
   ElOption,
-  ElRadioButton,
-  ElRadioGroup,
   ElSelect,
   ElSkeleton,
+  ElTimePicker,
 } from 'element-plus'
 import { computed, nextTick, onScopeDispose, ref, useId, watch } from 'vue'
 
@@ -20,6 +19,8 @@ import ActionIcon from '@/desktop/components/ActionIcon.vue'
 import IconAction from '@/desktop/components/IconAction.vue'
 import LedgerEntryDialog from '@/desktop/components/LedgerEntryDialog.vue'
 import PlacePicker from '@/desktop/components/PlacePicker.vue'
+import ResponsiveEditorShell from '@/desktop/components/ResponsiveEditorShell.vue'
+import SlidingSegmented from '@/desktop/components/SlidingSegmented.vue'
 import { listCategories, type ExpenseCategory } from '@/shared/api/categories'
 import type { GeoPlace } from '@/shared/api/geo'
 import type { LedgerEntry } from '@/shared/api/ledger'
@@ -49,6 +50,7 @@ import {
 import { DraftError } from '@/shared/travel/tripDraft'
 import { useTripContext } from '@/shared/travel/tripContext'
 import { dayTitle } from '@/shared/travel/tripDays'
+import { itineraryKindIcons } from '@/shared/travel/itineraryKindVisuals'
 import { useItemEditor, type ItemEditor } from '@/shared/travel/useItemEditor'
 
 const emit = defineEmits<{ saved: [outcome: WriteOutcome<ItineraryItem>] }>()
@@ -109,6 +111,21 @@ const {
 
 const kinds = Object.keys(itineraryKindLabels) as ItineraryKind[]
 const statuses = Object.keys(itineraryStatusLabels) as ItineraryStatus[]
+const plannedModeOptions = [
+  { value: 'none', label: '不设置' },
+  { value: 'end', label: '结束时间' },
+  { value: 'duration', label: '停留时长' },
+]
+const statusOptions = statuses.map((value) => ({
+  value,
+  label: itineraryStatusLabels[value],
+}))
+const plannedStartTime = computed({
+  get: () => draft.planned_start.slice(-5),
+  set: (value: string) => {
+    draft.planned_start = value ? `${draft.scheduled_on} ${value}` : ''
+  },
+})
 const locationError = computed(
   () =>
     errors.value.place_name ||
@@ -121,6 +138,15 @@ const detailFields = ['notes', 'status', 'actual_start_local', 'actual_end_local
 watch(errors, (value) => {
   if (detailFields.some((field) => value[field])) detailsOpened.value = true
 })
+watch(
+  () => [draft.scheduled_on, draft.planned_start] as const,
+  ([date, start]) => {
+    if (!opened.value || !date || !start) return
+    const normalized = `${date} ${start.slice(-5)}`
+    if (draft.planned_start !== normalized) draft.planned_start = normalized
+  },
+  { flush: 'sync' },
+)
 watch(opened, (value) => {
   if (!value) expenseGeneration++
 })
@@ -288,14 +314,13 @@ defineExpose({ open })
 </script>
 
 <template>
-  <ElDialog
+  <ResponsiveEditorShell
     :model-value="opened"
     :title="isEditing ? '编辑行程' : '新建行程'"
-    width="min(720px, calc(100vw - 32px))"
+    desktop-width="min(720px, calc(100vw - 32px))"
     :close-on-click-modal="false"
     :close-on-press-escape="!saving && !ledgerOpened"
     :before-close="requestClose"
-    destroy-on-close
   >
     <ElSkeleton v-if="loading" :rows="8" animated />
     <template v-else>
@@ -318,18 +343,39 @@ defineExpose({ open })
         <div class="editor-columns">
           <ElFormItem label="类型" required :error="errors.kind">
             <ElSelect v-model="draft.kind" aria-label="类型">
+              <template #prefix>
+                <span
+                  class="itinerary-kind-select__icon"
+                  :class="`tf-itinerary-kind--${draft.kind}`"
+                  aria-hidden="true"
+                >
+                  <component :is="itineraryKindIcons[draft.kind]" />
+                </span>
+              </template>
               <ElOption
                 v-for="kind in kinds"
                 :key="kind"
                 :label="itineraryKindLabels[kind]"
                 :value="kind"
-              />
+              >
+                <span class="itinerary-kind-option">
+                  <span
+                    class="itinerary-kind-option__icon"
+                    :class="`tf-itinerary-kind--${kind}`"
+                    aria-hidden="true"
+                  >
+                    <component :is="itineraryKindIcons[kind]" />
+                  </span>
+                  <span>{{ itineraryKindLabels[kind] }}</span>
+                </span>
+              </ElOption>
             </ElSelect>
           </ElFormItem>
           <ElFormItem label="所属日期" required :error="errors.scheduled_on">
             <ElDatePicker
               :model-value="draft.scheduled_on"
               type="date"
+              :editable="false"
               value-format="YYYY-MM-DD"
               format="YYYY-MM-DD"
               :disabled="isEditing"
@@ -358,24 +404,23 @@ defineExpose({ open })
           原有行程：{{ draft.title }}。可继续编辑，或选点补充地图位置。
         </p>
         <fieldset class="editor-group">
-          <legend>计划时间</legend>
+          <legend><Clock3 aria-hidden="true" />计划时间</legend>
           <div class="editor-columns">
             <ElFormItem label="计划开始" :error="errors.planned_start_local">
-              <ElDatePicker
-                :model-value="draft.planned_start"
-                type="datetime"
-                value-format="YYYY-MM-DD HH:mm"
-                format="YYYY-MM-DD HH:mm"
+              <ElTimePicker
+                v-model="plannedStartTime"
+                :editable="false"
+                value-format="HH:mm"
+                format="HH:mm"
                 placeholder="可留空"
-                @update:model-value="setText('planned_start', $event)"
               />
             </ElFormItem>
             <ElFormItem label="结束方式">
-              <ElRadioGroup v-model="draft.planned_mode" aria-label="结束方式">
-                <ElRadioButton value="none">不设置</ElRadioButton>
-                <ElRadioButton value="end">结束时间</ElRadioButton>
-                <ElRadioButton value="duration">停留时长</ElRadioButton>
-              </ElRadioGroup>
+              <SlidingSegmented
+                v-model="draft.planned_mode"
+                :options="plannedModeOptions"
+                label="结束方式"
+              />
             </ElFormItem>
           </div>
           <ElFormItem
@@ -386,6 +431,7 @@ defineExpose({ open })
             <ElDatePicker
               :model-value="draft.planned_end"
               type="datetime"
+              :editable="false"
               value-format="YYYY-MM-DD HH:mm"
               format="YYYY-MM-DD HH:mm"
               placeholder="可跨日"
@@ -406,7 +452,7 @@ defineExpose({ open })
           <p class="editor-hint">时间按旅行时区 {{ context.trip.value?.timezone }} 解释。</p>
         </fieldset>
         <div class="expense-action tf-actions">
-          <span>记录该地点花费</span>
+          <span><ReceiptText aria-hidden="true" />记录该地点花费</span>
           <IconAction
             icon="plus"
             label="记录该地点花费"
@@ -443,17 +489,14 @@ defineExpose({ open })
           <fieldset class="editor-group">
             <legend>实际情况</legend>
             <ElFormItem label="状态" :error="errors.status">
-              <ElRadioGroup v-model="draft.status" aria-label="状态">
-                <ElRadioButton v-for="status in statuses" :key="status" :value="status">{{
-                  itineraryStatusLabels[status]
-                }}</ElRadioButton>
-              </ElRadioGroup>
+              <SlidingSegmented v-model="draft.status" :options="statusOptions" label="状态" />
             </ElFormItem>
             <div class="editor-columns">
               <ElFormItem label="实际开始" :error="errors.actual_start_local">
                 <ElDatePicker
                   :model-value="draft.actual_start"
                   type="datetime"
+                  :editable="false"
                   value-format="YYYY-MM-DD HH:mm"
                   format="YYYY-MM-DD HH:mm"
                   placeholder="可留空"
@@ -464,6 +507,7 @@ defineExpose({ open })
                 <ElDatePicker
                   :model-value="draft.actual_end"
                   type="datetime"
+                  :editable="false"
                   value-format="YYYY-MM-DD HH:mm"
                   format="YYYY-MM-DD HH:mm"
                   placeholder="可留空"
@@ -483,7 +527,18 @@ defineExpose({ open })
             </ElFormItem>
           </fieldset>
         </div>
-        <button type="submit" class="visually-hidden" tabindex="-1" aria-hidden="true">保存</button>
+        <button type="submit" class="visually-hidden" tabindex="-1" aria-hidden="true">
+          添加行程
+        </button>
+        <button
+          type="button"
+          class="visually-hidden"
+          tabindex="-1"
+          aria-hidden="true"
+          @click="requestClose()"
+        >
+          取消
+        </button>
       </ElForm>
       <section v-if="conflict" class="conflict-panel" aria-live="polite">
         <h3>检查版本冲突</h3>
@@ -514,7 +569,6 @@ defineExpose({ open })
       </section>
     </template>
     <template #footer>
-      <ElButton :disabled="saving || ledgerOpened" @click="requestClose()">取消</ElButton>
       <ElButton
         v-if="conflict"
         type="primary"
@@ -535,10 +589,10 @@ defineExpose({ open })
           (isEditing && (!baseline || !dirty))
         "
         @click="save()"
-        >{{ uncertainCreate ? '重试创建' : isEditing ? '保存修改' : '添加行程' }}</ElButton
+        >{{ uncertainCreate ? '重试添加' : isEditing ? '保存修改' : '添加' }}</ElButton
       >
     </template>
-  </ElDialog>
+  </ResponsiveEditorShell>
   <LedgerEntryDialog
     ref="ledgerDialog"
     :categories="expenseCategories"
@@ -561,6 +615,20 @@ defineExpose({ open })
   gap: 12px;
   margin-bottom: 6px;
   color: var(--tf-text-1);
+}
+.expense-action > span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.expense-action svg,
+.editor-group legend svg {
+  width: 17px;
+  height: 17px;
+  color: var(--tf-accent);
+  stroke-width: 1.5;
 }
 .expense-notice {
   color: var(--tf-text-2);
@@ -585,13 +653,46 @@ defineExpose({ open })
 .editor-columns :deep(.el-select) {
   width: 100%;
 }
+.itinerary-kind-select__icon,
+.itinerary-kind-option__icon {
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--tf-itinerary-kind-color);
+  color: var(--tf-itinerary-icon);
+}
+.itinerary-kind-select__icon {
+  width: 24px;
+  height: 24px;
+}
+.itinerary-kind-option {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.itinerary-kind-option__icon {
+  width: 28px;
+  height: 28px;
+}
+.itinerary-kind-select__icon svg {
+  width: 15px;
+  height: 15px;
+}
+.itinerary-kind-option__icon svg {
+  width: 17px;
+  height: 17px;
+}
 .editor-group {
-  border: 1px solid var(--tf-line-soft);
-  border-radius: var(--tf-radius-control);
-  padding: 12px 16px 0;
+  border: 0;
+  border-radius: calc(var(--tf-radius-control) + 4px);
+  padding: 14px 16px 2px;
   margin: 0 0 18px;
+  background: color-mix(in srgb, var(--tf-surface-inset) 64%, transparent);
 }
 .editor-group legend {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   padding: 0 6px;
   font-size: 13px;
   color: var(--tf-text-2);

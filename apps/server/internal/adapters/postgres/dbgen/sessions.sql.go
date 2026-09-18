@@ -287,7 +287,7 @@ func (q *Queries) SetSessionReauthenticated(ctx context.Context, arg SetSessionR
 const touchSession = `-- name: TouchSession :exec
 UPDATE account_sessions
 SET last_seen_at = $2
-WHERE id = $1 AND last_seen_at < $2 - interval '1 minute'
+WHERE id = $1 AND last_seen_at < $2::timestamptz - interval '1 minute'
 `
 
 type TouchSessionParams struct {

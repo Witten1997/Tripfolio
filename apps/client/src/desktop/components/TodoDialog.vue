@@ -3,7 +3,6 @@ import {
   ElAlert,
   ElButton,
   ElDatePicker,
-  ElDialog,
   ElForm,
   ElFormItem,
   ElInput,
@@ -13,6 +12,7 @@ import {
 } from 'element-plus'
 import { computed } from 'vue'
 
+import ResponsiveEditorShell from '@/desktop/components/ResponsiveEditorShell.vue'
 import { createTodo, getTodo, updateTodo, type Todo } from '@/shared/api/todos'
 import type { WriteOutcome } from '@/shared/api/writes'
 import {
@@ -121,14 +121,13 @@ defineExpose({ open: (todo?: Todo) => editor.open(todo) })
 </script>
 
 <template>
-  <ElDialog
+  <ResponsiveEditorShell
     :model-value="opened"
     :title="isEditing ? '编辑待办' : '新建待办'"
-    width="min(520px, calc(100vw - 32px))"
+    desktop-width="min(520px, calc(100vw - 32px))"
     :close-on-click-modal="false"
     :close-on-press-escape="!saving"
     :before-close="requestClose"
-    destroy-on-close
   >
     <ElSkeleton v-if="loading" :rows="4" animated />
     <template v-else>
@@ -160,6 +159,7 @@ defineExpose({ open: (todo?: Todo) => editor.open(todo) })
             <ElDatePicker
               :model-value="draft.due_on"
               type="date"
+              :editable="false"
               value-format="YYYY-MM-DD"
               format="YYYY-MM-DD"
               placeholder="可留空"
@@ -211,7 +211,6 @@ defineExpose({ open: (todo?: Todo) => editor.open(todo) })
       </section>
     </template>
     <template #footer>
-      <ElButton :disabled="saving" @click="requestClose()">取消</ElButton>
       <ElButton
         v-if="conflict"
         type="primary"
@@ -226,10 +225,10 @@ defineExpose({ open: (todo?: Todo) => editor.open(todo) })
         :loading="saving"
         :disabled="loading || (isEditing && (!baseline || !dirty))"
         @click="save()"
-        >{{ uncertainCreate ? '重试创建' : isEditing ? '保存修改' : '添加待办' }}</ElButton
+        >{{ uncertainCreate ? '重试添加' : isEditing ? '保存修改' : '添加' }}</ElButton
       >
     </template>
-  </ElDialog>
+  </ResponsiveEditorShell>
 </template>
 
 <style scoped>
@@ -293,7 +292,7 @@ defineExpose({ open: (todo?: Todo) => editor.open(todo) })
   overflow: hidden;
   clip-path: inset(50%);
 }
-@media (max-width: 600px) {
+@media (max-width: 767px) {
   .editor-columns {
     grid-template-columns: 1fr;
     gap: 0;

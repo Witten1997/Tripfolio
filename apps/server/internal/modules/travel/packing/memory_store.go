@@ -143,6 +143,22 @@ func (m *MemoryStore) NameTaken(_ context.Context, accountID, tripID uuid.UUID, 
 	return false, nil
 }
 
+func (m *MemoryStore) ProbeBatch(ctx context.Context, accountID, tripID uuid.UUID, items []BatchItem) (map[uuid.UUID]BatchProbe, error) {
+	probes := make(map[uuid.UUID]BatchProbe, len(items))
+	for _, item := range items {
+		nameTaken, err := m.NameTaken(ctx, accountID, tripID, item.Category, item.Name, uuid.Nil)
+		if err != nil {
+			return nil, err
+		}
+		idUsed, err := m.IDExists(ctx, item.ID)
+		if err != nil {
+			return nil, err
+		}
+		probes[item.ID] = BatchProbe{NameTaken: nameTaken, IDUsed: idUsed}
+	}
+	return probes, nil
+}
+
 // Insert 实现 Repo。
 func (m *MemoryStore) Insert(_ context.Context, accountID uuid.UUID, r Resource) (Resource, error) {
 	m.mu.Lock()
@@ -150,6 +166,18 @@ func (m *MemoryStore) Insert(_ context.Context, accountID uuid.UUID, r Resource)
 	m.items[r.ID] = r
 	m.owners[r.ID] = accountID
 	return r, nil
+}
+
+func (m *MemoryStore) InsertBatch(ctx context.Context, accountID uuid.UUID, items []Resource) ([]Resource, error) {
+	created := make([]Resource, 0, len(items))
+	for _, item := range items {
+		r, err := m.Insert(ctx, accountID, item)
+		if err != nil {
+			return nil, err
+		}
+		created = append(created, r)
+	}
+	return created, nil
 }
 
 type memoryError string
@@ -176,6 +204,20 @@ func (m *MemoryStore) Update(_ context.Context, accountID, tripID, id uuid.UUID,
 	return m.mutate(accountID, tripID, id, func(r *Resource) {
 		r.Name, r.Category, r.Quantity, r.Notes, r.Status, r.UpdatedAt = v.Name, v.Category, v.Quantity, v.Notes, v.Status, now
 	})
+}
+
+func (m *MemoryStore) UpdateStatusIfVersion(_ context.Context, accountID, tripID, id uuid.UUID, version int64, status Status, now time.Time) (Resource, bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	r, found := m.get(accountID, tripID, id)
+	trip, tripFound := m.trips[tripID]
+	if !found || !tripFound || m.tripOwners[tripID] != accountID || trip.DeletedAt != nil || r.DeletedAt != nil || int64(r.Version) != version {
+		return Resource{}, false, nil
+	}
+	r.Status, r.UpdatedAt = status, now
+	r.Version++
+	m.items[id] = r
+	return r, true, nil
 }
 
 // SoftDelete 实现 Repo。

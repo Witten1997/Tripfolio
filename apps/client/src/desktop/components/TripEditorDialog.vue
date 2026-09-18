@@ -3,7 +3,6 @@ import {
   ElAlert,
   ElButton,
   ElDatePicker,
-  ElDialog,
   ElForm,
   ElFormItem,
   ElInput,
@@ -16,6 +15,7 @@ import { ChevronDown, MapPin } from '@lucide/vue'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 
 import DestinationPickerDialog from '@/desktop/components/DestinationPickerDialog.vue'
+import ResponsiveEditorShell from '@/desktop/components/ResponsiveEditorShell.vue'
 import type { Trip } from '@/shared/api/trips'
 import type { WriteOutcome } from '@/shared/api/writes'
 import { useMetadataStore } from '@/shared/stores/metadata'
@@ -74,6 +74,29 @@ const dateRange = computed<[string, string] | null>({
 })
 const dateError = computed(() => errors.value.start_date || errors.value.end_date)
 const budgetError = computed(() => errors.value.budget_amount || errors.value.currency_code)
+const currencySymbols: Record<string, string> = {
+  CNY: '¥',
+  USD: '$',
+  EUR: '€',
+  GBP: '£',
+  JPY: '¥',
+  HKD: 'HK$',
+  MOP: 'MOP$',
+  TWD: 'NT$',
+  KRW: '₩',
+  SGD: 'S$',
+  THB: '฿',
+  MYR: 'RM',
+  IDR: 'Rp',
+  VND: '₫',
+  AUD: 'A$',
+  CAD: 'C$',
+  CHF: 'CHF',
+  NZD: 'NZ$',
+  AED: 'د.إ',
+  KWD: 'د.ك',
+  BHD: '.د.ب',
+}
 
 function setDestination(value: string) {
   draft.destination = value
@@ -135,16 +158,13 @@ defineExpose({ open: editor.open })
 </script>
 
 <template>
-  <ElDialog
+  <ResponsiveEditorShell
     :model-value="opened"
     :title="isEditing ? '编辑旅行' : '新建旅行'"
-    width="min(680px, calc(100vw - 32px))"
-    class="trip-editor"
+    desktop-width="min(680px, calc(100vw - 32px))"
     :close-on-click-modal="false"
     :close-on-press-escape="!saving"
     :before-close="requestClose"
-    align-center
-    destroy-on-close
   >
     <ElSkeleton v-if="loading" :rows="7" animated />
     <template v-else>
@@ -191,6 +211,7 @@ defineExpose({ open: editor.open })
               v-model="dateRange"
               class="trip-date-range"
               type="daterange"
+              :editable="false"
               value-format="YYYY-MM-DD"
               format="YYYY年M月D日"
               range-separator="-"
@@ -219,29 +240,28 @@ defineExpose({ open: editor.open })
             </ElInput>
           </ElFormItem>
           <ElFormItem label="总预算" :error="budgetError">
-            <ElInput
-              v-model="draft.budget_amount"
-              inputmode="decimal"
-              placeholder="留空表示未设置"
-              clearable
-            >
-              <template #append>
-                <ElSelect
-                  v-model="draft.currency_code"
-                  filterable
-                  :disabled="!!baseline?.currency_locked_at"
-                  aria-label="总预算币种"
-                  class="budget-currency"
-                >
-                  <ElOption
-                    v-for="currency in metadata.metadata?.currencies ?? []"
-                    :key="currency.code"
-                    :label="currency.code"
-                    :value="currency.code"
-                  />
-                </ElSelect>
-              </template>
-            </ElInput>
+            <div class="budget-row">
+              <ElInput
+                v-model="draft.budget_amount"
+                class="budget-amount"
+                inputmode="decimal"
+                placeholder="留空表示未设置"
+                clearable
+              />
+              <ElSelect
+                v-model="draft.currency_code"
+                :disabled="!!baseline?.currency_locked_at"
+                aria-label="总预算币种"
+                class="budget-currency"
+              >
+                <ElOption
+                  v-for="currency in metadata.metadata?.currencies ?? []"
+                  :key="currency.code"
+                  :label="`${currency.code} ${currencySymbols[currency.code] ?? ''}`.trim()"
+                  :value="currency.code"
+                />
+              </ElSelect>
+            </div>
           </ElFormItem>
           <p class="editor-hint">预算留空表示未设置，输入 0 表示零预算。金额不会随币种自动换算。</p>
           <ElAlert
@@ -295,7 +315,6 @@ defineExpose({ open: editor.open })
       </template>
     </template>
     <template #footer>
-      <ElButton :disabled="saving" @click="requestClose()">取消</ElButton>
       <ElButton
         v-if="conflict"
         type="primary"
@@ -314,10 +333,10 @@ defineExpose({ open: editor.open })
           (isEditing && (!baseline || !dirty))
         "
         @click="save()"
-        >{{ uncertainCreate ? '重试创建' : isEditing ? '保存修改' : '创建旅行' }}</ElButton
+        >{{ uncertainCreate ? '重试创建' : isEditing ? '保存修改' : '创建' }}</ElButton
       >
     </template>
-  </ElDialog>
+  </ResponsiveEditorShell>
   <DestinationPickerDialog
     ref="destinationPicker"
     :model-value="draft.destination"
@@ -342,13 +361,19 @@ defineExpose({ open: editor.open })
   width: 17px;
   height: 17px;
 }
-.budget-currency {
-  width: 108px;
+.budget-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
 }
-.budget-currency :deep(.el-select__wrapper) {
-  min-height: 30px;
-  background: transparent;
-  box-shadow: none;
+.budget-amount {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.budget-currency {
+  flex: 0 0 132px;
+  width: 132px;
 }
 .editor-hint {
   color: var(--tf-text-3);
@@ -405,17 +430,17 @@ defineExpose({ open: editor.open })
   overflow: hidden;
   clip-path: inset(50%);
 }
-
-@media (max-width: 767px) {
-  :global(.trip-editor) {
-    display: flex;
-    max-height: calc(100dvh - 32px);
-    flex-direction: column;
+@media (max-width: 520px) {
+  .budget-row {
+    gap: 8px;
   }
-
-  :global(.trip-editor .el-dialog__body) {
-    min-height: 0;
-    overflow-y: auto;
+  .budget-amount {
+    flex: 2 1 0;
+  }
+  .budget-currency {
+    flex: 1 1 0;
+    width: auto;
+    min-width: 0;
   }
 }
 </style>

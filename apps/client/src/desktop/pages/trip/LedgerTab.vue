@@ -8,8 +8,6 @@ import {
   ElInput,
   ElMessageBox,
   ElOption,
-  ElRadioButton,
-  ElRadioGroup,
   ElSelect,
   ElSkeleton,
   ElTag,
@@ -21,6 +19,7 @@ import DailyNetBar from '@/desktop/components/DailyNetBar.vue'
 import ActionIcon from '@/desktop/components/ActionIcon.vue'
 import IconAction from '@/desktop/components/IconAction.vue'
 import LedgerEntryDialog from '@/desktop/components/LedgerEntryDialog.vue'
+import SlidingSegmented from '@/desktop/components/SlidingSegmented.vue'
 import { ApiError } from '@/shared/api/auth'
 import { listCategories, type ExpenseCategory } from '@/shared/api/categories'
 import {
@@ -55,11 +54,24 @@ const context = useTripContext()
 const currency = computed(() => context.trip.value?.currency_code ?? 'CNY')
 
 const filters = reactive<{
-  range: [string, string] | null
+  dateFrom: string
+  dateTo: string
   categoryId: string
   kind: '' | LedgerKind
-}>({ range: null, categoryId: '', kind: '' })
-const hasFilter = computed(() => !!filters.range || !!filters.categoryId || !!filters.kind)
+}>({ dateFrom: '', dateTo: '', categoryId: '', kind: '' })
+const filtersOpened = ref(false)
+const kindOptions: Array<{ value: '' | LedgerKind; label: string }> = [
+  { value: '', label: '全部' },
+  { value: 'expense', label: '支出' },
+  { value: 'refund', label: '退款' },
+]
+function setKind(value: string) {
+  if (value === '' || value === 'expense' || value === 'refund') filters.kind = value
+}
+const hasAdvancedFilter = computed(
+  () => !!filters.dateFrom || !!filters.dateTo || !!filters.categoryId,
+)
+const hasFilter = computed(() => hasAdvancedFilter.value || !!filters.kind)
 
 const categories = shallowRef<ExpenseCategory[]>([])
 const categoryName = (id: string) => categories.value.find((c) => c.id === id)?.name ?? '已删除分类'
@@ -73,8 +85,8 @@ const intents = new Map<string, ReturnType<typeof createWriteIntent>>()
 
 /** 日期与分类筛选同时作用于统计与明细；类型只筛明细。 */
 const scopeQuery = computed(() => ({
-  date_from: filters.range?.[0] || undefined,
-  date_to: filters.range?.[1] || undefined,
+  date_from: filters.dateFrom || undefined,
+  date_to: filters.dateTo || undefined,
   category_id: filters.categoryId || undefined,
 }))
 
@@ -233,7 +245,8 @@ async function saved(outcome: WriteOutcome<LedgerEntry>) {
 }
 
 function clearFilters() {
-  filters.range = null
+  filters.dateFrom = ''
+  filters.dateTo = ''
   filters.categoryId = ''
   filters.kind = ''
 }
@@ -242,12 +255,10 @@ function toggleCategory(id: string) {
   filters.categoryId = filters.categoryId === id ? '' : id
 }
 
-function setRange(value: unknown) {
-  filters.range = Array.isArray(value) && value.length === 2 ? (value as [string, string]) : null
-}
-
 function focusDay(date: string) {
-  filters.range = [date, date]
+  filters.dateFrom = date
+  filters.dateTo = date
+  filtersOpened.value = true
 }
 
 async function loadCategories() {
@@ -341,46 +352,67 @@ onMounted(async () => {
       </div>
     </ElCard>
 
-    <!-- 筛选与操作放在图表上方一行 -->
-    <div class="tab-toolbar">
-      <div class="filters">
-        <ElDatePicker
-          :model-value="filters.range"
-          type="daterange"
-          value-format="YYYY-MM-DD"
-          format="YYYY-MM-DD"
-          start-placeholder="起始日期"
-          end-placeholder="结束日期"
-          unlink-panels
-          class="filter-range"
-          @update:model-value="setRange"
+    <section class="ledger-controls" aria-label="账单筛选与操作">
+      <div class="tab-toolbar">
+        <SlidingSegmented
+          :model-value="filters.kind"
+          :options="kindOptions"
+          label="按类型筛选明细"
+          @update:model-value="setKind"
         />
-        <ElSelect
-          v-model="filters.categoryId"
-          clearable
-          filterable
-          placeholder="全部分类"
-          class="filter-category"
-          aria-label="按分类筛选"
-        >
-          <ElOption v-for="c in categories" :key="c.id" :value="c.id" :label="c.name" />
-        </ElSelect>
-        <ElRadioGroup v-model="filters.kind" size="small" aria-label="按类型筛选明细">
-          <ElRadioButton value="">全部</ElRadioButton>
-          <ElRadioButton value="expense">支出</ElRadioButton>
-          <ElRadioButton value="refund">退款</ElRadioButton>
-        </ElRadioGroup>
-        <ElButton v-if="hasFilter" size="small" text @click="clearFilters">清除筛选</ElButton>
+        <div class="tab-actions tf-actions">
+          <IconAction
+            icon="filter"
+            label="筛选"
+            :type="filtersOpened || hasAdvancedFilter ? 'primary' : undefined"
+            :aria-expanded="filtersOpened"
+            aria-controls="ledger-filter-panel"
+            @click="filtersOpened = !filtersOpened"
+          />
+          <IconAction
+            icon="receipt"
+            label="记一笔"
+            type="primary"
+            @click="dialog?.open(undefined, 'expense')"
+          />
+        </div>
       </div>
-      <div class="tab-actions tf-actions">
-        <IconAction
-          icon="receipt"
-          label="记一笔"
-          type="primary"
-          @click="dialog?.open(undefined, 'expense')"
-        />
-      </div>
-    </div>
+      <Transition name="filter-panel">
+        <div v-if="filtersOpened" id="ledger-filter-panel" class="filters">
+          <ElDatePicker
+            v-model="filters.dateFrom"
+            type="date"
+            :editable="false"
+            value-format="YYYY-MM-DD"
+            format="YYYY-MM-DD"
+            placeholder="起始日期"
+            class="filter-date"
+            aria-label="筛选起始日期"
+          />
+          <ElDatePicker
+            v-model="filters.dateTo"
+            type="date"
+            :editable="false"
+            value-format="YYYY-MM-DD"
+            format="YYYY-MM-DD"
+            placeholder="结束日期"
+            class="filter-date"
+            aria-label="筛选结束日期"
+          />
+          <ElSelect
+            v-model="filters.categoryId"
+            clearable
+            filterable
+            placeholder="全部分类"
+            class="filter-category"
+            aria-label="按分类筛选"
+          >
+            <ElOption v-for="c in categories" :key="c.id" :value="c.id" :label="c.name" />
+          </ElSelect>
+          <ElButton v-if="hasFilter" text @click="clearFilters">清除筛选</ElButton>
+        </div>
+      </Transition>
+    </section>
 
     <ElAlert
       v-if="notice.length"
@@ -646,7 +678,12 @@ onMounted(async () => {
   justify-content: space-between;
   align-items: center;
   gap: 16px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+}
+.ledger-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 .filters {
   display: flex;
@@ -657,8 +694,8 @@ onMounted(async () => {
 .filters .el-button {
   margin-left: 0;
 }
-.filter-range {
-  width: 260px;
+.filter-date {
+  width: 180px;
 }
 .filter-category {
   width: 150px;
@@ -670,6 +707,17 @@ onMounted(async () => {
 }
 .tab-actions .el-button {
   margin-left: 0;
+}
+.filter-panel-enter-active,
+.filter-panel-leave-active {
+  transition:
+    opacity 160ms var(--tf-ease),
+    transform 160ms var(--tf-ease);
+}
+.filter-panel-enter-from,
+.filter-panel-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
 }
 .charts {
   display: grid;
@@ -817,6 +865,16 @@ onMounted(async () => {
   }
 }
 @media (max-width: 600px) {
+  .tab-toolbar {
+    gap: 10px;
+  }
+  .filters {
+    align-items: stretch;
+  }
+  .filter-date,
+  .filter-category {
+    width: 100%;
+  }
   .entry {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
@@ -834,6 +892,12 @@ onMounted(async () => {
   }
   .entry-actions {
     justify-self: end;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .filter-panel-enter-active,
+  .filter-panel-leave-active {
+    transition: none;
   }
 }
 </style>

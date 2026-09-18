@@ -8,8 +8,6 @@ import {
   ElInput,
   ElMessageBox,
   ElOption,
-  ElRadioButton,
-  ElRadioGroup,
   ElSelect,
   ElSkeleton,
 } from 'element-plus'
@@ -26,6 +24,7 @@ import {
   type PackingCategory,
   type PackingItem,
 } from '@/shared/api/packing'
+import SlidingSegmented from '@/desktop/components/SlidingSegmented.vue'
 import type { WriteOutcome } from '@/shared/api/writes'
 import {
   changedPackingFields,
@@ -40,6 +39,10 @@ import { useItemEditor } from '@/shared/travel/useItemEditor'
 
 const emit = defineEmits<{ saved: [outcome: WriteOutcome<PackingItem>] }>()
 const context = useTripContext()
+const statusOptions = packingStatusOrder.map((value) => ({
+  value,
+  label: packingStatusLabels[value],
+}))
 
 const editor = useItemEditor<
   PackingItem,
@@ -182,11 +185,7 @@ defineExpose({ open })
           </ElFormItem>
         </div>
         <ElFormItem label="状态" :error="errors.status">
-          <ElRadioGroup v-model="draft.status" aria-label="状态">
-            <ElRadioButton v-for="status in packingStatusOrder" :key="status" :value="status">{{
-              packingStatusLabels[status]
-            }}</ElRadioButton>
-          </ElRadioGroup>
+          <SlidingSegmented v-model="draft.status" :options="statusOptions" label="状态" />
         </ElFormItem>
         <ElFormItem label="备注" :error="errors.notes">
           <ElInput

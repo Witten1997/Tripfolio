@@ -60,6 +60,10 @@ function closePurge(done?: () => void) {
 <template>
   <div class="recycle-page">
     <header class="recycle-heading">
+      <RouterLink class="page-back" :to="{ name: 'account' }">
+        <span aria-hidden="true">←</span>
+        <span>返回我的</span>
+      </RouterLink>
       <div>
         <h1>旅行回收站</h1>
         <p>整趟旅行及关联内容可在恢复截止时间前一并恢复。</p>
@@ -244,10 +248,30 @@ function closePurge(done?: () => void) {
 }
 .recycle-heading {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
+  align-items: flex-start;
   gap: 24px;
   padding: 8px 0;
+}
+.page-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--tf-text-2);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+}
+.page-back:hover {
+  color: var(--tf-accent);
+}
+.page-back:focus-visible {
+  outline: 2px solid var(--tf-accent);
+  outline-offset: 3px;
+}
+.page-back span:first-child {
+  font-size: 18px;
+  line-height: 1;
 }
 .recycle-heading h1 {
   margin: 0;

@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { ElAlert, ElButton, ElRadioButton, ElRadioGroup, ElSkeleton } from 'element-plus'
+import { ElAlert, ElButton, ElSkeleton } from 'element-plus'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
 import MapToggleFab from '@/desktop/components/MapToggleFab.vue'
+import SlidingSegmented from '@/desktop/components/SlidingSegmented.vue'
 
 import type { SharedTravelMode } from './api'
 import SharedItinerary from './SharedItinerary.vue'
@@ -17,6 +18,10 @@ const client = createShareClient(String(route.params.token ?? ''))
 const { trip, items, loading, error, routes, routesState, load, loadRoutes } = useSharedTrip(client)
 const view = ref<'itinerary' | 'map'>('itinerary')
 const mode = ref<SharedTravelMode>('driving')
+const viewOptions = [
+  { value: 'itinerary', label: '行程' },
+  { value: 'map', label: '地图' },
+]
 
 const errorText = computed(() => {
   switch (error.value) {
@@ -65,10 +70,7 @@ onMounted(() => {
           <span>{{ trip.start_date }} 至 {{ trip.end_date }}</span>
           <span>{{ trip.destination || '目的地待定' }}</span>
         </p>
-        <ElRadioGroup v-model="view" aria-label="查看方式" class="share-view">
-          <ElRadioButton value="itinerary">行程</ElRadioButton>
-          <ElRadioButton value="map">地图</ElRadioButton>
-        </ElRadioGroup>
+        <SlidingSegmented v-model="view" :options="viewOptions" label="查看方式" />
       </header>
       <SharedItinerary
         v-if="view === 'itinerary'"

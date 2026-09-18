@@ -6,7 +6,7 @@ import { DraftError } from '@/shared/travel/tripDraft'
 
 export type PlannedMode = 'none' | 'end' | 'duration'
 
-/** 表单草稿：当地时间以“YYYY-MM-DD HH:mm”编辑（ElDatePicker datetime 格式），提交时转契约的 T 形式。 */
+/** 表单草稿：计划开始只编辑时间，其余当地时间以“YYYY-MM-DD HH:mm”编辑。 */
 export interface ItineraryDraft {
   title: string
   kind: ItineraryItem['kind']

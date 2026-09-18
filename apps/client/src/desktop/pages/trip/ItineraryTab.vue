@@ -8,8 +8,6 @@ import {
   ElEmpty,
   ElInputNumber,
   ElMessageBox,
-  ElRadioButton,
-  ElRadioGroup,
   ElSkeleton,
   ElTag,
 } from 'element-plus'
@@ -19,6 +17,7 @@ import { VueDraggable, type DraggableEvent } from 'vue-draggable-plus'
 
 import IconAction from '@/desktop/components/IconAction.vue'
 import ItineraryItemDialog from '@/desktop/components/ItineraryItemDialog.vue'
+import SlidingSegmented from '@/desktop/components/SlidingSegmented.vue'
 import { ApiError } from '@/shared/api/auth'
 import { formatDistance, formatDuration } from '@/shared/geo/itineraryRoute'
 import {
@@ -44,6 +43,7 @@ import {
   type WriteOutcome,
 } from '@/shared/api/writes'
 import { useTripContext } from '@/shared/travel/tripContext'
+import { itineraryKindIcons } from '@/shared/travel/itineraryKindVisuals'
 import { useItineraryBoard } from '@/shared/travel/useItineraryBoard'
 
 const context = useTripContext()
@@ -65,6 +65,10 @@ const preferenceOpen = ref(false)
 const selectedLegId = ref<string | null>(null)
 const routeBusy = ref(false)
 const shortMode = ref<'walking' | 'cycling'>('walking')
+const shortModeOptions = [
+  { value: 'walking', label: '步行' },
+  { value: 'cycling', label: '骑行' },
+]
 const shortDistanceKm = ref(1.5)
 const isMobile = ref(false)
 const maxRoutePollAttempts = 20
@@ -391,12 +395,26 @@ function timeLabel(item: ItineraryItem) {
     const end = sameDay
       ? item.planned_end_local.slice(11, 16)
       : item.planned_end_local.slice(5, 16).replace('T', ' ')
-    return start ? `${start} - ${end}` : `至 ${end}`
+    return start ? `${start}-${end}` : `至 ${end}`
   }
   if (item.planned_duration_minutes) {
-    return start
-      ? `${start} · ${item.planned_duration_minutes} 分钟`
-      : `${item.planned_duration_minutes} 分钟`
+    if (!item.planned_start_local || !start) return `${item.planned_duration_minutes} 分钟`
+    const [year, month, day, hour, minute] =
+      item.planned_start_local
+        .match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/)
+        ?.slice(1)
+        .map(Number) ?? []
+    if ([year, month, day, hour, minute].some((part) => !Number.isInteger(part))) {
+      return `${item.planned_duration_minutes} 分钟`
+    }
+    const endDate = new Date(
+      Date.UTC(year!, month! - 1, day!, hour!, minute! + item.planned_duration_minutes),
+    )
+    const pad = (value: number) => String(value).padStart(2, '0')
+    const endDay = `${endDate.getUTCFullYear()}-${pad(endDate.getUTCMonth() + 1)}-${pad(endDate.getUTCDate())}`
+    const endTime = `${pad(endDate.getUTCHours())}:${pad(endDate.getUTCMinutes())}`
+    const end = endDay === item.scheduled_on ? endTime : `${endDay.slice(5)} ${endTime}`
+    return `${start}-${end}`
   }
   return start ?? ''
 }
@@ -552,7 +570,15 @@ onUnmounted(() => {
                 <div class="item-body">
                   <div class="item-title">
                     <strong>{{ item.title }}</strong>
-                    <ElTag size="small" effect="plain">{{ itineraryKindLabels[item.kind] }}</ElTag>
+                    <ElTag
+                      size="small"
+                      effect="plain"
+                      class="item-kind-tag"
+                      :class="`tf-itinerary-kind--${item.kind}`"
+                    >
+                      <component :is="itineraryKindIcons[item.kind]" aria-hidden="true" />
+                      {{ itineraryKindLabels[item.kind] }}
+                    </ElTag>
                     <ElTag
                       v-if="item.status !== 'pending'"
                       size="small"
@@ -699,10 +725,7 @@ onUnmounted(() => {
         </div>
         <div class="preference-mode">
           <span>短途自动方式</span>
-          <ElRadioGroup v-model="shortMode">
-            <ElRadioButton value="walking">步行</ElRadioButton>
-            <ElRadioButton value="cycling">骑行</ElRadioButton>
-          </ElRadioGroup>
+          <SlidingSegmented v-model="shortMode" :options="shortModeOptions" label="短途自动方式" />
         </div>
         <div class="preference-driving">
           <CarFront aria-hidden="true" />
@@ -887,6 +910,20 @@ onUnmounted(() => {
     0 10px 20px -12px color-mix(in srgb, var(--tf-accent) 70%, transparent),
     inset 0 1px 0 color-mix(in srgb, var(--tf-surface-raised) 46%, transparent),
     inset 0 -1px 0 color-mix(in srgb, var(--tf-accent) 20%, transparent);
+}
+@media (min-width: 601px) {
+  .day-jump-nav {
+    box-sizing: border-box;
+    height: 46px;
+    padding: 4px 8px;
+  }
+  .day-jump-track {
+    height: 100%;
+  }
+  .day-jump {
+    min-height: 0;
+    padding-block: 4px;
+  }
 }
 .tab-toolbar {
   display: flex;
@@ -1076,19 +1113,29 @@ onUnmounted(() => {
     transform var(--tf-duration-fast) var(--tf-ease);
 }
 .item--kind-transport {
-  --item-kind: var(--tf-chart-4);
+  --item-kind: var(--tf-itinerary-transport);
 }
 .item--kind-attraction {
-  --item-kind: var(--tf-chart-6);
+  --item-kind: var(--tf-itinerary-attraction);
 }
 .item--kind-lodging {
-  --item-kind: var(--tf-chart-2);
+  --item-kind: var(--tf-itinerary-lodging);
 }
 .item--kind-dining {
-  --item-kind: var(--tf-chart-5);
+  --item-kind: var(--tf-itinerary-dining);
 }
 .item--kind-other {
-  --item-kind: var(--tf-info);
+  --item-kind: var(--tf-itinerary-other);
+}
+.item-kind-tag :deep(.el-tag__content) {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.item-kind-tag :deep(svg) {
+  width: 14px;
+  height: 14px;
+  color: var(--tf-itinerary-kind-color);
 }
 .item:hover {
   border-color: color-mix(in srgb, var(--item-kind) 48%, var(--tf-line-soft));
@@ -1315,13 +1362,19 @@ onUnmounted(() => {
 }
 @media (max-width: 600px) {
   .day-jump-nav {
+    box-sizing: border-box;
     top: 8px;
     margin-inline: -8px;
-    padding: 6px;
+    height: 46px;
+    padding: 4px 6px;
+  }
+  .day-jump-track {
+    height: 100%;
   }
   .day-jump {
     flex-basis: 104px;
-    min-height: 44px;
+    min-height: 0;
+    padding-block: 4px;
     padding-inline: 10px;
     font-size: 12px;
   }

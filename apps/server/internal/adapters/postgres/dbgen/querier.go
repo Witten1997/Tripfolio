@@ -187,6 +187,7 @@ type Querier interface {
 	UpdateItineraryItem(ctx context.Context, arg UpdateItineraryItemParams) (ItineraryItem, error)
 	UpdateLedgerEntry(ctx context.Context, arg UpdateLedgerEntryParams) (LedgerEntry, error)
 	UpdatePackingItem(ctx context.Context, arg UpdatePackingItemParams) (PackingItem, error)
+	UpdatePackingStatusIfVersion(ctx context.Context, arg UpdatePackingStatusIfVersionParams) (PackingItem, error)
 	UpdateRouteLegMode(ctx context.Context, arg UpdateRouteLegModeParams) (ItineraryRouteLeg, error)
 	UpdateTodoItem(ctx context.Context, arg UpdateTodoItemParams) (TodoItem, error)
 	UpdateTrip(ctx context.Context, arg UpdateTripParams) (Trip, error)

@@ -2,7 +2,9 @@ package travelpg
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -89,6 +91,37 @@ func (r *packingRepo) NameTaken(ctx context.Context, accountID, tripID uuid.UUID
 	return r.scope.Queries.PackingNameTaken(ctx, dbgen.PackingNameTakenParams{AccountID: accountID, TripID: tripID, Category: string(category), Name: name, ExcludeID: exclude})
 }
 
+func (r *packingRepo) ProbeBatch(ctx context.Context, accountID, tripID uuid.UUID, items []packing.BatchItem) (map[uuid.UUID]packing.BatchProbe, error) {
+	input, err := json.Marshal(items)
+	if err != nil {
+		return nil, err
+	}
+	const query = `
+SELECT input.id, EXISTS (
+    SELECT 1 FROM packing_items p
+    WHERE p.account_id = $1 AND p.trip_id = $2 AND p.deleted_at IS NULL
+      AND p.category = input.category AND lower(btrim(p.name)) = lower(btrim(input.name))
+), EXISTS (SELECT 1 FROM packing_items p WHERE p.id = input.id)
+   OR EXISTS (SELECT 1 FROM entity_tombstones t
+              WHERE t.account_id = $1 AND t.entity_type = 'packing_item' AND t.entity_id = input.id)
+FROM jsonb_to_recordset($3::jsonb) AS input(id uuid, category text, name text)`
+	rows, err := r.scope.Tx.Query(ctx, query, accountID, tripID, input)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	probes := make(map[uuid.UUID]packing.BatchProbe, len(items))
+	for rows.Next() {
+		var id uuid.UUID
+		var probe packing.BatchProbe
+		if err := rows.Scan(&id, &probe.NameTaken, &probe.IDUsed); err != nil {
+			return nil, err
+		}
+		probes[id] = probe
+	}
+	return probes, rows.Err()
+}
+
 func (r *packingRepo) Insert(ctx context.Context, accountID uuid.UUID, p packing.Resource) (packing.Resource, error) {
 	row, err := r.scope.Queries.InsertPackingItem(ctx, dbgen.InsertPackingItemParams{
 		ID: p.ID, AccountID: accountID, TripID: p.TripID, Name: p.Name, Category: string(p.Category), Quantity: p.Quantity, Notes: p.Notes, Status: string(p.Status), CreatedAt: p.CreatedAt,
@@ -99,6 +132,47 @@ func (r *packingRepo) Insert(ctx context.Context, accountID uuid.UUID, p packing
 	return toPackingResource(row), nil
 }
 
+func (r *packingRepo) InsertBatch(ctx context.Context, accountID uuid.UUID, items []packing.Resource) ([]packing.Resource, error) {
+	if len(items) == 0 {
+		return []packing.Resource{}, nil
+	}
+	input, err := json.Marshal(items)
+	if err != nil {
+		return nil, err
+	}
+	const query = `
+INSERT INTO packing_items (id, account_id, trip_id, name, category, quantity, notes, status, created_at, updated_at)
+SELECT input.id, $1, $2, input.name, input.category, input.quantity, input.notes, 'pending', $4, $4
+FROM jsonb_to_recordset($3::jsonb) AS input(id uuid, name text, category text, quantity integer, notes text)
+RETURNING id, account_id, version, created_at, updated_at, deleted_at, trip_id, name, category, quantity, notes, status`
+	rows, err := r.scope.Tx.Query(ctx, query, accountID, items[0].TripID, input, items[0].CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	byID := make(map[uuid.UUID]packing.Resource, len(items))
+	for rows.Next() {
+		var row dbgen.PackingItem
+		if err := rows.Scan(&row.ID, &row.AccountID, &row.Version, &row.CreatedAt, &row.UpdatedAt, &row.DeletedAt,
+			&row.TripID, &row.Name, &row.Category, &row.Quantity, &row.Notes, &row.Status); err != nil {
+			return nil, err
+		}
+		byID[row.ID] = toPackingResource(row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	created := make([]packing.Resource, 0, len(items))
+	for _, item := range items {
+		r, ok := byID[item.ID]
+		if !ok {
+			return nil, fmt.Errorf("批量插入未返回物品 %s", item.ID)
+		}
+		created = append(created, r)
+	}
+	return created, nil
+}
+
 func (r *packingRepo) Update(ctx context.Context, accountID, tripID, id uuid.UUID, v packing.Values, now time.Time) (packing.Resource, error) {
 	row, err := r.scope.Queries.UpdatePackingItem(ctx, dbgen.UpdatePackingItemParams{
 		AccountID: accountID, TripID: tripID, ID: id, Name: v.Name, Category: string(v.Category), Quantity: v.Quantity, Notes: v.Notes, Status: string(v.Status), UpdatedAt: now,
@@ -107,6 +181,19 @@ func (r *packingRepo) Update(ctx context.Context, accountID, tripID, id uuid.UUI
 		return packing.Resource{}, err
 	}
 	return toPackingResource(row), nil
+}
+
+func (r *packingRepo) UpdateStatusIfVersion(ctx context.Context, accountID, tripID, id uuid.UUID, version int64, status packing.Status, now time.Time) (packing.Resource, bool, error) {
+	row, err := r.scope.Queries.UpdatePackingStatusIfVersion(ctx, dbgen.UpdatePackingStatusIfVersionParams{
+		AccountID: accountID, TripID: tripID, ID: id, Version: version, Status: string(status), UpdatedAt: now,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return packing.Resource{}, false, nil
+	}
+	if err != nil {
+		return packing.Resource{}, false, err
+	}
+	return toPackingResource(row), true, nil
 }
 
 func (r *packingRepo) SoftDelete(ctx context.Context, accountID, tripID, id uuid.UUID, now time.Time) (packing.Resource, error) {

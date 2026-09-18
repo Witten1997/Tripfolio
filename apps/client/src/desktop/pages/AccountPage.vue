@@ -14,13 +14,11 @@ import {
   type FormInstance,
 } from 'element-plus'
 import { computed, onMounted, reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
 
 import {
   changePassword,
   fetchAccount,
   listSessions,
-  logout,
   revokeSession,
   updateAccount,
   type Session,
@@ -32,8 +30,26 @@ import { isValidPassword } from '@/shared/auth/useEmailChallenge'
 import { useSessionStore } from '@/shared/stores/session'
 import { useAssetUpload } from '@/shared/travel/useAssetUpload'
 
-const router = useRouter()
 const session = useSessionStore()
+const props = withDefaults(
+  defineProps<{
+    section?: 'all' | 'profile' | 'password' | 'sessions'
+  }>(),
+  { section: 'all' },
+)
+const showProfile = computed(() => props.section === 'all' || props.section === 'profile')
+const showPassword = computed(() => props.section === 'all' || props.section === 'password')
+const showSessions = computed(() => props.section === 'all' || props.section === 'sessions')
+const pageTitle = computed(() => {
+  switch (props.section) {
+    case 'password':
+      return '修改密码'
+    case 'sessions':
+      return '登录设备管理'
+    default:
+      return '个人设置'
+  }
+})
 const account = computed(() => session.account)
 
 const loadError = ref<string | null>(null)
@@ -204,7 +220,6 @@ async function savePassword() {
     password.current = password.next = password.confirm = ''
     passwordRef.value.resetFields()
     ElMessage.success('密码已修改，其他设备已退出登录')
-    await loadSessions()
   } catch (cause) {
     ElMessage.error(cause instanceof ApiError ? cause.message : '网络错误，请稍后再试')
   } finally {
@@ -247,17 +262,14 @@ function formatTime(iso: string): string {
   return new Date(iso).toLocaleString('zh-CN', { hour12: false })
 }
 
-async function signOut() {
-  await logout()
-  await router.replace({ name: 'login' })
-}
-
 onMounted(async () => {
   try {
     await fetchAccount()
-    fillProfile()
-    await loadAvatarUrl()
-    await loadSessions()
+    if (showProfile.value) {
+      fillProfile()
+      await loadAvatarUrl()
+    }
+    if (showSessions.value) await loadSessions()
   } catch (cause) {
     loadError.value = cause instanceof ApiError ? cause.message : '无法加载账号信息'
   }
@@ -266,10 +278,16 @@ onMounted(async () => {
 
 <template>
   <div class="account-page">
+    <header class="account-page__heading">
+      <h1>{{ pageTitle }}</h1>
+      <p v-if="props.section === 'profile'">管理头像、昵称和默认时区。</p>
+      <p v-else-if="props.section === 'password'">定期更新密码，保护你的旅行资料。</p>
+      <p v-else-if="props.section === 'sessions'">查看并撤销已登录的设备。</p>
+    </header>
     <ElAlert v-if="loadError" type="error" :title="loadError" :closable="false" show-icon />
     <template v-else-if="account">
-      <ElCard>
-        <template #header>账号</template>
+      <ElCard v-if="showProfile">
+        <template #header>个人设置</template>
         <ElForm
           ref="profileRef"
           :model="profile"
@@ -346,7 +364,7 @@ onMounted(async () => {
         </ElForm>
       </ElCard>
 
-      <ElCard>
+      <ElCard v-if="showPassword">
         <template #header>修改密码</template>
         <ElForm
           ref="passwordRef"
@@ -389,10 +407,10 @@ onMounted(async () => {
         </ElForm>
       </ElCard>
 
-      <ElCard>
+      <ElCard v-if="showSessions">
         <template #header>
           <div class="account-card-header">
-            <span>登录设备</span>
+            <span>登录设备管理</span>
           </div>
         </template>
         <div :aria-busy="loadingSessions">
@@ -456,9 +474,6 @@ onMounted(async () => {
         </div>
       </ElCard>
 
-      <ElCard>
-        <ElButton type="danger" plain @click="signOut">退出登录</ElButton>
-      </ElCard>
     </template>
   </div>
 </template>
@@ -466,10 +481,35 @@ onMounted(async () => {
 <style scoped>
 .account-page {
   display: flex;
+  box-sizing: border-box;
+  width: 100%;
   flex-direction: column;
   gap: 16px;
   max-width: 900px;
   margin: 0 auto;
+}
+
+.account-page > :deep(.el-card) {
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.account-page__heading {
+  padding: 4px 2px 0;
+}
+
+.account-page__heading h1 {
+  margin: 0;
+  color: var(--tf-text-1);
+  font-family: var(--tf-font-display);
+  font-size: 28px;
+  line-height: 1.2;
+}
+
+.account-page__heading p {
+  margin: 7px 0 0;
+  color: var(--tf-text-3);
+  font-size: 13px;
 }
 
 .account-form {

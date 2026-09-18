@@ -31,7 +31,7 @@ WHERE id = $1;
 -- name: TouchSession :exec
 UPDATE account_sessions
 SET last_seen_at = $2
-WHERE id = $1 AND last_seen_at < $2 - interval '1 minute';
+WHERE id = $1 AND last_seen_at < $2::timestamptz - interval '1 minute';
 
 -- name: SetSessionReauthenticated :exec
 UPDATE account_sessions
