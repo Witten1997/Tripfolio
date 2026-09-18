@@ -109,7 +109,11 @@ describe('迁移', () => {
 
   it('数据库版本高于程序时拒绝打开', async () => {
     const conn = await opener.open('m4')
-    const future = { version: 2, name: 'future', statements: ['CREATE TABLE future (id TEXT)'] }
+    const future = {
+      version: LOCAL_SCHEMA_VERSION + 1,
+      name: 'future',
+      statements: ['CREATE TABLE future (id TEXT)'],
+    }
     await migrateLocalDatabase(conn, [...LOCAL_MIGRATIONS, future])
     await expect(migrateLocalDatabase(conn, LOCAL_MIGRATIONS)).rejects.toThrow(LocalMigrationError)
     await conn.close()

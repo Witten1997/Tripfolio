@@ -83,6 +83,17 @@ func (d Decimal) Sign() int { return d.value().Sign() }
 // IsZero 判断是否为 0。
 func (d Decimal) IsZero() bool { return d.value().Sign() == 0 }
 
+// DivideRound 按币种最小单位四舍五入均摊正金额。
+func (d Decimal) DivideRound(count int, minorUnits int) Decimal {
+	quantum := new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(Scale-minorUnits)), nil)
+	divisor := new(big.Int).Mul(big.NewInt(int64(count)), quantum)
+	quotient, remainder := new(big.Int).QuoRem(d.value(), divisor, new(big.Int))
+	if new(big.Int).Mul(remainder, big.NewInt(2)).Cmp(divisor) >= 0 {
+		quotient.Add(quotient, big.NewInt(1))
+	}
+	return Decimal{units: quotient.Mul(quotient, quantum)}
+}
+
 // Ratio 返回 d / o 的浮点近似（o 为 0 时返回 0），仅供展示占比。
 func (d Decimal) Ratio(o Decimal) float64 {
 	if o.IsZero() {

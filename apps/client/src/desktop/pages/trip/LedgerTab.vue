@@ -238,6 +238,10 @@ function clearFilters() {
   filters.kind = ''
 }
 
+function toggleCategory(id: string) {
+  filters.categoryId = filters.categoryId === id ? '' : id
+}
+
 function setRange(value: unknown) {
   filters.range = Array.isArray(value) && value.length === 2 ? (value as [string, string]) : null
 }
@@ -402,7 +406,7 @@ onMounted(async () => {
           :slices="slices"
           :currency="statistics?.currency_code ?? currency"
           :ratio-available="statistics?.ratio_available ?? false"
-          @select="filters.categoryId = $event"
+          @select="toggleCategory"
         />
       </ElCard>
       <ElCard shadow="never" class="chart-card">
@@ -451,7 +455,8 @@ onMounted(async () => {
               <button
                 type="button"
                 class="category-link"
-                @click="filters.categoryId = row.category_id"
+                :aria-pressed="filters.categoryId === row.category_id"
+                @click="toggleCategory(row.category_id)"
               >
                 {{ row.name }}
               </button>
@@ -513,20 +518,23 @@ onMounted(async () => {
             </p>
           </div>
           <div class="entry-amount" :class="{ 'entry-amount--refund': entry.kind === 'refund' }">
-            {{ entry.kind === 'refund' ? '−' : '' }}{{ formatMoney(entry.amount) }}
+            {{ entry.kind === 'refund' ? '−' : '' }}{{ formatMoney(entry.personal_amount) }}
             <span class="entry-currency">{{ entry.currency_code }}</span>
+            <span v-if="entry.kind === 'expense' && entry.split_count > 1" class="entry-share">
+              总额 {{ formatMoney(entry.amount) }} ÷ {{ entry.split_count }} 人
+            </span>
           </div>
           <div class="entry-actions tf-actions">
             <IconAction
               icon="edit"
-              :label="`编辑${categoryName(entry.category_id)}账目（${formatMoney(entry.amount)} ${entry.currency_code}）`"
+              :label="`编辑${categoryName(entry.category_id)}账目（${formatMoney(entry.personal_amount)} ${entry.currency_code}）`"
               text
               :disabled="!!busy"
               @click="dialog?.open(entry)"
             />
             <IconAction
               icon="trash"
-              :label="`删除${categoryName(entry.category_id)}账目（${formatMoney(entry.amount)} ${entry.currency_code}）`"
+              :label="`删除${categoryName(entry.category_id)}账目（${formatMoney(entry.personal_amount)} ${entry.currency_code}）`"
               text
               type="danger"
               :disabled="!!busy"
@@ -783,6 +791,12 @@ onMounted(async () => {
 .entry-currency {
   font-size: 12px;
   color: var(--tf-text-3);
+}
+.entry-share {
+  display: block;
+  font-size: 12px;
+  color: var(--tf-text-3);
+  text-align: right;
 }
 .entry-actions {
   display: flex;

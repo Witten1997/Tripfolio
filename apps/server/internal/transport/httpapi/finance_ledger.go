@@ -92,6 +92,7 @@ func (h *Handler) CreateLedgerEntry(ctx context.Context, req generated.CreateLed
 	b := req.Body
 	cmd := finance.CreateLedgerCommand{
 		ID: uuid.UUID(b.Id), Kind: string(b.Kind), Amount: b.Amount, CurrencyCode: b.CurrencyCode,
+		SplitCount: b.SplitCount,
 		CategoryID: uuid.UUID(b.CategoryId), OccurredOn: b.OccurredOn, Notes: b.Notes,
 		AttachmentAssetIDs: toUUIDs(b.AttachmentAssetIds),
 	}
@@ -141,6 +142,7 @@ func (h *Handler) UpdateLedgerEntry(ctx context.Context, req generated.UpdateLed
 	b := req.Body
 	patch := finance.LedgerPatch{
 		Amount: b.Amount, CurrencyCode: b.CurrencyCode, CategoryID: optionalUUID(b.CategoryId),
+		SplitCount: b.SplitCount,
 		OccurredOn: b.OccurredOn, Notes: b.Notes,
 	}
 	patch.RefundedSet, patch.RefundedEntryID = nullableUUID(b.RefundedEntryId)

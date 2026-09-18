@@ -231,6 +231,8 @@ function sampleEntry(id: string): LocalLedgerEntry {
     trip_id: TRIP_ID,
     kind: 'expense',
     amount: '128.50',
+    split_count: 1,
+    personal_amount: '128.50',
     category_id: CATEGORY_ID,
     occurred_on: '2026-10-02',
     notes: '午餐',

@@ -24,6 +24,8 @@ type LedgerTripInfo struct {
 // LedgerValues 是账目可编辑字段的集合；Update 整体写回，kind 与币种不在其中。
 type LedgerValues struct {
 	Amount             string
+	SplitCount         int32
+	PersonalAmount     string
 	CategoryID         uuid.UUID
 	OccurredOn         types.Date
 	Notes              string
@@ -34,7 +36,8 @@ type LedgerValues struct {
 // Values 取出资源的可编辑字段。
 func (r LedgerResource) Values() LedgerValues {
 	return LedgerValues{
-		Amount: r.Amount, CategoryID: r.CategoryID, OccurredOn: r.OccurredOn, Notes: r.Notes,
+		Amount: r.Amount, SplitCount: r.SplitCount, PersonalAmount: r.PersonalAmount,
+		CategoryID: r.CategoryID, OccurredOn: r.OccurredOn, Notes: r.Notes,
 		RefundedEntryID: r.RefundedEntryID, AttachmentAssetIDs: append([]uuid.UUID(nil), r.AttachmentAssetIDs...),
 	}
 }

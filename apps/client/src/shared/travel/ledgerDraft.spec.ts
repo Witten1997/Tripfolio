@@ -14,6 +14,8 @@ const baseEntry: LedgerEntry = {
   trip_id: 't',
   kind: 'expense',
   amount: '120.00',
+  split_count: 1,
+  personal_amount: '120.00',
   currency_code: 'CNY',
   category_id: 'c-food',
   occurred_on: '2026-10-02',

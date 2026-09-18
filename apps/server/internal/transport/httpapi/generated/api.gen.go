@@ -1144,6 +1144,9 @@ type LedgerCreate struct {
 
 	// RefundedEntryId 仅 kind=refund 可填写
 	RefundedEntryId nullable.Nullable[openapi_types.UUID] `json:"refunded_entry_id,omitempty"`
+
+	// SplitCount 支出均摊人数，省略为 1；退款只能为 1
+	SplitCount *int32 `json:"split_count,omitempty"`
 }
 
 // LedgerEntry 账目（支出或退款）的规范资源（接口设计 3.5）；同一结构也是同步日志与快照中的表示。
@@ -1189,6 +1192,9 @@ type LedgerPatch struct {
 	// Example: 2026-10-01
 	OccurredOn      *Date                                 `json:"occurred_on,omitempty"`
 	RefundedEntryId nullable.Nullable[openapi_types.UUID] `json:"refunded_entry_id,omitempty"`
+
+	// SplitCount 支出均摊人数；退款只能为 1
+	SplitCount *int32 `json:"split_count,omitempty"`
 }
 
 // LoginRequest defines model for LoginRequest.

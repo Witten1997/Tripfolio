@@ -122,6 +122,26 @@ func canonicalLedgerAmount(compact string, requestCurrency *string, tripCurrency
 	return out, nil
 }
 
+func personalLedgerAmount(amount, currency string, count int32) (string, error) {
+	units, ok := metadata.MinorUnits(currency)
+	if !ok {
+		return "", apperr.Validation(apperr.Field("currency_code", "INVALID", "不支持的币种"))
+	}
+	value, err := money.ParseDecimal(amount)
+	if err != nil {
+		return "", err
+	}
+	return value.DivideRound(int(count), units).Format(units), nil
+}
+
+func validateSplitCount(kind LedgerKind, count int32) *apperr.FieldError {
+	if count < 1 || count > 9999 || (kind == KindRefund && count != 1) {
+		e := apperr.Field("split_count", "INVALID", "支出均摊人数须为 1 至 9999；退款不可均摊")
+		return &e
+	}
+	return nil
+}
+
 func validateLedgerCurrency(code *string) *apperr.FieldError {
 	if code == nil {
 		return nil

@@ -7,6 +7,7 @@ import {
   ElForm,
   ElFormItem,
   ElInput,
+  ElInputNumber,
   ElMessageBox,
   ElOption,
   ElRadioButton,
@@ -32,6 +33,7 @@ import {
   emptyLedgerDraft,
   ledgerDraftFrom,
   ledgerFieldLabels,
+  splitPreview,
   validateLedgerDraft,
   type LedgerDraft,
 } from '@/shared/travel/ledgerDraft'
@@ -46,6 +48,9 @@ const emit = defineEmits<{
 }>()
 const context = useTripContext()
 const currency = computed(() => context.trip.value?.currency_code ?? 'CNY')
+const personalPreview = computed(() =>
+  splitPreview(draft.amount, draft.split_count, context.minorUnits.value),
+)
 
 const editor = useItemEditor<
   LedgerEntry,
@@ -253,6 +258,9 @@ defineExpose({ open })
             <ElInput v-model="draft.amount" inputmode="decimal" placeholder="0.00" autofocus>
               <template #append>{{ currency }}</template>
             </ElInput>
+            <span v-if="draft.kind === 'expense' && draft.split_count > 1" class="editor-hint">
+              此处填写整笔总金额。
+            </span>
           </ElFormItem>
           <ElFormItem label="实际日期" required :error="errors.occurred_on">
             <ElDatePicker
@@ -265,6 +273,19 @@ defineExpose({ open })
             />
           </ElFormItem>
         </div>
+        <ElFormItem v-if="draft.kind === 'expense'" label="均摊人数" :error="errors.split_count">
+          <ElInputNumber
+            v-model="draft.split_count"
+            :min="1"
+            :max="9999"
+            :step="1"
+            :precision="0"
+            aria-label="均摊人数"
+          />
+          <span v-if="draft.split_count > 1 && personalPreview" class="editor-hint">
+            人均 {{ formatMoney(personalPreview) }} {{ currency }}
+          </span>
+        </ElFormItem>
         <ElFormItem
           v-if="draft.kind === 'refund'"
           label="关联原支出（可选）"

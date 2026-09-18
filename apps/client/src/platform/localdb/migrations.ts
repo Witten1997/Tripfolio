@@ -11,6 +11,15 @@ export interface LocalMigration {
 
 export const LOCAL_MIGRATIONS: readonly LocalMigration[] = [
   { version: 1, name: 'initial', statements: SCHEMA_V1 },
+  {
+    version: 2,
+    name: 'ledger_split',
+    statements: [
+      'ALTER TABLE ledger_entries ADD COLUMN split_count INTEGER NOT NULL DEFAULT 1 CHECK (split_count BETWEEN 1 AND 9999)',
+      "ALTER TABLE ledger_entries ADD COLUMN personal_amount TEXT NOT NULL DEFAULT '0'",
+      'UPDATE ledger_entries SET personal_amount = amount',
+    ],
+  },
 ]
 
 export const LOCAL_SCHEMA_VERSION = LOCAL_MIGRATIONS[LOCAL_MIGRATIONS.length - 1]!.version

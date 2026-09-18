@@ -133,6 +133,7 @@ type CreateLedgerCommand struct {
 	ID                 uuid.UUID
 	Kind               string
 	Amount             string
+	SplitCount         *int32
 	CurrencyCode       *string
 	CategoryID         uuid.UUID
 	OccurredOn         *string
@@ -145,6 +146,7 @@ type CreateLedgerCommand struct {
 type createFingerprint struct {
 	Kind               LedgerKind  `json:"kind"`
 	Amount             string      `json:"amount"`
+	SplitCount         int32       `json:"split_count"`
 	CurrencyCode       *string     `json:"currency_code"`
 	CategoryID         uuid.UUID   `json:"category_id"`
 	OccurredOn         *types.Date `json:"occurred_on"`
@@ -161,6 +163,11 @@ func (s *LedgerService) Create(ctx context.Context, a actor.Actor, operationID, 
 	}
 	kind, ferr := validateKind(cmd.Kind)
 	addField(&fields, ferr)
+	count := int32(1)
+	if cmd.SplitCount != nil {
+		count = *cmd.SplitCount
+	}
+	addField(&fields, validateSplitCount(kind, count))
 	compact, ferr := compactMoney(cmd.Amount)
 	addField(&fields, ferr)
 	addField(&fields, validateLedgerCurrency(cmd.CurrencyCode))
@@ -190,7 +197,7 @@ func (s *LedgerService) Create(ctx context.Context, a actor.Actor, operationID, 
 		return write.Result{}, apperr.Validation(fields...)
 	}
 	fp := createFingerprint{
-		Kind: kind, Amount: compact, CurrencyCode: cmd.CurrencyCode, CategoryID: cmd.CategoryID,
+		Kind: kind, Amount: compact, SplitCount: count, CurrencyCode: cmd.CurrencyCode, CategoryID: cmd.CategoryID,
 		OccurredOn: occurredOn, Notes: notes, RefundedEntryID: cmd.RefundedEntryID, AttachmentAssetIDs: attachments,
 	}
 	req := write.Request{
@@ -213,6 +220,10 @@ func (s *LedgerService) Create(ctx context.Context, a actor.Actor, operationID, 
 		if err != nil {
 			return err
 		}
+		personal, err := personalLedgerAmount(amount, info.CurrencyCode, count)
+		if err != nil {
+			return err
+		}
 		now := s.clock.Now()
 		on := todayIn(now, info.Timezone)
 		if occurredOn != nil {
@@ -227,7 +238,8 @@ func (s *LedgerService) Create(ctx context.Context, a actor.Actor, operationID, 
 			}
 		}
 		created, err := repo.Insert(ctx, a.AccountID, LedgerResource{
-			ID: cmd.ID, TripID: tripID, Kind: kind, Amount: amount, CurrencyCode: info.CurrencyCode,
+			ID: cmd.ID, TripID: tripID, Kind: kind, Amount: amount, SplitCount: count,
+			PersonalAmount: personal, CurrencyCode: info.CurrencyCode,
 			CategoryID: cmd.CategoryID, OccurredOn: on, Notes: notes, RefundedEntryID: cmd.RefundedEntryID,
 			AttachmentAssetIDs: attachments, Version: 1, CreatedAt: now, UpdatedAt: now,
 		})
@@ -312,6 +324,7 @@ func checkRefundTotal(original LedgerResource, linked []LedgerResource, amount s
 // RefundedSet 区分“解除关联”（显式 null）与缺省；AttachmentAssetIDs 出现时整体替换。
 type LedgerPatch struct {
 	Amount             *string      `json:"amount"`
+	SplitCount         *int32       `json:"split_count"`
 	CurrencyCode       *string      `json:"currency_code"`
 	CategoryID         *uuid.UUID   `json:"category_id"`
 	OccurredOn         *string      `json:"occurred_on"`
@@ -325,6 +338,9 @@ func (p LedgerPatch) submittedFields() []string {
 	var f []string
 	if p.Amount != nil {
 		f = append(f, "amount")
+	}
+	if p.SplitCount != nil {
+		f = append(f, "split_count")
 	}
 	if p.CategoryID != nil {
 		f = append(f, "category_id")
@@ -354,6 +370,9 @@ func (s *LedgerService) Update(ctx context.Context, a actor.Actor, operationID, 
 		patch.Amount = &compact
 	}
 	addField(&fields, validateLedgerCurrency(patch.CurrencyCode))
+	if patch.SplitCount != nil {
+		addField(&fields, validateSplitCount("", *patch.SplitCount))
+	}
 	if patch.CategoryID != nil && *patch.CategoryID == uuid.Nil {
 		fields = append(fields, apperr.Field("category_id", "INVALID", "必须是 UUID"))
 	}
@@ -426,6 +445,18 @@ func (s *LedgerService) Update(ctx context.Context, a actor.Actor, operationID, 
 				return err
 			}
 			v.Amount = amount
+		}
+		if patch.SplitCount != nil {
+			v.SplitCount = *patch.SplitCount
+		}
+		if ferr := validateSplitCount(current.Kind, v.SplitCount); ferr != nil {
+			return apperr.Validation(*ferr)
+		}
+		if patch.Amount != nil || patch.SplitCount != nil {
+			v.PersonalAmount, err = personalLedgerAmount(v.Amount, info.CurrencyCode, v.SplitCount)
+			if err != nil {
+				return err
+			}
 		}
 		if patch.CategoryID != nil {
 			v.CategoryID = *patch.CategoryID

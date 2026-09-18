@@ -29,6 +29,8 @@ export interface LocalLedgerEntry {
   trip_id: string
   kind: 'expense' | 'refund'
   amount: string
+  split_count: number
+  personal_amount: string
   category_id: string
   occurred_on: string
   notes: string
@@ -169,6 +171,7 @@ export class LocalDatabase {
     const payload = {
       kind: entry.kind,
       amount: entry.amount,
+      split_count: entry.split_count,
       category_id: entry.category_id,
       occurred_on: entry.occurred_on,
       notes: entry.notes,
@@ -226,13 +229,15 @@ export class LocalDatabase {
 async function insertLedgerEntry(tx: SqlExecutor, entry: LocalLedgerEntry): Promise<void> {
   await tx.run(
     `INSERT INTO ledger_entries
-       (id, trip_id, kind, amount, category_id, occurred_on, notes, refunded_entry_id, attachment_asset_ids, version, created_at, updated_at, deleted_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (id, trip_id, kind, amount, split_count, personal_amount, category_id, occurred_on, notes, refunded_entry_id, attachment_asset_ids, version, created_at, updated_at, deleted_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       entry.id,
       entry.trip_id,
       entry.kind,
       entry.amount,
+      entry.split_count,
+      entry.personal_amount,
       entry.category_id,
       entry.occurred_on,
       entry.notes,
@@ -252,6 +257,8 @@ function rowToLedgerEntry(row: SqlRow): LocalLedgerEntry {
     trip_id: String(row.trip_id),
     kind: String(row.kind) as LocalLedgerEntry['kind'],
     amount: String(row.amount),
+    split_count: Number(row.split_count),
+    personal_amount: String(row.personal_amount),
     category_id: String(row.category_id),
     occurred_on: String(row.occurred_on),
     notes: String(row.notes ?? ''),

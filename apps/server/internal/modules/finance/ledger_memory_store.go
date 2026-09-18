@@ -257,7 +257,8 @@ func (m *LedgerMemoryStore) mutate(accountID, tripID, id uuid.UUID, fn func(r *L
 // Update 实现 LedgerRepo。
 func (m *LedgerMemoryStore) Update(_ context.Context, accountID, tripID, id uuid.UUID, v LedgerValues, now time.Time) (LedgerResource, error) {
 	return m.mutate(accountID, tripID, id, func(r *LedgerResource) {
-		r.Amount, r.CategoryID, r.OccurredOn, r.Notes = v.Amount, v.CategoryID, v.OccurredOn, v.Notes
+		r.Amount, r.SplitCount, r.PersonalAmount = v.Amount, v.SplitCount, v.PersonalAmount
+		r.CategoryID, r.OccurredOn, r.Notes = v.CategoryID, v.OccurredOn, v.Notes
 		r.RefundedEntryID = v.RefundedEntryID
 		r.AttachmentAssetIDs = append([]uuid.UUID{}, v.AttachmentAssetIDs...)
 		r.UpdatedAt = now
@@ -377,7 +378,11 @@ func (m *LedgerMemoryStore) Statistics(_ context.Context, accountID, tripID uuid
 	data := StatisticsData{Trip: info}
 	type agg struct{ expense, refund money.Decimal }
 	add := func(a *agg, r LedgerResource) {
-		d, err := money.ParseDecimal(r.Amount)
+		amount := r.Amount
+		if r.Kind == KindExpense {
+			amount = r.PersonalAmount
+		}
+		d, err := money.ParseDecimal(amount)
 		if err != nil {
 			return
 		}

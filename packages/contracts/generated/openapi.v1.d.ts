@@ -1563,6 +1563,11 @@ export type components = {
              * @description 仅 kind=refund 可填写
              */
             refunded_entry_id?: string | null;
+            /**
+             * Format: int32
+             * @description 支出均摊人数，省略为 1；退款只能为 1
+             */
+            split_count?: number;
         };
         /**
          * @description 账目（支出或退款）的规范资源（接口设计 3.5）；同一结构也是同步日志与快照中的表示。
@@ -1582,11 +1587,17 @@ export type components = {
             kind: components["schemas"]["LedgerKind"];
             notes: string;
             occurred_on: components["schemas"]["Date"];
+            personal_amount: components["schemas"]["Money"];
             /**
              * Format: uuid
              * @description 退款关联的原支出；独立退款与支出为 null
              */
             refunded_entry_id: string | null;
+            /**
+             * Format: int32
+             * @description 支出均摊人数；退款恒为 1
+             */
+            split_count: number;
             /** Format: uuid */
             trip_id: string;
             updated_at: components["schemas"]["Instant"];
@@ -1619,6 +1630,11 @@ export type components = {
             occurred_on?: components["schemas"]["Date"];
             /** Format: uuid */
             refunded_entry_id?: string | null;
+            /**
+             * Format: int32
+             * @description 支出均摊人数；退款只能为 1
+             */
+            split_count?: number;
         };
         /**
          * @description YYYY-MM-DDTHH:mm:ss，不带 Z 或偏移，按旅行 timezone 解释

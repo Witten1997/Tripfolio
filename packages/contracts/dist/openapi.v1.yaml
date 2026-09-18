@@ -4576,6 +4576,8 @@ components:
         - trip_id
         - kind
         - amount
+        - split_count
+        - personal_amount
         - currency_code
         - category_id
         - occurred_on
@@ -4596,6 +4598,14 @@ components:
         kind:
           $ref: '#/components/schemas/LedgerKind'
         amount:
+          $ref: '#/components/schemas/Money'
+        split_count:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 9999
+          description: 支出均摊人数；退款恒为 1
+        personal_amount:
           $ref: '#/components/schemas/Money'
         currency_code:
           $ref: '#/components/schemas/CurrencyCode'
@@ -4668,6 +4678,12 @@ components:
           $ref: '#/components/schemas/LedgerKind'
         amount:
           $ref: '#/components/schemas/Money'
+        split_count:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 9999
+          description: 支出均摊人数，省略为 1；退款只能为 1
         currency_code:
           $ref: '#/components/schemas/CurrencyCode'
         category_id:
@@ -4698,6 +4714,12 @@ components:
       properties:
         amount:
           $ref: '#/components/schemas/Money'
+        split_count:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 9999
+          description: 支出均摊人数；退款只能为 1
         currency_code:
           $ref: '#/components/schemas/CurrencyCode'
         category_id:

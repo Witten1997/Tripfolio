@@ -33,6 +33,10 @@ func toLedgerResource(row dbgen.LedgerEntry, currency string, attachments []uuid
 	if err != nil {
 		return finance.LedgerResource{}, fmt.Errorf("账目 %s 的金额 %q 无法按 %s 表示: %w", row.ID, row.Amount, currency, err)
 	}
+	personal, err := money.FromStorage(row.PersonalAmount, units)
+	if err != nil {
+		return finance.LedgerResource{}, fmt.Errorf("账目 %s 的个人金额 %q 无法按 %s 表示: %w", row.ID, row.PersonalAmount, currency, err)
+	}
 	var refunded *uuid.UUID
 	if row.RefundedEntryID.Valid {
 		id := row.RefundedEntryID.UUID
@@ -42,7 +46,8 @@ func toLedgerResource(row dbgen.LedgerEntry, currency string, attachments []uuid
 		attachments = []uuid.UUID{}
 	}
 	return finance.LedgerResource{
-		ID: row.ID, TripID: row.TripID, Kind: finance.LedgerKind(row.Kind), Amount: amount, CurrencyCode: currency,
+		ID: row.ID, TripID: row.TripID, Kind: finance.LedgerKind(row.Kind), Amount: amount,
+		SplitCount: row.SplitCount, PersonalAmount: personal, CurrencyCode: currency,
 		CategoryID: row.CategoryID, OccurredOn: types.DateOf(row.OccurredOn), Notes: row.Notes, RefundedEntryID: refunded,
 		AttachmentAssetIDs: attachments, Version: types.Version(row.Version),
 		CreatedAt: pgcore.UTC(row.CreatedAt), UpdatedAt: pgcore.UTC(row.UpdatedAt), DeletedAt: pgcore.UTCPtr(row.DeletedAt),
@@ -214,7 +219,8 @@ func (r *ledgerRepo) replaceAttachments(ctx context.Context, accountID, tripID, 
 
 func (r *ledgerRepo) Insert(ctx context.Context, accountID uuid.UUID, e finance.LedgerResource) (finance.LedgerResource, error) {
 	row, err := r.scope.Queries.InsertLedgerEntry(ctx, dbgen.InsertLedgerEntryParams{
-		ID: e.ID, AccountID: accountID, TripID: e.TripID, Kind: string(e.Kind), Amount: e.Amount, CategoryID: e.CategoryID,
+		ID: e.ID, AccountID: accountID, TripID: e.TripID, Kind: string(e.Kind), Amount: e.Amount,
+		SplitCount: e.SplitCount, PersonalAmount: e.PersonalAmount, CategoryID: e.CategoryID,
 		OccurredOn: e.OccurredOn.Time(), Notes: e.Notes, RefundedEntryID: nullUUID(e.RefundedEntryID), CreatedAt: e.CreatedAt,
 	})
 	if err != nil {
@@ -228,7 +234,8 @@ func (r *ledgerRepo) Insert(ctx context.Context, accountID uuid.UUID, e finance.
 
 func (r *ledgerRepo) Update(ctx context.Context, accountID, tripID, id uuid.UUID, v finance.LedgerValues, now time.Time) (finance.LedgerResource, error) {
 	row, err := r.scope.Queries.UpdateLedgerEntry(ctx, dbgen.UpdateLedgerEntryParams{
-		AccountID: accountID, TripID: tripID, ID: id, Amount: v.Amount, CategoryID: v.CategoryID, OccurredOn: v.OccurredOn.Time(),
+		AccountID: accountID, TripID: tripID, ID: id, Amount: v.Amount,
+		SplitCount: v.SplitCount, PersonalAmount: v.PersonalAmount, CategoryID: v.CategoryID, OccurredOn: v.OccurredOn.Time(),
 		Notes: v.Notes, RefundedEntryID: nullUUID(v.RefundedEntryID), UpdatedAt: now,
 	})
 	if err != nil {

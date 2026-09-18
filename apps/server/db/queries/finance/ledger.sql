@@ -43,14 +43,14 @@ SELECT EXISTS (SELECT 1 FROM ledger_entries l WHERE l.id = sqlc.arg(id))
     OR EXISTS (SELECT 1 FROM entity_tombstones et WHERE et.account_id = sqlc.arg(account_id) AND et.entity_type = 'ledger_entry' AND et.entity_id = sqlc.arg(id)) AS exists;
 
 -- name: InsertLedgerEntry :one
-INSERT INTO ledger_entries (id, account_id, trip_id, kind, amount, category_id, occurred_on, notes, refunded_entry_id, created_at, updated_at)
-VALUES (sqlc.arg(id), sqlc.arg(account_id), sqlc.arg(trip_id), sqlc.arg(kind), sqlc.arg(amount), sqlc.arg(category_id), sqlc.arg(occurred_on),
+INSERT INTO ledger_entries (id, account_id, trip_id, kind, amount, split_count, personal_amount, category_id, occurred_on, notes, refunded_entry_id, created_at, updated_at)
+VALUES (sqlc.arg(id), sqlc.arg(account_id), sqlc.arg(trip_id), sqlc.arg(kind), sqlc.arg(amount), sqlc.arg(split_count), sqlc.arg(personal_amount), sqlc.arg(category_id), sqlc.arg(occurred_on),
         sqlc.arg(notes), sqlc.narg(refunded_entry_id), sqlc.arg(created_at), sqlc.arg(created_at))
 RETURNING *;
 
 -- name: UpdateLedgerEntry :one
 UPDATE ledger_entries
-SET amount = sqlc.arg(amount), category_id = sqlc.arg(category_id), occurred_on = sqlc.arg(occurred_on), notes = sqlc.arg(notes),
+SET amount = sqlc.arg(amount), split_count = sqlc.arg(split_count), personal_amount = sqlc.arg(personal_amount), category_id = sqlc.arg(category_id), occurred_on = sqlc.arg(occurred_on), notes = sqlc.arg(notes),
     refunded_entry_id = sqlc.narg(refunded_entry_id), version = version + 1, updated_at = sqlc.arg(updated_at)
 WHERE account_id = sqlc.arg(account_id) AND trip_id = sqlc.arg(trip_id) AND id = sqlc.arg(id)
 RETURNING *;
@@ -106,7 +106,7 @@ LIMIT sqlc.arg(row_limit);
 
 -- 统计（数据库设计 §5）：净额用 CASE 聚合，按实际 occurred_on；下面四条在同一个只读一致性事务中执行。
 -- name: LedgerFilteredTotals :one
-SELECT COALESCE(SUM(CASE WHEN kind = 'expense' THEN amount END), 0)::numeric AS expense_amount,
+SELECT COALESCE(SUM(CASE WHEN kind = 'expense' THEN personal_amount END), 0)::numeric AS expense_amount,
        COALESCE(SUM(CASE WHEN kind = 'refund' THEN amount END), 0)::numeric AS refund_amount,
        count(*) AS entry_count
 FROM ledger_entries
@@ -116,7 +116,7 @@ WHERE account_id = sqlc.arg(account_id) AND trip_id = sqlc.arg(trip_id) AND dele
   AND (sqlc.narg(category_id)::uuid IS NULL OR category_id = sqlc.narg(category_id)::uuid);
 
 -- name: LedgerTripTotals :one
-SELECT COALESCE(SUM(CASE WHEN kind = 'expense' THEN amount END), 0)::numeric AS expense_amount,
+SELECT COALESCE(SUM(CASE WHEN kind = 'expense' THEN personal_amount END), 0)::numeric AS expense_amount,
        COALESCE(SUM(CASE WHEN kind = 'refund' THEN amount END), 0)::numeric AS refund_amount
 FROM ledger_entries
 WHERE account_id = sqlc.arg(account_id) AND trip_id = sqlc.arg(trip_id) AND deleted_at IS NULL;
@@ -128,13 +128,13 @@ SELECT c.id AS category_id, c.name, c.icon, c.sort_order,
                               AND (sqlc.narg(date_from)::date IS NULL OR l.occurred_on >= sqlc.narg(date_from)::date)
                               AND (sqlc.narg(date_to)::date IS NULL OR l.occurred_on <= sqlc.narg(date_to)::date)
                               AND (sqlc.narg(category_id)::uuid IS NULL OR l.category_id = sqlc.narg(category_id)::uuid)
-                         THEN l.amount END), 0)::numeric AS filtered_expense,
+                         THEN l.personal_amount END), 0)::numeric AS filtered_expense,
        COALESCE(SUM(CASE WHEN l.kind = 'refund'
                               AND (sqlc.narg(date_from)::date IS NULL OR l.occurred_on >= sqlc.narg(date_from)::date)
                               AND (sqlc.narg(date_to)::date IS NULL OR l.occurred_on <= sqlc.narg(date_to)::date)
                               AND (sqlc.narg(category_id)::uuid IS NULL OR l.category_id = sqlc.narg(category_id)::uuid)
                          THEN l.amount END), 0)::numeric AS filtered_refund,
-       COALESCE(SUM(CASE WHEN l.kind = 'expense' THEN l.amount END), 0)::numeric AS trip_expense,
+       COALESCE(SUM(CASE WHEN l.kind = 'expense' THEN l.personal_amount END), 0)::numeric AS trip_expense,
        COALESCE(SUM(CASE WHEN l.kind = 'refund' THEN l.amount END), 0)::numeric AS trip_refund
 FROM expense_categories c
 LEFT JOIN ledger_entries l
@@ -147,7 +147,7 @@ ORDER BY c.sort_order, c.id;
 -- 每日明细：只含有账目的日期，按日期降序，游标取更早的日期。
 -- name: LedgerDailyTotals :many
 SELECT occurred_on,
-       COALESCE(SUM(CASE WHEN kind = 'expense' THEN amount END), 0)::numeric AS expense_amount,
+       COALESCE(SUM(CASE WHEN kind = 'expense' THEN personal_amount END), 0)::numeric AS expense_amount,
        COALESCE(SUM(CASE WHEN kind = 'refund' THEN amount END), 0)::numeric AS refund_amount
 FROM ledger_entries
 WHERE account_id = sqlc.arg(account_id) AND trip_id = sqlc.arg(trip_id) AND deleted_at IS NULL

@@ -17,6 +17,8 @@ LedgerEntry:
       trip_id,
       kind,
       amount,
+      split_count,
+      personal_amount,
       currency_code,
       category_id,
       occurred_on,
@@ -38,6 +40,14 @@ LedgerEntry:
     kind:
       $ref: '#/LedgerKind'
     amount:
+      $ref: ./common.yaml#/Money
+    split_count:
+      type: integer
+      format: int32
+      minimum: 1
+      maximum: 9999
+      description: 支出均摊人数；退款恒为 1
+    personal_amount:
       $ref: ./common.yaml#/Money
     currency_code:
       $ref: ./common.yaml#/CurrencyCode
@@ -106,6 +116,12 @@ LedgerCreate:
       $ref: '#/LedgerKind'
     amount:
       $ref: ./common.yaml#/Money
+    split_count:
+      type: integer
+      format: int32
+      minimum: 1
+      maximum: 9999
+      description: 支出均摊人数，省略为 1；退款只能为 1
     currency_code:
       $ref: ./common.yaml#/CurrencyCode
     category_id:
@@ -137,6 +153,12 @@ LedgerPatch:
   properties:
     amount:
       $ref: ./common.yaml#/Money
+    split_count:
+      type: integer
+      format: int32
+      minimum: 1
+      maximum: 9999
+      description: 支出均摊人数；退款只能为 1
     currency_code:
       $ref: ./common.yaml#/CurrencyCode
     category_id:

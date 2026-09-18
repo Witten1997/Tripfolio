@@ -71,6 +71,8 @@ type LedgerResource struct {
 	TripID             uuid.UUID     `json:"trip_id"`
 	Kind               LedgerKind    `json:"kind"`
 	Amount             string        `json:"amount"`
+	SplitCount         int32         `json:"split_count"`
+	PersonalAmount     string        `json:"personal_amount"`
 	CurrencyCode       string        `json:"currency_code"`
 	CategoryID         uuid.UUID     `json:"category_id"`
 	OccurredOn         types.Date    `json:"occurred_on"`
@@ -84,7 +86,7 @@ type LedgerResource struct {
 }
 
 // LedgerFields 是账目可局部更新的字段名，用于 changed_fields 与字段级合并；kind 与 currency_code 不可改。
-var LedgerFields = []string{"amount", "category_id", "occurred_on", "notes", "refunded_entry_id", "attachment_asset_ids"}
+var LedgerFields = []string{"amount", "split_count", "category_id", "occurred_on", "notes", "refunded_entry_id", "attachment_asset_ids"}
 
 // MaxLedgerAttachments 是每条账目的票据上限（接口设计 3.5）。
 const MaxLedgerAttachments = 10

@@ -257,6 +257,8 @@ type LedgerEntry struct {
 	OccurredOn      time.Time
 	Notes           string
 	RefundedEntryID uuid.NullUUID
+	SplitCount      int32
+	PersonalAmount  string
 }
 
 type MutationReceipt struct {
