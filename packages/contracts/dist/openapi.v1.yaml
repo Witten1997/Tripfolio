@@ -2202,6 +2202,88 @@ paths:
           $ref: '#/components/responses/Gone'
         '422':
           $ref: '#/components/responses/ValidationFailed'
+  /trips/{trip_id}/members:
+    parameters:
+      - name: trip_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags:
+        - travel
+      operationId: listTripMembers
+      summary: 旅行的有效成员，按 sort_order、id 排序
+      responses:
+        '200':
+          description: 成员列表
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TripMemberListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '410':
+          $ref: '#/components/responses/Gone'
+    put:
+      tags:
+        - travel
+      operationId: saveTripMembers
+      summary: 整体保存旅行成员：新增、改名、改比例、排序与删除；百分比之和须为 100
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TripMembersSave'
+      responses:
+        '200':
+          description: 已保存；data 为 null，affected 为本次新增、修改与删除的成员
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WriteResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '410':
+          $ref: '#/components/responses/Gone'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /trips/{trip_id}/settlement:
+    parameters:
+      - name: trip_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags:
+        - finance
+      operationId: getTripSettlement
+      summary: 成员结算：每位成员的已支付、应承担、净额与最少转账方案
+      responses:
+        '200':
+          description: 结算结果
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TripSettlementResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '410':
+          $ref: '#/components/responses/Gone'
   /assets:
     post:
       tags:
@@ -4568,6 +4650,8 @@ components:
       description: |
         账目（支出或退款）的规范资源（接口设计 3.5）；同一结构也是同步日志与快照中的表示。
         currency_code 由旅行派生，只读；attachment_asset_ids 是票据图片资产 ID，不含临时下载地址。
+        payer_member_id 为付款人（退款为收款人）；splits 为服务端按 split_mode 计算的各参与人份额，之和等于 amount；
+        split_count = 参与人数，personal_amount = is_self 成员的份额（不参与时为 0），两者只读。
       x-go-type: finance.LedgerResource
       x-go-type-import:
         path: tripfolio/server/internal/modules/finance
@@ -4578,6 +4662,9 @@ components:
         - amount
         - split_count
         - personal_amount
+        - payer_member_id
+        - split_mode
+        - splits
         - currency_code
         - category_id
         - occurred_on
@@ -4604,9 +4691,18 @@ components:
           format: int32
           minimum: 1
           maximum: 9999
-          description: 支出均摊人数；退款恒为 1
+          description: 参与分摊的成员数，只读
         personal_amount:
           $ref: '#/components/schemas/Money'
+        payer_member_id:
+          type: string
+          format: uuid
+        split_mode:
+          $ref: '#/components/schemas/SplitMode'
+        splits:
+          type: array
+          items:
+            $ref: '#/components/schemas/LedgerSplit'
         currency_code:
           $ref: '#/components/schemas/CurrencyCode'
         category_id:
@@ -4665,6 +4761,8 @@ components:
         创建支出或退款。currency_code 可省略，提供时必须等于旅行币种（否则 422 CURRENCY_MISMATCH）；
         occurred_on 默认旅行时区的今天。退款可通过 refunded_entry_id 关联同旅行的有效支出，
         分类须与原支出一致，关联退款合计不得超过原支出金额（422 REFUND_AMOUNT_EXCEEDED）。
+        payer_member_id 默认 is_self 成员，split_mode 默认 even，participant_member_ids 默认全部有效成员；
+        退款关联原支出且三者均缺省时继承原支出。成员须为本旅行有效成员（422 INVALID_REFERENCE）。
       required:
         - id
         - kind
@@ -4678,12 +4776,19 @@ components:
           $ref: '#/components/schemas/LedgerKind'
         amount:
           $ref: '#/components/schemas/Money'
-        split_count:
-          type: integer
-          format: int32
-          minimum: 1
-          maximum: 9999
-          description: 支出均摊人数，省略为 1；退款只能为 1
+        payer_member_id:
+          type: string
+          format: uuid
+        split_mode:
+          $ref: '#/components/schemas/SplitMode'
+        participant_member_ids:
+          type: array
+          minItems: 1
+          maxItems: 50
+          description: 参与分摊的成员，不重复；顺序决定余数分配
+          items:
+            type: string
+            format: uuid
         currency_code:
           $ref: '#/components/schemas/CurrencyCode'
         category_id:
@@ -4711,15 +4816,22 @@ components:
       description: |
         局部更新：缺省字段保持原值；refunded_entry_id 显式 null 表示解除关联；attachment_asset_ids 出现时整体替换。
         kind 不可改。修改原支出的金额须仍能覆盖其关联退款；修改原支出的分类会同事务更新其关联退款。
+        participant_member_ids 出现时整体替换；amount、split_mode 或参与人变化时重算 splits。
       properties:
         amount:
           $ref: '#/components/schemas/Money'
-        split_count:
-          type: integer
-          format: int32
-          minimum: 1
-          maximum: 9999
-          description: 支出均摊人数；退款只能为 1
+        payer_member_id:
+          type: string
+          format: uuid
+        split_mode:
+          $ref: '#/components/schemas/SplitMode'
+        participant_member_ids:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items:
+            type: string
+            format: uuid
         currency_code:
           $ref: '#/components/schemas/CurrencyCode'
         category_id:
@@ -4912,6 +5024,165 @@ components:
       properties:
         data:
           $ref: '#/components/schemas/TripStatistics'
+    SharePercent:
+      type: string
+      description: 分摊百分比，0–100 的十进制字符串，最多 2 位小数
+      pattern: ^(100(\.0{1,2})?|\d{1,2}(\.\d{1,2})?)$
+    TripMember:
+      type: object
+      description: 旅行成员的规范资源（接口设计 3.5 TripMember）；同一结构也是同步日志与快照中的表示。is_self 成员由创建旅行时生成，不可删除
+      x-go-type: member.Resource
+      x-go-type-import:
+        path: tripfolio/server/internal/modules/travel/member
+      required:
+        - id
+        - trip_id
+        - name
+        - share_percent
+        - sort_order
+        - is_self
+        - version
+        - created_at
+        - updated_at
+        - deleted_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        trip_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          minLength: 1
+          maxLength: 30
+        share_percent:
+          $ref: '#/components/schemas/SharePercent'
+        sort_order:
+          type: integer
+          format: int32
+        is_self:
+          type: boolean
+        version:
+          $ref: '#/components/schemas/Version'
+        created_at:
+          $ref: '#/components/schemas/Instant'
+        updated_at:
+          $ref: '#/components/schemas/Instant'
+        deleted_at:
+          type: string
+          format: date-time
+          nullable: true
+    TripMemberListResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/TripMember'
+    TripMemberInput:
+      type: object
+      description: 整体保存中的一位成员；id 为现有成员则更新，否则创建
+      required:
+        - id
+        - name
+        - share_percent
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          minLength: 1
+          maxLength: 30
+        share_percent:
+          $ref: '#/components/schemas/SharePercent'
+    TripMembersSave:
+      type: object
+      description: |
+        整体保存旅行成员：按数组顺序写 sort_order；未出现的有效成员被删除。
+        百分比之和必须恰好等于 100（422 SHARE_PERCENT_SUM）；is_self 成员必须出现；
+        被有效账目引用的成员不能删除（409 MEMBER_IN_USE）。
+      required:
+        - members
+      properties:
+        members:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/TripMemberInput'
+    MemberSettlement:
+      type: object
+      description: 单个成员的结算：paid_amount 已支付（作为付款人的支出 − 作为收款人的退款）、owed_amount 应承担（支出份额 − 退款份额）、net_amount = paid − owed，正数应收、负数应付
+      required:
+        - member_id
+        - name
+        - is_self
+        - paid_amount
+        - owed_amount
+        - net_amount
+      properties:
+        member_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        is_self:
+          type: boolean
+        paid_amount:
+          $ref: '#/components/schemas/SignedMoney'
+        owed_amount:
+          $ref: '#/components/schemas/SignedMoney'
+        net_amount:
+          $ref: '#/components/schemas/SignedMoney'
+    SettlementTransfer:
+      type: object
+      description: 一笔建议转账：from 向 to 支付 amount
+      required:
+        - from_member_id
+        - to_member_id
+        - amount
+      properties:
+        from_member_id:
+          type: string
+          format: uuid
+        to_member_id:
+          type: string
+          format: uuid
+        amount:
+          $ref: '#/components/schemas/Money'
+    TripSettlement:
+      type: object
+      description: 旅行成员结算（接口设计 3.8 TripSettlement）；不受筛选影响，只算有效账目与有效成员
+      x-go-type: finance.Settlement
+      x-go-type-import:
+        path: tripfolio/server/internal/modules/finance
+      required:
+        - currency_code
+        - members
+        - transfers
+      properties:
+        currency_code:
+          $ref: '#/components/schemas/CurrencyCode'
+        members:
+          type: array
+          items:
+            $ref: '#/components/schemas/MemberSettlement'
+        transfers:
+          type: array
+          description: 最少转账方案，净额为负者向净额为正者转账
+          items:
+            $ref: '#/components/schemas/SettlementTransfer'
+    TripSettlementResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: '#/components/schemas/TripSettlement'
     AssetScope:
       type: string
       description: 资产范围；trip 属于某次旅行，avatar 是账号头像
@@ -5519,6 +5790,24 @@ components:
       properties:
         data:
           $ref: '#/components/schemas/PublicRoutes'
+    SplitMode:
+      type: string
+      description: 分摊模式；even 按参与人等分，ratio 按参与人的成员百分比归一化
+      enum:
+        - even
+        - ratio
+    LedgerSplit:
+      type: object
+      description: 一位参与人的份额；按币种最小单位取整，余数按参与人顺序补齐
+      required:
+        - member_id
+        - amount
+      properties:
+        member_id:
+          type: string
+          format: uuid
+        amount:
+          $ref: '#/components/schemas/Money'
   responses:
     BadRequest:
       description: 请求无法解析、含未知字段或游标无效（MALFORMED_REQUEST、INVALID_CURSOR）

@@ -41,15 +41,15 @@ pnpm typecheck && pnpm test && pnpm build && pnpm format:check
 
 ## 文档索引
 
-- 需求：`docs/requirements/2026-09-10-P0核心需求.md`（v0.4）
+- 需求：`docs/requirements/2026-09-10-P0核心需求.md`（v0.5）
 - 技术选型：`docs/requirements/2026-09-10-技术选型与架构建议.md`（v0.4）
-- 接口：`docs/api/2026-09-11-P0接口设计.md`（v0.4，含 2026-09-14 算路补充、2026-09-15 分享与 2026-09-16 批量算路共 97 个接口）
-- 数据库：`docs/database/2026-09-11-P0数据库表结构设计.md`（v0.5，24 张表，支持下限 PostgreSQL 13）
+- 接口：`docs/api/2026-09-11-P0接口设计.md`（v0.5，含 2026-09-14 算路补充、2026-09-15 分享、2026-09-16 批量算路与 2026-09-19 成员结算共 99 个接口）
+- 数据库：`docs/database/2026-09-11-P0数据库表结构设计.md`（v0.6，26 张表，支持下限 PostgreSQL 13）
 - 总览与同步规则：`docs/architecture/2026-09-11-P0接口与数据设计总览.md`
 - 评审与决策记录：`docs/reviews/2026-09-12-P0设计评审.md`
 - 部署设计：`docs/architecture/2026-09-15-单二进制部署设计.md`（单二进制：内嵌前端、进程内迁移与高德代理、启动退出码）
 - 部署：`docker/README.md`（单二进制部署：单个 app 服务、已有 PostgreSQL 与阿里云 OSS、变量表与运维命令；本地开发依赖仍走 `infra/compose.yaml`）
-- 实施计划：`docs/superpowers/plans/`。**当前进行中：`docs/superpowers/plans/2026-09-12-web-p0.md`，接手任何工作前先读文件顶部“接手须知”与文末“进度日志”，任务状态用 `[ ]`/`[~]`/`[x]` 标记，开始前改 `[~]`，完成后改 `[x]` 并追加日志。**
+- 实施计划：`docs/superpowers/plans/`。**当前进行中：`docs/superpowers/plans/2026-09-19-成员与分摊.md`（旅行成员与账目分摊）；此前的 `2026-09-12-web-p0.md` 仍是网页版 P0 主计划。接手任何工作前先读文件顶部“接手须知”与文末“进度日志”，任务状态用 `[ ]`/`[~]`/`[x]` 标记，开始前改 `[~]`，完成后改 `[x]` 并追加日志。**
 
 ## 输出与行为约束
 

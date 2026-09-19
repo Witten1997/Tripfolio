@@ -6,6 +6,7 @@ import { useRoute } from 'vue-router'
 import IconAction from '@/desktop/components/IconAction.vue'
 import MapToggleFab from '@/desktop/components/MapToggleFab.vue'
 import TripEditorDialog from '@/desktop/components/TripEditorDialog.vue'
+import TripMembersDialog from '@/desktop/components/TripMembersDialog.vue'
 import TripShareDialog from '@/desktop/components/TripShareDialog.vue'
 import type { Trip } from '@/shared/api/trips'
 import { writeWarnings, type WriteOutcome } from '@/shared/api/writes'
@@ -20,6 +21,8 @@ const context = provideTripContext(tripId)
 const { trip, loading, error, errorCode } = context
 const editor = ref<InstanceType<typeof TripEditorDialog>>()
 const shareDialog = ref<InstanceType<typeof TripShareDialog>>()
+const membersDialog = ref<InstanceType<typeof TripMembersDialog>>()
+const membersVersion = ref(0)
 const detailRoot = ref<HTMLElement>()
 const mapToggleRight = ref<number>()
 const feedback = ref<string[]>([])
@@ -126,6 +129,7 @@ onScopeDispose(() => {
         </div>
         <div class="detail-actions tf-actions">
           <IconAction icon="edit" label="编辑旅行" type="primary" @click="editor?.open(trip)" />
+          <IconAction icon="users" label="旅行成员" @click="membersDialog?.open()" />
           <IconAction icon="share" label="分享旅行" @click="shareDialog?.open()" />
         </div>
       </header>
@@ -146,7 +150,7 @@ onScopeDispose(() => {
           >{{ tab.label }}</RouterLink
         >
       </nav>
-      <RouterView />
+      <RouterView :members-version="membersVersion" />
       <MapToggleFab
         v-if="showMapToggle"
         class="trip-map-toggle"
@@ -157,6 +161,7 @@ onScopeDispose(() => {
     </template>
     <TripEditorDialog ref="editor" @saved="saved" />
     <TripShareDialog ref="shareDialog" :trip-id="tripId" />
+    <TripMembersDialog ref="membersDialog" :trip-id="tripId" @saved="context.bumpMembers()" />
   </div>
 </template>
 

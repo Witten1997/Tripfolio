@@ -21,6 +21,8 @@ type Querier interface {
 	CountChallengesSince(ctx context.Context, arg CountChallengesSinceParams) (int64, error)
 	CountExpenseCategories(ctx context.Context, accountID uuid.UUID) (int64, error)
 	CountLedgerEntriesUsingCategory(ctx context.Context, arg CountLedgerEntriesUsingCategoryParams) (int64, error)
+	// 删除前的引用检查：有效账目的付款人或分摊参与人。
+	CountTripMemberReferences(ctx context.Context, arg CountTripMemberReferencesParams) (int64, error)
 	// 账号基础查询。规范化邮箱 email_key 由服务端生成（去首尾空格、小写），不在 SQL 中处理。
 	// 时间一律由应用时钟给出（数据库时钟可能与应用不一致，会触发 updated_at >= created_at 约束）。
 	CreateAccount(ctx context.Context, arg CreateAccountParams) (Account, error)
@@ -31,6 +33,8 @@ type Querier interface {
 	DeleteExpiredChallenges(ctx context.Context, expiresAt time.Time) (int64, error)
 	// 票据引用：整体替换。
 	DeleteLedgerAttachments(ctx context.Context, arg DeleteLedgerAttachmentsParams) error
+	// 分摊份额：整体替换；amounts 与 member_ids 一一对应，顺序即 sort_order。
+	DeleteLedgerSplits(ctx context.Context, arg DeleteLedgerSplitsParams) error
 	DeleteRoutePlanLegs(ctx context.Context, arg DeleteRoutePlanLegsParams) error
 	DeleteTripShare(ctx context.Context, arg DeleteTripShareParams) (int64, error)
 	ExpenseCategoryActive(ctx context.Context, arg ExpenseCategoryActiveParams) (bool, error)
@@ -76,6 +80,8 @@ type Querier interface {
 	// 每日行程项目（数据库设计表 5）。时间由应用时钟传入；currency_code 不存列，由适配器按旅行币种派生。
 	GetTripContentInfo(ctx context.Context, arg GetTripContentInfoParams) (GetTripContentInfoRow, error)
 	GetTripForUpdate(ctx context.Context, arg GetTripForUpdateParams) (Trip, error)
+	// 旅行成员（数据库设计表 25）。percent 为 NUMERIC(5,2)，适配器按 2 位小数转回字符串。
+	GetTripMember(ctx context.Context, arg GetTripMemberParams) (TripMember, error)
 	// 旅行分享（数据库设计 v0.4 表 24）。解析查询联出主人账号状态与旅行删除标记，访客侧一次查询完成全部前置判断。
 	GetTripShareByTrip(ctx context.Context, arg GetTripShareByTripParams) (TripShare, error)
 	IncrementChallengeAttempts(ctx context.Context, id uuid.UUID) error
@@ -86,6 +92,7 @@ type Querier interface {
 	InsertItineraryItem(ctx context.Context, arg InsertItineraryItemParams) (ItineraryItem, error)
 	InsertLedgerAttachments(ctx context.Context, arg InsertLedgerAttachmentsParams) error
 	InsertLedgerEntry(ctx context.Context, arg InsertLedgerEntryParams) (LedgerEntry, error)
+	InsertLedgerSplits(ctx context.Context, arg InsertLedgerSplitsParams) error
 	InsertMutationReceipt(ctx context.Context, arg InsertMutationReceiptParams) error
 	InsertPackingItem(ctx context.Context, arg InsertPackingItemParams) (PackingItem, error)
 	InsertRoutePlanLeg(ctx context.Context, arg InsertRoutePlanLegParams) (ItineraryRouteLeg, error)
@@ -93,6 +100,7 @@ type Querier interface {
 	InsertTodoItem(ctx context.Context, arg InsertTodoItemParams) (TodoItem, error)
 	InsertTrip(ctx context.Context, arg InsertTripParams) (Trip, error)
 	InsertTripDeletionJob(ctx context.Context, arg InsertTripDeletionJobParams) (DeletionJob, error)
+	InsertTripMember(ctx context.Context, arg InsertTripMemberParams) (TripMember, error)
 	InsertTripShare(ctx context.Context, arg InsertTripShareParams) (TripShare, error)
 	// 邮箱验证码挑战。
 	InvalidateChallenges(ctx context.Context, arg InvalidateChallengesParams) error
@@ -104,7 +112,7 @@ type Querier interface {
 	// 每日明细：只含有账目的日期，按日期降序，游标取更早的日期。
 	LedgerDailyTotals(ctx context.Context, arg LedgerDailyTotalsParams) ([]LedgerDailyTotalsRow, error)
 	LedgerEntryIDExists(ctx context.Context, arg LedgerEntryIDExistsParams) (*bool, error)
-	// 统计（数据库设计 §5）：净额用 CASE 聚合，按实际 occurred_on；下面四条在同一个只读一致性事务中执行。
+	// 统计（数据库设计 §5）：净额用 CASE 聚合，按实际 occurred_on；支出与退款都取「我」的份额 personal_amount；下面四条在同一个只读一致性事务中执行。
 	LedgerFilteredTotals(ctx context.Context, arg LedgerFilteredTotalsParams) (LedgerFilteredTotalsRow, error)
 	LedgerTripTotals(ctx context.Context, arg LedgerTripTotalsParams) (LedgerTripTotalsRow, error)
 	ListActiveSessions(ctx context.Context, arg ListActiveSessionsParams) ([]AccountSession, error)
@@ -115,6 +123,7 @@ type Querier interface {
 	ListLedgerAttachments(ctx context.Context, arg ListLedgerAttachmentsParams) ([]ListLedgerAttachmentsRow, error)
 	// 列表：接口设计 3.9 LedgerFilters；游标用行比较走 (account_id, trip_id, occurred_on DESC, id DESC) 部分索引。
 	ListLedgerEntries(ctx context.Context, arg ListLedgerEntriesParams) ([]ListLedgerEntriesRow, error)
+	ListLedgerSplits(ctx context.Context, arg ListLedgerSplitsParams) ([]ListLedgerSplitsRow, error)
 	// 关联到某原支出的全部有效退款并锁定，按创建时间、id 升序。
 	ListLinkedRefundsForUpdate(ctx context.Context, arg ListLinkedRefundsForUpdateParams) ([]LedgerEntry, error)
 	// 列表：接口设计 3.9 PackingFilters；游标走 (account_id, trip_id, category, created_at, id) 部分索引。
@@ -129,6 +138,10 @@ type Querier interface {
 	ListTripAssets(ctx context.Context, arg ListTripAssetsParams) ([]Asset, error)
 	// 票据引用校验：同账号同旅行、未删除的图片资产，状态不限。
 	ListTripImageAssetIDs(ctx context.Context, arg ListTripImageAssetIDsParams) ([]uuid.UUID, error)
+	// 有效成员按 sort_order、id 升序。
+	ListTripMembers(ctx context.Context, arg ListTripMembersParams) ([]TripMember, error)
+	// 整体保存前锁定本旅行全部有效成员。
+	ListTripMembersForUpdate(ctx context.Context, arg ListTripMembersForUpdateParams) ([]TripMember, error)
 	// 列表：接口设计 3.9 TripFilters。q 由应用转义 LIKE 通配符；游标用行比较走 (account_id, start_date DESC, id DESC) 索引。
 	ListTripsByStartDate(ctx context.Context, arg ListTripsByStartDateParams) ([]ListTripsByStartDateRow, error)
 	ListTripsByStartDateAsc(ctx context.Context, arg ListTripsByStartDateAscParams) ([]ListTripsByStartDateAscRow, error)
@@ -172,6 +185,7 @@ type Querier interface {
 	SoftDeleteLedgerEntry(ctx context.Context, arg SoftDeleteLedgerEntryParams) (LedgerEntry, error)
 	SoftDeletePackingItem(ctx context.Context, arg SoftDeletePackingItemParams) (PackingItem, error)
 	SoftDeleteTodoItem(ctx context.Context, arg SoftDeleteTodoItemParams) (TodoItem, error)
+	SoftDeleteTripMember(ctx context.Context, arg SoftDeleteTripMemberParams) (TripMember, error)
 	// 新尝试：序号加 1、换暂存键与截止时间、回到 uploading 并清掉上次错误码；最终键留空由校验重写。
 	StartAssetAttempt(ctx context.Context, arg StartAssetAttemptParams) (Asset, error)
 	TodoItemIDExists(ctx context.Context, arg TodoItemIDExistsParams) (*bool, error)
@@ -181,6 +195,9 @@ type Querier interface {
 	TripHasItineraryOutside(ctx context.Context, arg TripHasItineraryOutsideParams) (bool, error)
 	TripHasLocalTimes(ctx context.Context, arg TripHasLocalTimesParams) (*bool, error)
 	TripIDExists(ctx context.Context, arg TripIDExistsParams) (*bool, error)
+	TripMemberIDExists(ctx context.Context, arg TripMemberIDExistsParams) (*bool, error)
+	// 成员结算（接口设计 3.8 TripSettlement）：每位有效成员作为付款人与参与人的支出、退款合计。
+	TripMemberSettlement(ctx context.Context, arg TripMemberSettlementParams) ([]TripMemberSettlementRow, error)
 	UpdateAccountPassword(ctx context.Context, arg UpdateAccountPasswordParams) error
 	UpdateAccountProfile(ctx context.Context, arg UpdateAccountProfileParams) (Account, error)
 	UpdateExpenseCategory(ctx context.Context, arg UpdateExpenseCategoryParams) (ExpenseCategory, error)
@@ -191,6 +208,7 @@ type Querier interface {
 	UpdateRouteLegMode(ctx context.Context, arg UpdateRouteLegModeParams) (ItineraryRouteLeg, error)
 	UpdateTodoItem(ctx context.Context, arg UpdateTodoItemParams) (TodoItem, error)
 	UpdateTrip(ctx context.Context, arg UpdateTripParams) (Trip, error)
+	UpdateTripMember(ctx context.Context, arg UpdateTripMemberParams) (TripMember, error)
 }
 
 var _ Querier = (*Queries)(nil)

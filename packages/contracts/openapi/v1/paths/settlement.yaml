@@ -1,0 +1,25 @@
+settlement:
+  parameters:
+    - name: trip_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  get:
+    tags: [finance]
+    operationId: getTripSettlement
+    summary: 成员结算：每位成员的已支付、应承担、净额与最少转账方案
+    responses:
+      '200':
+        description: 结算结果
+        content:
+          application/json:
+            schema:
+              $ref: ../openapi.yaml#/components/schemas/TripSettlementResponse
+      '401':
+        $ref: ../openapi.yaml#/components/responses/Unauthorized
+      '404':
+        $ref: ../openapi.yaml#/components/responses/NotFound
+      '410':
+        $ref: ../openapi.yaml#/components/responses/Gone

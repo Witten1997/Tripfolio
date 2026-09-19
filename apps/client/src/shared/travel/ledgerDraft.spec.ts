@@ -1,11 +1,30 @@
 import { describe, expect, it } from 'vitest'
 
 import type { LedgerEntry } from '@/shared/api/ledger'
+import type { TripMember } from '@/shared/api/members'
 import {
   changedLedgerFields,
+  defaultMemberDraft,
   ledgerDraftFrom,
+  splitPreview,
   validateLedgerDraft,
 } from '@/shared/travel/ledgerDraft'
+
+function member(overrides: Partial<TripMember>): TripMember {
+  return {
+    id: 'm',
+    trip_id: 't',
+    name: '成员',
+    share_percent: '0',
+    sort_order: 0,
+    is_self: false,
+    version: '1',
+    created_at: '2026-09-01T00:00:00Z',
+    updated_at: '2026-09-01T00:00:00Z',
+    deleted_at: null,
+    ...overrides,
+  }
+}
 
 const cny = { currency: 'CNY', minorUnits: 2 }
 
@@ -16,6 +35,9 @@ const baseEntry: LedgerEntry = {
   amount: '120.00',
   split_count: 1,
   personal_amount: '120.00',
+  payer_member_id: 'm-self',
+  split_mode: 'even',
+  splits: [{ member_id: 'm-self', amount: '120.00' }],
   currency_code: 'CNY',
   category_id: 'c-food',
   occurred_on: '2026-10-02',
@@ -77,13 +99,66 @@ describe('ledgerDraft', () => {
     expect(validateLedgerDraft(expense, cny).refunded_entry_id).toBeNull()
   })
 
-  it('差异只含变化字段，改金额附带币种，kind 不进 PATCH', () => {
+  it('差异只含变化字段，改金额附带币种，kind 不进 PATCH，参与人未变不发送', () => {
     const draft = ledgerDraftFrom(baseEntry)
     draft.amount = '200'
     draft.notes = '晚餐'
     const patch = changedLedgerFields(validateLedgerDraft(draft, cny), baseEntry)
     expect(patch).toEqual({ amount: '200.00', currency_code: 'CNY', notes: '晚餐' })
     expect('kind' in patch).toBe(false)
+    expect('participant_member_ids' in patch).toBe(false)
+  })
+
+  it('参与人、付款人或模式变化时进入 PATCH；参与人整体替换', () => {
+    const draft = ledgerDraftFrom(baseEntry)
+    draft.payer_member_id = 'm-b'
+    draft.split_mode = 'ratio'
+    draft.participant_member_ids = ['m-b', 'm-self']
+    const patch = changedLedgerFields(validateLedgerDraft(draft, cny), baseEntry)
+    expect(patch).toEqual({
+      payer_member_id: 'm-b',
+      split_mode: 'ratio',
+      participant_member_ids: ['m-b', 'm-self'],
+    })
+  })
+
+  it('付款人缺失或参与人为空被拦截；重复参与人去重', () => {
+    const draft = ledgerDraftFrom(baseEntry)
+    draft.payer_member_id = ''
+    expect(() => validateLedgerDraft(draft, cny)).toThrow('付款人')
+    draft.payer_member_id = 'm-self'
+    draft.participant_member_ids = []
+    expect(() => validateLedgerDraft(draft, cny)).toThrow('参与人')
+    draft.participant_member_ids = ['m-self', 'm-self']
+    expect(validateLedgerDraft(draft, cny).participant_member_ids).toEqual(['m-self'])
+  })
+
+  it('新建默认付款人为「我」、参与人为全员', () => {
+    const members = [
+      member({ id: 'm-b', name: '小王', is_self: false }),
+      member({ id: 'm-self', name: '我', is_self: true }),
+    ]
+    expect(defaultMemberDraft(members)).toEqual({
+      payer_member_id: 'm-self',
+      participant_member_ids: ['m-b', 'm-self'],
+    })
+  })
+
+  it('分摊预览与服务端算法一致：向下取整，余数按顺序补齐；按比例归一化', () => {
+    const a = member({ id: 'a', share_percent: '50' })
+    const b = member({ id: 'b', share_percent: '30' })
+    const c = member({ id: 'c', share_percent: '20' })
+    expect([...splitPreview('100', 'even', [a, b, c], 0)!.values()]).toEqual(['34', '33', '33'])
+    expect([...splitPreview('100', 'ratio', [a, b, c], 0)!.values()]).toEqual(['50', '30', '20'])
+    expect([...splitPreview('101', 'ratio', [c, b], 0)!.values()]).toEqual(['41', '60'])
+    expect([...splitPreview('10', 'even', [a, b, c], 2)!.values()]).toEqual([
+      '3.34',
+      '3.33',
+      '3.33',
+    ])
+    expect(splitPreview('10', 'ratio', [member({ id: 'z', share_percent: '0' })], 2)).toBeNull()
+    expect(splitPreview('abc', 'even', [a], 2)).toBeNull()
+    expect(splitPreview('10', 'even', [], 2)).toBeNull()
   })
 
   it('退款解除关联时发出显式 null', () => {

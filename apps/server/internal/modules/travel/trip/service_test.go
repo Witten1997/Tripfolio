@@ -95,12 +95,15 @@ func TestCreateAppliesDefaultsAndRecordsChange(t *testing.T) {
 	if r.Version != 1 || r.Destination != "" || r.Notes != "" || r.ArchivedAt != nil || r.DeletedAt != nil {
 		t.Fatalf("unexpected initial state: %+v", r)
 	}
-	if res.Primary == nil || res.Primary.Type != trip.EntityType || len(res.Affected) != 1 || res.Replayed {
+	if res.Primary == nil || res.Primary.Type != trip.EntityType || len(res.Affected) != 2 || res.Affected[1].Type != "trip_member" || res.Replayed {
 		t.Fatalf("result refs: %+v", res)
 	}
 	changes := f.uow.Changes()
-	if len(changes) != 1 || changes[0].Kind != write.ChangeUpsert || changes[0].TripID == nil || *changes[0].TripID != id {
+	if len(changes) != 2 || changes[0].Kind != write.ChangeUpsert || changes[0].TripID == nil || *changes[0].TripID != id {
 		t.Fatalf("change log: %+v", changes)
+	}
+	if len(f.store.Members) != 1 || !f.store.Members[0].IsSelf || f.store.Members[0].TripID != id || f.store.Members[0].SharePercent != "100" || changes[1].EntityID != f.store.Members[0].ID {
+		t.Fatalf("self member: %+v / %+v", f.store.Members, changes[1])
 	}
 	if len(changes[0].ChangedFields) != len(trip.CreateFields) {
 		t.Fatalf("create should list all fields, got %v", changes[0].ChangedFields)
@@ -111,7 +114,7 @@ func TestCreateAppliesDefaultsAndRecordsChange(t *testing.T) {
 	if err != nil || !replay.Replayed || replay.Data.(trip.Resource).ID != id {
 		t.Fatalf("replay: %+v, %v", replay, err)
 	}
-	if len(f.uow.Changes()) != 1 {
+	if len(f.uow.Changes()) != 2 {
 		t.Fatal("replay must not append changes")
 	}
 	cmd2 := cmd

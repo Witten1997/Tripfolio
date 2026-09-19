@@ -1,0 +1,54 @@
+collection:
+  parameters:
+    - name: trip_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  get:
+    tags: [travel]
+    operationId: listTripMembers
+    summary: 旅行的有效成员，按 sort_order、id 排序
+    responses:
+      '200':
+        description: 成员列表
+        content:
+          application/json:
+            schema:
+              $ref: ../openapi.yaml#/components/schemas/TripMemberListResponse
+      '401':
+        $ref: ../openapi.yaml#/components/responses/Unauthorized
+      '404':
+        $ref: ../openapi.yaml#/components/responses/NotFound
+      '410':
+        $ref: ../openapi.yaml#/components/responses/Gone
+  put:
+    tags: [travel]
+    operationId: saveTripMembers
+    summary: 整体保存旅行成员：新增、改名、改比例、排序与删除；百分比之和须为 100
+    parameters:
+      - $ref: ../openapi.yaml#/components/parameters/IdempotencyKey
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: ../openapi.yaml#/components/schemas/TripMembersSave
+    responses:
+      '200':
+        description: 已保存；data 为 null，affected 为本次新增、修改与删除的成员
+        content:
+          application/json:
+            schema:
+              $ref: ../openapi.yaml#/components/schemas/WriteResponse
+      '401':
+        $ref: ../openapi.yaml#/components/responses/Unauthorized
+      '404':
+        $ref: ../openapi.yaml#/components/responses/NotFound
+      '409':
+        $ref: ../openapi.yaml#/components/responses/Conflict
+      '410':
+        $ref: ../openapi.yaml#/components/responses/Gone
+      '422':
+        $ref: ../openapi.yaml#/components/responses/ValidationFailed

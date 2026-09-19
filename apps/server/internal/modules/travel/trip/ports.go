@@ -8,6 +8,7 @@ import (
 
 	"tripfolio/server/internal/foundation/types"
 	"tripfolio/server/internal/foundation/write"
+	"tripfolio/server/internal/modules/travel/member"
 )
 
 // Values 是旅行可编辑字段的集合；Update 整体写回。
@@ -72,6 +73,8 @@ type Repo interface {
 	IDExists(ctx context.Context, id uuid.UUID) (bool, error)
 	AccountDefaultTimezone(ctx context.Context, accountID uuid.UUID) (string, error)
 	Insert(ctx context.Context, accountID uuid.UUID, r Resource) (Resource, error)
+	// InsertMember 在创建旅行的同一事务里插入成员「我」（数据库设计表 25）。
+	InsertMember(ctx context.Context, accountID uuid.UUID, m member.Resource) (member.Resource, error)
 	Update(ctx context.Context, accountID, id uuid.UUID, v Values, now time.Time) (Resource, error)
 	InvalidateRouteSummary(ctx context.Context, accountID, tripID uuid.UUID, now time.Time) (int64, error)
 	SetArchived(ctx context.Context, accountID, id uuid.UUID, archivedAt *time.Time, now time.Time) (Resource, error)

@@ -38,7 +38,7 @@ type Repo interface {
 	IDExists(ctx context.Context, id uuid.UUID) (bool, error)
 	// NameTaken 判断本旅行同分类下是否已有同名（去首尾空格、大小写不敏感）有效物品；exclude 为要排除的自身 ID。
 	NameTaken(ctx context.Context, accountID, tripID uuid.UUID, category Category, name string, exclude uuid.UUID) (bool, error)
-	ProbeBatch(ctx context.Context, accountID, tripID uuid.UUID, items []BatchItem) (map[uuid.UUID]BatchProbe, error)
+	ProbeBatch(ctx context.Context, accountID, tripID uuid.UUID, items []BatchItem) (TripInfo, bool, map[uuid.UUID]BatchProbe, error)
 	Insert(ctx context.Context, accountID uuid.UUID, r Resource) (Resource, error)
 	InsertBatch(ctx context.Context, accountID uuid.UUID, items []Resource) ([]Resource, error)
 	Update(ctx context.Context, accountID, tripID, id uuid.UUID, v Values, now time.Time) (Resource, error)

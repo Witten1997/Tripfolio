@@ -18,6 +18,7 @@ import (
 	"tripfolio/server/internal/foundation/types"
 	"tripfolio/server/internal/foundation/write"
 	"tripfolio/server/internal/modules/metadata"
+	"tripfolio/server/internal/modules/travel/member"
 	"tripfolio/server/internal/modules/travel/trip"
 )
 
@@ -121,6 +122,10 @@ func (r *tripRepo) Insert(ctx context.Context, accountID uuid.UUID, t trip.Resou
 		return trip.Resource{}, err
 	}
 	return toResource(row)
+}
+
+func (r *tripRepo) InsertMember(ctx context.Context, accountID uuid.UUID, m member.Resource) (member.Resource, error) {
+	return insertMember(ctx, r.scope.Queries, accountID, m)
 }
 
 func (r *tripRepo) Update(ctx context.Context, accountID, id uuid.UUID, v trip.Values, now time.Time) (trip.Resource, error) {

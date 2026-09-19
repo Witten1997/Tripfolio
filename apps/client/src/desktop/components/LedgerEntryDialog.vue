@@ -2,11 +2,12 @@
 import {
   ElAlert,
   ElButton,
+  ElCheckbox,
+  ElCheckboxGroup,
   ElDatePicker,
   ElForm,
   ElFormItem,
   ElInput,
-  ElInputNumber,
   ElMessageBox,
   ElOption,
   ElSelect,
@@ -26,15 +27,19 @@ import {
   type LedgerEntry,
   type LedgerKind,
 } from '@/shared/api/ledger'
+import { listTripMembers, memberName, type TripMember } from '@/shared/api/members'
 import { type WriteOutcome } from '@/shared/api/writes'
 import {
   changedLedgerFields,
+  defaultMemberDraft,
   emptyLedgerDraft,
   ledgerDraftFrom,
   ledgerFieldLabels,
+  splitModeLabels,
   splitPreview,
   validateLedgerDraft,
   type LedgerDraft,
+  type SplitMode,
 } from '@/shared/travel/ledgerDraft'
 import { formatMoney } from '@/shared/travel/statisticsView'
 import { useTripContext } from '@/shared/travel/tripContext'
@@ -47,9 +52,56 @@ const emit = defineEmits<{
 }>()
 const context = useTripContext()
 const currency = computed(() => context.trip.value?.currency_code ?? 'CNY')
-const personalPreview = computed(() =>
-  splitPreview(draft.amount, draft.split_count, context.minorUnits.value),
+
+/** 旅行成员：打开表单时拉取一次；成员管理保存后由页面调用 refreshMembers。 */
+const members = ref<TripMember[]>([])
+const loadingMembers = ref(false)
+const membersError = ref<string | null>(null)
+async function refreshMembers() {
+  loadingMembers.value = true
+  membersError.value = null
+  try {
+    members.value = await listTripMembers(context.tripId)
+  } catch {
+    membersError.value = '无法加载旅行成员，付款人与参与人暂不可选'
+  } finally {
+    loadingMembers.value = false
+  }
+}
+const splitModeOptions = (Object.keys(splitModeLabels) as SplitMode[]).map((value) => ({
+  value,
+  label: splitModeLabels[value],
+}))
+function setSplitMode(value: string) {
+  if (value === 'even' || value === 'ratio') draft.split_mode = value
+}
+const participants = computed(() =>
+  draft.participant_member_ids
+    .map((id) => members.value.find((m) => m.id === id))
+    .filter((m): m is TripMember => !!m),
 )
+const preview = computed(() =>
+  splitPreview(draft.amount, draft.split_mode, participants.value, context.minorUnits.value),
+)
+const previewRows = computed(() =>
+  participants.value.map((m) => ({
+    id: m.id,
+    name: m.name,
+    amount: preview.value?.get(m.id) ?? null,
+  })),
+)
+const ratioUnavailable = computed(
+  () =>
+    draft.split_mode === 'ratio' &&
+    participants.value.length > 0 &&
+    participants.value.every((m) => Number(m.share_percent) === 0),
+)
+function toggleAllParticipants() {
+  draft.participant_member_ids =
+    draft.participant_member_ids.length === members.value.length
+      ? []
+      : members.value.map((m) => m.id)
+}
 
 const editor = useItemEditor<
   LedgerEntry,
@@ -121,7 +173,15 @@ watch(
   (id) => {
     if (!id) return
     const origin = expenses.value.find((e) => e.id === id)
-    if (origin) draft.category_id = origin.category_id
+    if (origin) {
+      draft.category_id = origin.category_id
+      // 关联原支出时默认继承其付款人与参与人，与服务端缺省一致
+      if (!isEditing.value) {
+        draft.payer_member_id = origin.payer_member_id
+        draft.split_mode = origin.split_mode
+        draft.participant_member_ids = origin.splits.map((s) => s.member_id)
+      }
+    }
   },
 )
 
@@ -145,6 +205,16 @@ const conflictRows = computed(() => {
     if (field === 'category_id') return value ? categoryName(value) : '（空）'
     if (field === 'refunded_entry_id') return value ? '已关联原支出' : '未关联'
     if (field === 'amount') return value ? `${formatMoney(value)} ${currency.value}` : '（空）'
+    if (field === 'payer_member_id') return memberName(members.value, value) || '（空）'
+    if (field === 'split_mode') return splitModeLabels[value as SplitMode] ?? value
+    if (field === 'participant_member_ids')
+      return (
+        value
+          .split(',')
+          .filter(Boolean)
+          .map((id) => memberName(members.value, id))
+          .join('、') || '（空）'
+      )
     return value || '（空）'
   }
   return (Object.keys(original) as Array<keyof LedgerDraft>)
@@ -202,19 +272,27 @@ async function save(againstLatest = false) {
   if (outcome) emit('saved', outcome)
 }
 
-/** 地点入口可以预填日期与备注；编辑既有账目时不覆盖原值。 */
-function open(
+/** 地点入口可以预填日期与备注；编辑既有账目时不覆盖原值。新建时付款人默认「我」、参与人默认全员。 */
+async function open(
   entry?: LedgerEntry,
   kind?: LedgerKind,
   presets: Partial<Pick<LedgerDraft, 'occurred_on' | 'notes'>> = {},
 ) {
+  if (!members.value.length) await refreshMembers()
   return editor.open(
     entry,
-    entry ? {} : { occurred_on: context.today.value, kind: kind ?? 'expense', ...presets },
+    entry
+      ? {}
+      : {
+          occurred_on: context.today.value,
+          kind: kind ?? 'expense',
+          ...defaultMemberDraft(members.value),
+          ...presets,
+        },
   )
 }
 
-defineExpose({ open })
+defineExpose({ open, refreshMembers })
 </script>
 
 <template>
@@ -252,7 +330,7 @@ defineExpose({ open })
           />
           <span v-if="isEditing" class="editor-hint">账目类型保存后不可更改。</span>
         </ElFormItem>
-        <div class="amount-row" :class="{ 'amount-row--refund': draft.kind === 'refund' }">
+        <div class="amount-row">
           <ElFormItem label="金额" required :error="errors.amount">
             <ElInput
               v-model="draft.amount"
@@ -265,25 +343,80 @@ defineExpose({ open })
                 ><span class="amount-currency">{{ currency }}</span></template
               >
             </ElInput>
-            <span v-if="draft.kind === 'expense' && draft.split_count > 1" class="editor-hint">
+            <span v-if="draft.participant_member_ids.length > 1" class="editor-hint">
               此处填写整笔总金额。
             </span>
           </ElFormItem>
-          <ElFormItem v-if="draft.kind === 'expense'" label="均摊人数" :error="errors.split_count">
-            <ElInputNumber
-              v-model="draft.split_count"
-              class="split-stepper"
-              :min="1"
-              :max="9999"
-              :step="1"
-              :precision="0"
-              aria-label="均摊人数"
-            />
-            <span v-if="draft.split_count > 1 && personalPreview" class="editor-hint">
-              人均 {{ formatMoney(personalPreview) }} {{ currency }}
-            </span>
+          <ElFormItem
+            :label="draft.kind === 'refund' ? '收款人' : '付款人'"
+            required
+            :error="errors.payer_member_id"
+          >
+            <ElSelect
+              v-model="draft.payer_member_id"
+              :loading="loadingMembers"
+              :placeholder="draft.kind === 'refund' ? '谁收到退款' : '谁付的钱'"
+              :aria-label="draft.kind === 'refund' ? '收款人' : '付款人'"
+            >
+              <ElOption v-for="m in members" :key="m.id" :value="m.id" :label="m.name" />
+            </ElSelect>
           </ElFormItem>
         </div>
+        <ElAlert
+          v-if="membersError"
+          :title="membersError"
+          type="warning"
+          :closable="false"
+          show-icon
+          class="editor-alert"
+        >
+          <ElButton size="small" :loading="loadingMembers" @click="refreshMembers">重试</ElButton>
+        </ElAlert>
+        <ElFormItem label="分摊模式" :error="errors.split_mode">
+          <SlidingSegmented
+            :model-value="draft.split_mode"
+            :options="splitModeOptions"
+            label="分摊模式"
+            @update:model-value="setSplitMode"
+          />
+          <span v-if="ratioUnavailable" class="editor-hint editor-hint--warn">
+            所选参与人的百分比之和为 0，无法按比例分摊；请在成员管理中设置比例或改用均摊。
+          </span>
+        </ElFormItem>
+        <ElFormItem :error="errors.participant_member_ids">
+          <template #label>
+            <span class="participants-label">
+              参与人
+              <ElButton
+                link
+                size="small"
+                :disabled="!members.length"
+                @click="toggleAllParticipants"
+                >{{
+                  draft.participant_member_ids.length === members.length ? '清空' : '全选'
+                }}</ElButton
+              >
+            </span>
+          </template>
+          <ElCheckboxGroup
+            v-model="draft.participant_member_ids"
+            class="participants"
+            aria-label="参与人"
+          >
+            <ElCheckbox v-for="m in members" :key="m.id" :value="m.id" :label="m.id">
+              {{ m.name }}
+              <span v-if="draft.split_mode === 'ratio'" class="participant-percent"
+                >{{ m.share_percent }}%</span
+              >
+            </ElCheckbox>
+          </ElCheckboxGroup>
+          <ul v-if="preview && previewRows.length > 1" class="split-preview" aria-label="分摊预览">
+            <li v-for="row in previewRows" :key="row.id">
+              <span>{{ row.name }}</span
+              ><strong v-if="row.amount">{{ formatMoney(row.amount) }} {{ currency }}</strong>
+            </li>
+          </ul>
+        </ElFormItem>
         <div class="editor-columns editor-columns--single">
           <ElFormItem label="实际日期" required :error="errors.occurred_on">
             <ElDatePicker
@@ -419,41 +552,47 @@ defineExpose({ open })
   grid-template-columns: minmax(0, 1fr) 148px;
   gap: 20px;
 }
-.amount-row--refund {
-  grid-template-columns: minmax(0, 1fr);
-}
 .amount-currency {
   color: var(--tf-text-3);
   font-size: 11px;
   font-weight: 600;
   line-height: 1;
 }
-.split-stepper {
+.editor-hint--warn {
+  color: var(--tf-warning);
+}
+.participants-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.participants {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+}
+.participant-percent {
+  margin-left: 4px;
+  color: var(--tf-text-3);
+  font-size: 12px;
+}
+.split-preview {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 8px 12px;
   width: 100%;
-}
-.split-stepper :deep(.el-input__wrapper) {
-  padding-inline: 38px;
-}
-.split-stepper :deep(.el-input-number__decrease),
-.split-stepper :deep(.el-input-number__increase) {
-  top: 5px;
-  bottom: 5px;
-  width: 30px;
-  height: auto;
-  border: 0;
-  border-radius: calc(var(--tf-radius-control) - 3px);
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 4px 16px;
   background: var(--tf-surface-sunken);
-  color: var(--tf-text-2);
+  border-radius: var(--tf-radius-control);
+  font-size: 12px;
 }
-.split-stepper :deep(.el-input-number__decrease) {
-  left: 5px;
-}
-.split-stepper :deep(.el-input-number__increase) {
-  right: 5px;
-}
-.split-stepper :deep(.el-input-number__decrease:hover),
-.split-stepper :deep(.el-input-number__increase:hover) {
-  color: var(--tf-accent);
+.split-preview li {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  line-height: 1.8;
 }
 .editor-hint {
   display: block;

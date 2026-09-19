@@ -143,20 +143,24 @@ func (m *MemoryStore) NameTaken(_ context.Context, accountID, tripID uuid.UUID, 
 	return false, nil
 }
 
-func (m *MemoryStore) ProbeBatch(ctx context.Context, accountID, tripID uuid.UUID, items []BatchItem) (map[uuid.UUID]BatchProbe, error) {
+func (m *MemoryStore) ProbeBatch(ctx context.Context, accountID, tripID uuid.UUID, items []BatchItem) (TripInfo, bool, map[uuid.UUID]BatchProbe, error) {
+	trip, found, err := m.Trip(ctx, accountID, tripID)
+	if err != nil || !found {
+		return trip, found, nil, err
+	}
 	probes := make(map[uuid.UUID]BatchProbe, len(items))
 	for _, item := range items {
 		nameTaken, err := m.NameTaken(ctx, accountID, tripID, item.Category, item.Name, uuid.Nil)
 		if err != nil {
-			return nil, err
+			return TripInfo{}, false, nil, err
 		}
 		idUsed, err := m.IDExists(ctx, item.ID)
 		if err != nil {
-			return nil, err
+			return TripInfo{}, false, nil, err
 		}
 		probes[item.ID] = BatchProbe{NameTaken: nameTaken, IDUsed: idUsed}
 	}
-	return probes, nil
+	return trip, true, probes, nil
 }
 
 // Insert 实现 Repo。

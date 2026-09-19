@@ -12,6 +12,7 @@ import (
 	"tripfolio/server/internal/modules/geo"
 	"tripfolio/server/internal/modules/metadata"
 	"tripfolio/server/internal/modules/travel/itinerary"
+	"tripfolio/server/internal/modules/travel/member"
 	"tripfolio/server/internal/modules/travel/packing"
 	"tripfolio/server/internal/modules/travel/routeplan"
 	"tripfolio/server/internal/modules/travel/share"
@@ -32,6 +33,7 @@ type Handler struct {
 	categories  *finance.CategoryService
 	ledger      *finance.LedgerService
 	statistics  *finance.StatisticsService
+	settlement  *finance.SettlementService
 	assets      *assets.Service
 	geo         *geo.Service
 	trips       *trip.Service
@@ -39,6 +41,7 @@ type Handler struct {
 	routePlans  *routeplan.Service
 	packing     *packing.Service
 	todos       *todo.Service
+	members     *member.Service
 	shares      *share.Service
 	cookies     CookieSettings
 	corsOrigins []string

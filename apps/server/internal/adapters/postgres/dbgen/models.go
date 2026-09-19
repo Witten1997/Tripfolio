@@ -259,6 +259,17 @@ type LedgerEntry struct {
 	RefundedEntryID uuid.NullUUID
 	SplitCount      int32
 	PersonalAmount  string
+	PayerMemberID   uuid.UUID
+	SplitMode       string
+}
+
+type LedgerEntrySplit struct {
+	AccountID     uuid.UUID
+	TripID        uuid.UUID
+	LedgerEntryID uuid.UUID
+	MemberID      uuid.UUID
+	Amount        string
+	SortOrder     int32
 }
 
 type MutationReceipt struct {
@@ -396,6 +407,20 @@ type Trip struct {
 	PurgeRequestedAt         *time.Time
 	RouteShortMode           string
 	RouteShortDistanceMeters int32
+}
+
+type TripMember struct {
+	ID           uuid.UUID
+	AccountID    uuid.UUID
+	Version      int64
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+	DeletedAt    *time.Time
+	TripID       uuid.UUID
+	Name         string
+	SharePercent string
+	SortOrder    int32
+	IsSelf       bool
 }
 
 type TripRouteSummary struct {

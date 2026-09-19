@@ -341,7 +341,8 @@ func (s *Service) Update(ctx context.Context, a actor.Actor, operationID, tripID
 	base := baseVersion
 	req := write.Request{
 		AccountID: a.AccountID, OperationID: operationID, OperationType: "packing.update",
-		Fingerprint: write.Fingerprint("packing.update", id.String(), &base, patch),
+		Fingerprint:          write.Fingerprint("packing.update", id.String(), &base, patch),
+		SingleChangeFastPath: len(submitted) == 1 && patch.Status != nil,
 	}
 	var saved *Resource
 	return s.uow.Run(ctx, req, func(ctx context.Context, scope write.Scope, repo Repo) error {

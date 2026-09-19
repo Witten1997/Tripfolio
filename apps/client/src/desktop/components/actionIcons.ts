@@ -1,6 +1,8 @@
 import {
   Archive,
   ArchiveRestore,
+  ArrowDown,
+  ArrowUp,
   ArrowDownWideNarrow,
   ArrowUpNarrowWide,
   Copy,
@@ -24,6 +26,7 @@ import {
   Search,
   Trash2,
   User,
+  Users,
 } from '@lucide/vue'
 
 /** 按需导入 Lucide，尺寸、描边与颜色由 ActionIcon 统一提供。 */
@@ -53,6 +56,9 @@ export const actionIcons = {
   'chevron-left': ChevronLeft,
   'chevron-up': ChevronUp,
   user: User,
+  users: Users,
+  'arrow-up': ArrowUp,
+  'arrow-down': ArrowDown,
 } as const
 
 export type ActionIconName = keyof typeof actionIcons

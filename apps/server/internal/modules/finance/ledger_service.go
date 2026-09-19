@@ -15,8 +15,9 @@ import (
 	"tripfolio/server/internal/foundation/write"
 )
 
-// LedgerService 实现支出与退款用例（接口设计 2.5、3.5；数据库设计表 9、10）：
-// 币种由旅行锁定与解锁、退款不超过原支出、原支出分类联动、删除原支出时解除关联退款。
+// LedgerService 实现支出与退款用例（接口设计 2.5、3.5；数据库设计表 9、10、26）：
+// 币种由旅行锁定与解锁、退款不超过原支出、原支出分类联动、删除原支出时解除关联退款；
+// 付款人与参与人须为本旅行有效成员，分摊份额由服务端计算并随账目保存。
 type LedgerService struct {
 	uow     write.UnitOfWork[LedgerRepo]
 	reader  LedgerReader
@@ -129,30 +130,36 @@ func (s *LedgerService) List(ctx context.Context, a actor.Actor, tripID uuid.UUI
 }
 
 // CreateLedgerCommand 是创建命令（接口设计 3.5 LedgerCreate）；nil 表示缺省。
+// PayerMemberID 缺省为「我」，SplitMode 缺省为 even，ParticipantMemberIDs 缺省为全部有效成员；
+// 退款关联原支出且三者均缺省时继承原支出。
 type CreateLedgerCommand struct {
-	ID                 uuid.UUID
-	Kind               string
-	Amount             string
-	SplitCount         *int32
-	CurrencyCode       *string
-	CategoryID         uuid.UUID
-	OccurredOn         *string
-	Notes              *string
-	RefundedEntryID    *uuid.UUID
-	AttachmentAssetIDs []uuid.UUID
+	ID                   uuid.UUID
+	Kind                 string
+	Amount               string
+	CurrencyCode         *string
+	CategoryID           uuid.UUID
+	OccurredOn           *string
+	Notes                *string
+	RefundedEntryID      *uuid.UUID
+	AttachmentAssetIDs   []uuid.UUID
+	PayerMemberID        *uuid.UUID
+	SplitMode            *string
+	ParticipantMemberIDs []uuid.UUID
 }
 
 // createFingerprint 是创建命令的规范化结构：金额已化简，缺省字段以 null 表示。
 type createFingerprint struct {
-	Kind               LedgerKind  `json:"kind"`
-	Amount             string      `json:"amount"`
-	SplitCount         int32       `json:"split_count"`
-	CurrencyCode       *string     `json:"currency_code"`
-	CategoryID         uuid.UUID   `json:"category_id"`
-	OccurredOn         *types.Date `json:"occurred_on"`
-	Notes              string      `json:"notes"`
-	RefundedEntryID    *uuid.UUID  `json:"refunded_entry_id"`
-	AttachmentAssetIDs []uuid.UUID `json:"attachment_asset_ids"`
+	Kind                 LedgerKind  `json:"kind"`
+	Amount               string      `json:"amount"`
+	CurrencyCode         *string     `json:"currency_code"`
+	CategoryID           uuid.UUID   `json:"category_id"`
+	OccurredOn           *types.Date `json:"occurred_on"`
+	Notes                string      `json:"notes"`
+	RefundedEntryID      *uuid.UUID  `json:"refunded_entry_id"`
+	AttachmentAssetIDs   []uuid.UUID `json:"attachment_asset_ids"`
+	PayerMemberID        *uuid.UUID  `json:"payer_member_id"`
+	SplitMode            *SplitMode  `json:"split_mode"`
+	ParticipantMemberIDs []uuid.UUID `json:"participant_member_ids"`
 }
 
 // Create 记录支出或退款；第一条有效账目时锁定旅行币种并把旅行写入 affected。
@@ -163,11 +170,6 @@ func (s *LedgerService) Create(ctx context.Context, a actor.Actor, operationID, 
 	}
 	kind, ferr := validateKind(cmd.Kind)
 	addField(&fields, ferr)
-	count := int32(1)
-	if cmd.SplitCount != nil {
-		count = *cmd.SplitCount
-	}
-	addField(&fields, validateSplitCount(kind, count))
 	compact, ferr := compactMoney(cmd.Amount)
 	addField(&fields, ferr)
 	addField(&fields, validateLedgerCurrency(cmd.CurrencyCode))
@@ -193,12 +195,19 @@ func (s *LedgerService) Create(ctx context.Context, a actor.Actor, operationID, 
 	}
 	attachments, ferr := validateAttachments(cmd.AttachmentAssetIDs)
 	addField(&fields, ferr)
+	if cmd.PayerMemberID != nil && *cmd.PayerMemberID == uuid.Nil {
+		fields = append(fields, apperr.Field("payer_member_id", "INVALID", "必须是 UUID"))
+	}
+	mode, ferr := validateSplitMode(cmd.SplitMode)
+	addField(&fields, ferr)
+	addField(&fields, validateParticipants(cmd.ParticipantMemberIDs))
 	if len(fields) > 0 {
 		return write.Result{}, apperr.Validation(fields...)
 	}
 	fp := createFingerprint{
-		Kind: kind, Amount: compact, SplitCount: count, CurrencyCode: cmd.CurrencyCode, CategoryID: cmd.CategoryID,
+		Kind: kind, Amount: compact, CurrencyCode: cmd.CurrencyCode, CategoryID: cmd.CategoryID,
 		OccurredOn: occurredOn, Notes: notes, RefundedEntryID: cmd.RefundedEntryID, AttachmentAssetIDs: attachments,
+		PayerMemberID: cmd.PayerMemberID, SplitMode: mode, ParticipantMemberIDs: cmd.ParticipantMemberIDs,
 	}
 	req := write.Request{
 		AccountID: a.AccountID, OperationID: operationID, OperationType: "ledger_entry.create",
@@ -220,7 +229,7 @@ func (s *LedgerService) Create(ctx context.Context, a actor.Actor, operationID, 
 		if err != nil {
 			return err
 		}
-		personal, err := personalLedgerAmount(amount, info.CurrencyCode, count)
+		units, err := ledgerMinorUnits(info.CurrencyCode)
 		if err != nil {
 			return err
 		}
@@ -232,14 +241,35 @@ func (s *LedgerService) Create(ctx context.Context, a actor.Actor, operationID, 
 		if err := s.checkReferences(ctx, repo, a.AccountID, tripID, cmd.CategoryID, attachments); err != nil {
 			return err
 		}
+		payer, participants := cmd.PayerMemberID, cmd.ParticipantMemberIDs
 		if cmd.RefundedEntryID != nil {
-			if err := s.checkRefundLink(ctx, repo, a.AccountID, tripID, *cmd.RefundedEntryID, cmd.CategoryID, amount, cmd.ID); err != nil {
+			original, err := loadRefundOriginal(ctx, repo, a.AccountID, tripID, *cmd.RefundedEntryID)
+			if err != nil {
 				return err
 			}
+			if err := s.checkRefundLink(ctx, repo, a.AccountID, tripID, original, cmd.CategoryID, amount, cmd.ID); err != nil {
+				return err
+			}
+			if payer == nil && mode == nil && participants == nil {
+				p, m := original.PayerMemberID, original.SplitMode
+				payer, mode, participants = &p, &m, splitMemberIDs(original.Splits)
+			}
+		}
+		members, err := repo.ActiveMembers(ctx, a.AccountID, tripID)
+		if err != nil {
+			return err
+		}
+		plan, err := resolveSplitPlan(members, payer, mode, participants)
+		if err != nil {
+			return err
+		}
+		splits, personal, err := computeSplits(amount, units, plan)
+		if err != nil {
+			return err
 		}
 		created, err := repo.Insert(ctx, a.AccountID, LedgerResource{
-			ID: cmd.ID, TripID: tripID, Kind: kind, Amount: amount, SplitCount: count,
-			PersonalAmount: personal, CurrencyCode: info.CurrencyCode,
+			ID: cmd.ID, TripID: tripID, Kind: kind, Amount: amount, SplitCount: int32(len(splits)),
+			PersonalAmount: personal, PayerMemberID: plan.Payer, SplitMode: plan.Mode, Splits: splits, CurrencyCode: info.CurrencyCode,
 			CategoryID: cmd.CategoryID, OccurredOn: on, Notes: notes, RefundedEntryID: cmd.RefundedEntryID,
 			AttachmentAssetIDs: attachments, Version: 1, CreatedAt: now, UpdatedAt: now,
 		})
@@ -280,20 +310,25 @@ func (s *LedgerService) checkReferences(ctx context.Context, repo LedgerRepo, ac
 	return nil
 }
 
-// checkRefundLink 校验退款与原支出的关系：原支出为同旅行有效支出、分类一致、有效关联退款合计不超过原支出。
-// excludeID 是正在写入的退款自身，汇总时跳过。
-func (s *LedgerService) checkRefundLink(ctx context.Context, repo LedgerRepo, accountID, tripID, originalID, categoryID uuid.UUID, amount string, excludeID uuid.UUID) error {
+// loadRefundOriginal 读取退款关联的原支出：须为同旅行有效支出，否则 422 INVALID_REFERENCE。
+func loadRefundOriginal(ctx context.Context, repo LedgerRepo, accountID, tripID, originalID uuid.UUID) (LedgerResource, error) {
 	original, found, err := repo.Get(ctx, accountID, tripID, originalID)
 	if err != nil {
-		return err
+		return LedgerResource{}, err
 	}
 	if !found || original.DeletedAt != nil || original.Kind != KindExpense {
-		return invalidReference("原支出不存在、已删除或不是支出")
+		return LedgerResource{}, invalidReference("原支出不存在、已删除或不是支出")
 	}
+	return original, nil
+}
+
+// checkRefundLink 校验退款与原支出的关系：分类一致、有效关联退款合计不超过原支出。
+// excludeID 是正在写入的退款自身，汇总时跳过。
+func (s *LedgerService) checkRefundLink(ctx context.Context, repo LedgerRepo, accountID, tripID uuid.UUID, original LedgerResource, categoryID uuid.UUID, amount string, excludeID uuid.UUID) error {
 	if original.CategoryID != categoryID {
 		return apperr.Validation(apperr.Field("category_id", "REFUND_CATEGORY_MISMATCH", "退款分类须与原支出一致"))
 	}
-	linked, err := repo.LinkedRefundsForUpdate(ctx, accountID, tripID, originalID)
+	linked, err := repo.LinkedRefundsForUpdate(ctx, accountID, tripID, original.ID)
 	if err != nil {
 		return err
 	}
@@ -321,17 +356,19 @@ func checkRefundTotal(original LedgerResource, linked []LedgerResource, amount s
 }
 
 // LedgerPatch 是局部更新（接口设计 3.5 LedgerPatch）；nil 表示缺省。
-// RefundedSet 区分“解除关联”（显式 null）与缺省；AttachmentAssetIDs 出现时整体替换。
+// RefundedSet 区分“解除关联”（显式 null）与缺省；AttachmentAssetIDs、ParticipantMemberIDs 出现时整体替换。
 type LedgerPatch struct {
-	Amount             *string      `json:"amount"`
-	SplitCount         *int32       `json:"split_count"`
-	CurrencyCode       *string      `json:"currency_code"`
-	CategoryID         *uuid.UUID   `json:"category_id"`
-	OccurredOn         *string      `json:"occurred_on"`
-	Notes              *string      `json:"notes"`
-	RefundedSet        bool         `json:"refunded_set"`
-	RefundedEntryID    *uuid.UUID   `json:"refunded_entry_id"`
-	AttachmentAssetIDs *[]uuid.UUID `json:"attachment_asset_ids"`
+	Amount               *string      `json:"amount"`
+	CurrencyCode         *string      `json:"currency_code"`
+	CategoryID           *uuid.UUID   `json:"category_id"`
+	OccurredOn           *string      `json:"occurred_on"`
+	Notes                *string      `json:"notes"`
+	RefundedSet          bool         `json:"refunded_set"`
+	RefundedEntryID      *uuid.UUID   `json:"refunded_entry_id"`
+	AttachmentAssetIDs   *[]uuid.UUID `json:"attachment_asset_ids"`
+	PayerMemberID        *uuid.UUID   `json:"payer_member_id"`
+	SplitMode            *string      `json:"split_mode"`
+	ParticipantMemberIDs *[]uuid.UUID `json:"participant_member_ids"`
 }
 
 func (p LedgerPatch) submittedFields() []string {
@@ -339,8 +376,14 @@ func (p LedgerPatch) submittedFields() []string {
 	if p.Amount != nil {
 		f = append(f, "amount")
 	}
-	if p.SplitCount != nil {
-		f = append(f, "split_count")
+	if p.PayerMemberID != nil {
+		f = append(f, "payer_member_id")
+	}
+	if p.SplitMode != nil {
+		f = append(f, "split_mode")
+	}
+	if p.ParticipantMemberIDs != nil {
+		f = append(f, "splits")
 	}
 	if p.CategoryID != nil {
 		f = append(f, "category_id")
@@ -362,6 +405,7 @@ func (p LedgerPatch) submittedFields() []string {
 
 // Update 局部更新账目，按字段级合并规则处理基线版本；kind 不可改。
 // 修改原支出的金额须仍覆盖其关联退款；修改原支出的分类同事务更新关联退款并使其进入 affected。
+// 金额、分摊模式或参与人变化时重算分摊份额；changed_fields 在金额变化时额外含 splits。
 func (s *LedgerService) Update(ctx context.Context, a actor.Actor, operationID, tripID, id uuid.UUID, baseVersion int64, patch LedgerPatch) (write.Result, error) {
 	var fields []apperr.FieldError
 	if patch.Amount != nil {
@@ -370,9 +414,6 @@ func (s *LedgerService) Update(ctx context.Context, a actor.Actor, operationID, 
 		patch.Amount = &compact
 	}
 	addField(&fields, validateLedgerCurrency(patch.CurrencyCode))
-	if patch.SplitCount != nil {
-		addField(&fields, validateSplitCount("", *patch.SplitCount))
-	}
 	if patch.CategoryID != nil && *patch.CategoryID == uuid.Nil {
 		fields = append(fields, apperr.Field("category_id", "INVALID", "必须是 UUID"))
 	}
@@ -394,6 +435,14 @@ func (s *LedgerService) Update(ctx context.Context, a actor.Actor, operationID, 
 		attachments, ferr = validateAttachments(*patch.AttachmentAssetIDs)
 		addField(&fields, ferr)
 		patch.AttachmentAssetIDs = &attachments
+	}
+	if patch.PayerMemberID != nil && *patch.PayerMemberID == uuid.Nil {
+		fields = append(fields, apperr.Field("payer_member_id", "INVALID", "必须是 UUID"))
+	}
+	mode, ferr := validateSplitMode(patch.SplitMode)
+	addField(&fields, ferr)
+	if patch.ParticipantMemberIDs != nil {
+		addField(&fields, validateParticipants(*patch.ParticipantMemberIDs))
 	}
 	if len(fields) > 0 {
 		return write.Result{}, apperr.Validation(fields...)
@@ -446,16 +495,37 @@ func (s *LedgerService) Update(ctx context.Context, a actor.Actor, operationID, 
 			}
 			v.Amount = amount
 		}
-		if patch.SplitCount != nil {
-			v.SplitCount = *patch.SplitCount
-		}
-		if ferr := validateSplitCount(current.Kind, v.SplitCount); ferr != nil {
-			return apperr.Validation(*ferr)
-		}
-		if patch.Amount != nil || patch.SplitCount != nil {
-			v.PersonalAmount, err = personalLedgerAmount(v.Amount, info.CurrencyCode, v.SplitCount)
+		changed := submitted
+		if patch.Amount != nil || patch.PayerMemberID != nil || patch.SplitMode != nil || patch.ParticipantMemberIDs != nil {
+			payer, splitMode, participants := current.PayerMemberID, current.SplitMode, splitMemberIDs(current.Splits)
+			if patch.PayerMemberID != nil {
+				payer = *patch.PayerMemberID
+			}
+			if mode != nil {
+				splitMode = *mode
+			}
+			if patch.ParticipantMemberIDs != nil {
+				participants = *patch.ParticipantMemberIDs
+			}
+			members, err := repo.ActiveMembers(ctx, a.AccountID, tripID)
 			if err != nil {
 				return err
+			}
+			plan, err := resolveSplitPlan(members, &payer, &splitMode, participants)
+			if err != nil {
+				return err
+			}
+			units, err := ledgerMinorUnits(info.CurrencyCode)
+			if err != nil {
+				return err
+			}
+			splits, personal, err := computeSplits(v.Amount, units, plan)
+			if err != nil {
+				return err
+			}
+			v.PayerMemberID, v.SplitMode, v.Splits, v.PersonalAmount, v.SplitCount = plan.Payer, plan.Mode, splits, personal, int32(len(splits))
+			if patch.ParticipantMemberIDs == nil && (patch.Amount != nil || patch.SplitMode != nil) {
+				changed = append(append([]string(nil), submitted...), "splits")
 			}
 		}
 		if patch.CategoryID != nil {
@@ -510,7 +580,11 @@ func (s *LedgerService) Update(ctx context.Context, a actor.Actor, operationID, 
 			}
 		case KindRefund:
 			if v.RefundedEntryID != nil && (!sameUUID(v.RefundedEntryID, current.RefundedEntryID) || v.Amount != current.Amount || v.CategoryID != current.CategoryID) {
-				if err := s.checkRefundLink(ctx, repo, a.AccountID, tripID, *v.RefundedEntryID, v.CategoryID, v.Amount, id); err != nil {
+				original, err := loadRefundOriginal(ctx, repo, a.AccountID, tripID, *v.RefundedEntryID)
+				if err != nil {
+					return err
+				}
+				if err := s.checkRefundLink(ctx, repo, a.AccountID, tripID, original, v.CategoryID, v.Amount, id); err != nil {
 					return err
 				}
 			}
@@ -519,7 +593,7 @@ func (s *LedgerService) Update(ctx context.Context, a actor.Actor, operationID, 
 		if err != nil {
 			return err
 		}
-		recordLedger(scope, updated, write.ChangeUpsert, submitted)
+		recordLedger(scope, updated, write.ChangeUpsert, changed)
 		scope.SetPrimary(ledgerRef(updated))
 		return nil
 	}, s.reload(a, tripID, id))
@@ -590,7 +664,7 @@ func (s *LedgerService) Delete(ctx context.Context, a actor.Actor, operationID, 
 	}, s.reload(a, tripID, id))
 }
 
-// sameUUID 比较��个可空 ID。
+// sameUUID 比较两个可空 ID。
 func sameUUID(a, b *uuid.UUID) bool {
 	if a == nil || b == nil {
 		return a == nil && b == nil

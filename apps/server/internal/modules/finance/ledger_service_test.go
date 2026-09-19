@@ -15,6 +15,7 @@ import (
 	"tripfolio/server/internal/foundation/types"
 	"tripfolio/server/internal/foundation/write"
 	"tripfolio/server/internal/modules/finance"
+	"tripfolio/server/internal/modules/travel/member"
 	"tripfolio/server/internal/modules/travel/trip"
 )
 
@@ -23,6 +24,8 @@ type ledgerFixture struct {
 	uow      *write.MemoryUnitOfWork[finance.LedgerRepo]
 	svc      *finance.LedgerService
 	stats    *finance.StatisticsService
+	settle   *finance.SettlementService
+	self     member.Resource
 	clock    *clock.Fake
 	actor    actor.Actor
 	tripID   uuid.UUID
@@ -40,9 +43,10 @@ func newLedgerFixture(t *testing.T) *ledgerFixture {
 	clk := clock.NewFake(time.Date(2026, 9, 13, 8, 0, 0, 0, time.UTC))
 	svc := finance.NewLedgerService(uow, store, paging.InsecureCodec{}, clk)
 	stats := finance.NewStatisticsService(store, paging.InsecureCodec{})
+	settle := finance.NewSettlementService(store)
 	a := actor.Actor{AccountID: uuid.New(), SessionID: uuid.New(), ClientKind: actor.ClientWeb, AccountStatus: "active"}
 	f := &ledgerFixture{
-		store: store, uow: uow, svc: svc, stats: stats, clock: clk, actor: a, tripID: uuid.New(),
+		store: store, uow: uow, svc: svc, stats: stats, settle: settle, clock: clk, actor: a, tripID: uuid.New(),
 		food: uuid.New(), lodging: uuid.New(), deleted: uuid.New(),
 		otherAcc: actor.Actor{AccountID: uuid.New(), SessionID: uuid.New(), ClientKind: actor.ClientWeb, AccountStatus: "active"},
 	}
@@ -51,6 +55,8 @@ func newLedgerFixture(t *testing.T) *ledgerFixture {
 		ID: f.tripID, Name: "东京", StartDate: "2026-10-01", EndDate: "2026-10-05", Timezone: "Asia/Tokyo",
 		CurrencyCode: "JPY", Version: 1, CreatedAt: now, UpdatedAt: now,
 	})
+	f.self = member.NewSelf(uuid.New(), f.tripID, now)
+	store.PutMember(a.AccountID, f.self)
 	icon := func(s string) *string { return &s }
 	store.PutCategory(a.AccountID, finance.CategoryResource{ID: f.food, Name: "美食", Icon: icon("food"), SortOrder: 2, IsPreset: true, Version: 1, CreatedAt: now, UpdatedAt: now})
 	store.PutCategory(a.AccountID, finance.CategoryResource{ID: f.lodging, Name: "住宿", Icon: icon("lodging"), SortOrder: 1, IsPreset: true, Version: 1, CreatedAt: now, UpdatedAt: now})
@@ -755,6 +761,7 @@ func TestStatisticsCNYFormatting(t *testing.T) {
 	cny := uuid.New()
 	now := f.clock.Now()
 	f.store.PutTrip(f.actor.AccountID, trip.Resource{ID: cny, Timezone: "Asia/Shanghai", CurrencyCode: "CNY", BudgetAmount: str("100.00"), Version: 1, CreatedAt: now, UpdatedAt: now})
+	f.store.PutMember(f.actor.AccountID, member.NewSelf(uuid.New(), cny, now))
 	for _, c := range []struct {
 		kind, amount string
 	}{{"expense", "30.5"}, {"expense", "0.01"}, {"refund", "10"}} {

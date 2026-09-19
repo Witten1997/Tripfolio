@@ -781,6 +781,26 @@ export type paths = {
         patch: operations["updateLedgerEntry"];
         trace?: never;
     };
+    "/trips/{trip_id}/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        /** 旅行的有效成员，按 sort_order、id 排序 */
+        get: operations["listTripMembers"];
+        /** 整体保存旅行成员：新增、改名、改比例、排序与删除；百分比之和须为 100 */
+        put: operations["saveTripMembers"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/trips/{trip_id}/packing-items": {
         parameters: {
             query?: never;
@@ -894,6 +914,25 @@ export type paths = {
         put?: never;
         /** 将路线计划置为待计算并投递后台任务 */
         post: operations["recalculateRoutePlan"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/trips/{trip_id}/settlement": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        /** 成员结算：每位成员的已支付、应承担、净额与最少转账方案 */
+        get: operations["getTripSettlement"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1545,6 +1584,8 @@ export type components = {
          * @description 创建支出或退款。currency_code 可省略，提供时必须等于旅行币种（否则 422 CURRENCY_MISMATCH）；
          *     occurred_on 默认旅行时区的今天。退款可通过 refunded_entry_id 关联同旅行的有效支出，
          *     分类须与原支出一致，关联退款合计不得超过原支出金额（422 REFUND_AMOUNT_EXCEEDED）。
+         *     payer_member_id 默认 is_self 成员，split_mode 默认 even，participant_member_ids 默认全部有效成员；
+         *     退款关联原支出且三者均缺省时继承原支出。成员须为本旅行有效成员（422 INVALID_REFERENCE）。
          */
         LedgerCreate: {
             amount: components["schemas"]["Money"];
@@ -1558,20 +1599,22 @@ export type components = {
             kind: components["schemas"]["LedgerKind"];
             notes?: string;
             occurred_on?: components["schemas"]["Date"];
+            /** @description 参与分摊的成员，不重复；顺序决定余数分配 */
+            participant_member_ids?: string[];
+            /** Format: uuid */
+            payer_member_id?: string;
             /**
              * Format: uuid
              * @description 仅 kind=refund 可填写
              */
             refunded_entry_id?: string | null;
-            /**
-             * Format: int32
-             * @description 支出均摊人数，省略为 1；退款只能为 1
-             */
-            split_count?: number;
+            split_mode?: components["schemas"]["SplitMode"];
         };
         /**
          * @description 账目（支出或退款）的规范资源（接口设计 3.5）；同一结构也是同步日志与快照中的表示。
          *     currency_code 由旅行派生，只读；attachment_asset_ids 是票据图片资产 ID，不含临时下载地址。
+         *     payer_member_id 为付款人（退款为收款人）；splits 为服务端按 split_mode 计算的各参与人份额，之和等于 amount；
+         *     split_count = 参与人数，personal_amount = is_self 成员的份额（不参与时为 0），两者只读。
          */
         LedgerEntry: {
             amount: components["schemas"]["Money"];
@@ -1587,6 +1630,8 @@ export type components = {
             kind: components["schemas"]["LedgerKind"];
             notes: string;
             occurred_on: components["schemas"]["Date"];
+            /** Format: uuid */
+            payer_member_id: string;
             personal_amount: components["schemas"]["Money"];
             /**
              * Format: uuid
@@ -1595,9 +1640,11 @@ export type components = {
             refunded_entry_id: string | null;
             /**
              * Format: int32
-             * @description 支出均摊人数；退款恒为 1
+             * @description 参与分摊的成员数，只读
              */
             split_count: number;
+            split_mode: components["schemas"]["SplitMode"];
+            splits: components["schemas"]["LedgerSplit"][];
             /** Format: uuid */
             trip_id: string;
             updated_at: components["schemas"]["Instant"];
@@ -1619,6 +1666,7 @@ export type components = {
         /**
          * @description 局部更新：缺省字段保持原值；refunded_entry_id 显式 null 表示解除关联；attachment_asset_ids 出现时整体替换。
          *     kind 不可改。修改原支出的金额须仍能覆盖其关联退款；修改原支出的分类会同事务更新其关联退款。
+         *     participant_member_ids 出现时整体替换；amount、split_mode 或参与人变化时重算 splits。
          */
         LedgerPatch: {
             amount?: components["schemas"]["Money"];
@@ -1628,13 +1676,18 @@ export type components = {
             currency_code?: components["schemas"]["CurrencyCode"];
             notes?: string;
             occurred_on?: components["schemas"]["Date"];
+            participant_member_ids?: string[];
+            /** Format: uuid */
+            payer_member_id?: string;
             /** Format: uuid */
             refunded_entry_id?: string | null;
-            /**
-             * Format: int32
-             * @description 支出均摊人数；退款只能为 1
-             */
-            split_count?: number;
+            split_mode?: components["schemas"]["SplitMode"];
+        };
+        /** @description 一位参与人的份额；按币种最小单位取整，余数按参与人顺序补齐 */
+        LedgerSplit: {
+            amount: components["schemas"]["Money"];
+            /** Format: uuid */
+            member_id: string;
         };
         /**
          * @description YYYY-MM-DDTHH:mm:ss，不带 Z 或偏移，按旅行 timezone 解释
@@ -1657,6 +1710,16 @@ export type components = {
              * @enum {string}
              */
             provider: "amap";
+        };
+        /** @description 单个成员的结算：paid_amount 已支付（作为付款人的支出 − 作为收款人的退款）、owed_amount 应承担（支出份额 − 退款份额）、net_amount = paid − owed，正数应收、负数应付 */
+        MemberSettlement: {
+            is_self: boolean;
+            /** Format: uuid */
+            member_id: string;
+            name: string;
+            net_amount: components["schemas"]["SignedMoney"];
+            owed_amount: components["schemas"]["SignedMoney"];
+            paid_amount: components["schemas"]["SignedMoney"];
         };
         Metadata: {
             currencies: components["schemas"]["Currency"][];
@@ -1985,14 +2048,29 @@ export type components = {
         SessionListResponse: {
             data: components["schemas"]["Session"][];
         };
+        /** @description 一笔建议转账：from 向 to 支付 amount */
+        SettlementTransfer: {
+            amount: components["schemas"]["Money"];
+            /** Format: uuid */
+            from_member_id: string;
+            /** Format: uuid */
+            to_member_id: string;
+        };
         /** @description 64 位小写十六进制的 SHA-256 摘要 */
         Sha256: string;
+        /** @description 分摊百分比，0–100 的十进制字符串，最多 2 位小数 */
+        SharePercent: string;
         /**
          * @description 可带负号的十进制字符串，仅用于统计里的净额、剩余预算等派生金额；格式其余同 Money。
          *     净额 = 支出 − 退款，独立退款可使退款超过支出而为负。
          * @example -12.50
          */
         SignedMoney: string;
+        /**
+         * @description 分摊模式；even 按参与人等分，ratio 按参与人的成员百分比归一化
+         * @enum {string}
+         */
+        SplitMode: "even" | "ratio";
         /** @description 实际采用的筛选范围；未筛选的项为 null */
         StatisticsScope: {
             /** Format: uuid */
@@ -2168,6 +2246,41 @@ export type components = {
             /** Format: int64 */
             total_duration_seconds: number | null;
         };
+        /** @description 旅行成员的规范资源（接口设计 3.5 TripMember）；同一结构也是同步日志与快照中的表示。is_self 成员由创建旅行时生成，不可删除 */
+        TripMember: {
+            created_at: components["schemas"]["Instant"];
+            /** Format: date-time */
+            deleted_at: string | null;
+            /** Format: uuid */
+            id: string;
+            is_self: boolean;
+            name: string;
+            share_percent: components["schemas"]["SharePercent"];
+            /** Format: int32 */
+            sort_order: number;
+            /** Format: uuid */
+            trip_id: string;
+            updated_at: components["schemas"]["Instant"];
+            version: components["schemas"]["Version"];
+        };
+        /** @description 整体保存中的一位成员；id 为现有成员则更新，否则创建 */
+        TripMemberInput: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            share_percent: components["schemas"]["SharePercent"];
+        };
+        TripMemberListResponse: {
+            data: components["schemas"]["TripMember"][];
+        };
+        /**
+         * @description 整体保存旅行成员：按数组顺序写 sort_order；未出现的有效成员被删除。
+         *     百分比之和必须恰好等于 100（422 SHARE_PERCENT_SUM）；is_self 成员必须出现；
+         *     被有效账目引用的成员不能删除（409 MEMBER_IN_USE）。
+         */
+        TripMembersSave: {
+            members: components["schemas"]["TripMemberInput"][];
+        };
         /** @description Page<TripListItem>；键集分页，游标绑定账号、筛选与排序 */
         TripPage: {
             items: components["schemas"]["TripListItem"][];
@@ -2195,6 +2308,16 @@ export type components = {
         };
         TripResponse: {
             data: components["schemas"]["Trip"];
+        };
+        /** @description 旅行成员结算（接口设计 3.8 TripSettlement）；不受筛选影响，只算有效账目与有效成员 */
+        TripSettlement: {
+            currency_code: components["schemas"]["CurrencyCode"];
+            members: components["schemas"]["MemberSettlement"][];
+            /** @description 最少转账方案，净额为负者向净额为正者转账 */
+            transfers: components["schemas"]["SettlementTransfer"][];
+        };
+        TripSettlementResponse: {
+            data: components["schemas"]["TripSettlement"];
         };
         /** @description 主人可见的分享记录（接口设计 3.11）；url 由服务端按站点根地址拼出，客户端不参与拼接 */
         TripShare: {
@@ -4104,6 +4227,65 @@ export interface operations {
             428: components["responses"]["VersionRequired"];
         };
     };
+    listTripMembers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成员列表 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TripMemberListResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            410: components["responses"]["Gone"];
+        };
+    };
+    saveTripMembers: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 写请求的操作编号（UUID）；相同成功操作重试复用同一键 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TripMembersSave"];
+            };
+        };
+        responses: {
+            /** @description 已保存；data 为 null，affected 为本次新增、修改与删除的成员 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WriteResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            410: components["responses"]["Gone"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
     listPackingItems: {
         parameters: {
             query?: {
@@ -4388,6 +4570,31 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    getTripSettlement: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 结算结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TripSettlementResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            410: components["responses"]["Gone"];
         };
     };
     getTripShare: {

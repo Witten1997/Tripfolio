@@ -19,6 +19,9 @@ export interface TripContext {
   reload: () => Promise<void>
   /** 页签内写入返回了新版旅行（例如编辑旅行对话框）时同步到上下文。 */
   replace: (trip: Trip) => void
+  /** 成员管理保存后递增，账单页据此刷新成员选项与结算。 */
+  membersVersion: Ref<number>
+  bumpMembers: () => void
 }
 
 const key: InjectionKey<TripContext> = Symbol('trip-context')
@@ -31,6 +34,7 @@ export function provideTripContext(tripId: string): TripContext {
   const error = ref<string | null>(null)
   const errorCode = ref<string | null>(null)
   const now = ref(Date.now())
+  const membersVersion = ref(0)
   let generation = 0
 
   async function reload() {
@@ -65,6 +69,10 @@ export function provideTripContext(tripId: string): TripContext {
     replace: (next) => {
       trip.value = next
       now.value = Date.now()
+    },
+    membersVersion,
+    bumpMembers: () => {
+      membersVersion.value++
     },
   }
   provide(key, context)

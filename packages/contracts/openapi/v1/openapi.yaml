@@ -132,6 +132,10 @@ paths:
     $ref: ./paths/ledger-entries.yaml#/item
   /trips/{trip_id}/statistics:
     $ref: ./paths/statistics.yaml#/statistics
+  /trips/{trip_id}/members:
+    $ref: ./paths/members.yaml#/collection
+  /trips/{trip_id}/settlement:
+    $ref: ./paths/settlement.yaml#/settlement
   /assets:
     $ref: ./paths/assets.yaml#/collection
   /assets/download-authorizations:
@@ -388,6 +392,24 @@ components:
       $ref: ./schemas/statistics.yaml#/TripStatistics
     TripStatisticsResponse:
       $ref: ./schemas/statistics.yaml#/TripStatisticsResponse
+    SharePercent:
+      $ref: ./schemas/member.yaml#/SharePercent
+    TripMember:
+      $ref: ./schemas/member.yaml#/TripMember
+    TripMemberListResponse:
+      $ref: ./schemas/member.yaml#/TripMemberListResponse
+    TripMemberInput:
+      $ref: ./schemas/member.yaml#/TripMemberInput
+    TripMembersSave:
+      $ref: ./schemas/member.yaml#/TripMembersSave
+    MemberSettlement:
+      $ref: ./schemas/settlement.yaml#/MemberSettlement
+    SettlementTransfer:
+      $ref: ./schemas/settlement.yaml#/SettlementTransfer
+    TripSettlement:
+      $ref: ./schemas/settlement.yaml#/TripSettlement
+    TripSettlementResponse:
+      $ref: ./schemas/settlement.yaml#/TripSettlementResponse
     AssetScope:
       $ref: ./schemas/asset.yaml#/AssetScope
     AssetStatus:

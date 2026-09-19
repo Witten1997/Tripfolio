@@ -46,6 +46,23 @@ func (q *Queries) DeleteLedgerAttachments(ctx context.Context, arg DeleteLedgerA
 	return err
 }
 
+const deleteLedgerSplits = `-- name: DeleteLedgerSplits :exec
+DELETE FROM ledger_entry_splits
+WHERE account_id = $1 AND trip_id = $2 AND ledger_entry_id = $3
+`
+
+type DeleteLedgerSplitsParams struct {
+	AccountID     uuid.UUID
+	TripID        uuid.UUID
+	LedgerEntryID uuid.UUID
+}
+
+// 分摊份额：整体替换；amounts 与 member_ids 一一对应，顺序即 sort_order。
+func (q *Queries) DeleteLedgerSplits(ctx context.Context, arg DeleteLedgerSplitsParams) error {
+	_, err := q.db.Exec(ctx, deleteLedgerSplits, arg.AccountID, arg.TripID, arg.LedgerEntryID)
+	return err
+}
+
 const expenseCategoryActive = `-- name: ExpenseCategoryActive :one
 SELECT EXISTS (
     SELECT 1 FROM expense_categories
@@ -66,7 +83,7 @@ func (q *Queries) ExpenseCategoryActive(ctx context.Context, arg ExpenseCategory
 }
 
 const getLedgerEntry = `-- name: GetLedgerEntry :one
-SELECT l.id, l.account_id, l.version, l.created_at, l.updated_at, l.deleted_at, l.trip_id, l.kind, l.amount, l.category_id, l.occurred_on, l.notes, l.refunded_entry_id, l.split_count, l.personal_amount, t.currency_code
+SELECT l.id, l.account_id, l.version, l.created_at, l.updated_at, l.deleted_at, l.trip_id, l.kind, l.amount, l.category_id, l.occurred_on, l.notes, l.refunded_entry_id, l.split_count, l.personal_amount, l.payer_member_id, l.split_mode, t.currency_code
 FROM ledger_entries l
 JOIN trips t ON t.account_id = l.account_id AND t.id = l.trip_id
 WHERE l.account_id = $1 AND l.trip_id = $2 AND l.id = $3
@@ -102,13 +119,15 @@ func (q *Queries) GetLedgerEntry(ctx context.Context, arg GetLedgerEntryParams) 
 		&i.LedgerEntry.RefundedEntryID,
 		&i.LedgerEntry.SplitCount,
 		&i.LedgerEntry.PersonalAmount,
+		&i.LedgerEntry.PayerMemberID,
+		&i.LedgerEntry.SplitMode,
 		&i.CurrencyCode,
 	)
 	return i, err
 }
 
 const getLedgerEntryForUpdate = `-- name: GetLedgerEntryForUpdate :one
-SELECT l.id, l.account_id, l.version, l.created_at, l.updated_at, l.deleted_at, l.trip_id, l.kind, l.amount, l.category_id, l.occurred_on, l.notes, l.refunded_entry_id, l.split_count, l.personal_amount, t.currency_code
+SELECT l.id, l.account_id, l.version, l.created_at, l.updated_at, l.deleted_at, l.trip_id, l.kind, l.amount, l.category_id, l.occurred_on, l.notes, l.refunded_entry_id, l.split_count, l.personal_amount, l.payer_member_id, l.split_mode, t.currency_code
 FROM ledger_entries l
 JOIN trips t ON t.account_id = l.account_id AND t.id = l.trip_id
 WHERE l.account_id = $1 AND l.trip_id = $2 AND l.id = $3
@@ -145,6 +164,8 @@ func (q *Queries) GetLedgerEntryForUpdate(ctx context.Context, arg GetLedgerEntr
 		&i.LedgerEntry.RefundedEntryID,
 		&i.LedgerEntry.SplitCount,
 		&i.LedgerEntry.PersonalAmount,
+		&i.LedgerEntry.PayerMemberID,
+		&i.LedgerEntry.SplitMode,
 		&i.CurrencyCode,
 	)
 	return i, err
@@ -210,10 +231,10 @@ func (q *Queries) InsertLedgerAttachments(ctx context.Context, arg InsertLedgerA
 }
 
 const insertLedgerEntry = `-- name: InsertLedgerEntry :one
-INSERT INTO ledger_entries (id, account_id, trip_id, kind, amount, split_count, personal_amount, category_id, occurred_on, notes, refunded_entry_id, created_at, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9,
-        $10, $11, $12, $12)
-RETURNING id, account_id, version, created_at, updated_at, deleted_at, trip_id, kind, amount, category_id, occurred_on, notes, refunded_entry_id, split_count, personal_amount
+INSERT INTO ledger_entries (id, account_id, trip_id, kind, amount, split_count, personal_amount, payer_member_id, split_mode, category_id, occurred_on, notes, refunded_entry_id, created_at, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+        $12, $13, $14, $14)
+RETURNING id, account_id, version, created_at, updated_at, deleted_at, trip_id, kind, amount, category_id, occurred_on, notes, refunded_entry_id, split_count, personal_amount, payer_member_id, split_mode
 `
 
 type InsertLedgerEntryParams struct {
@@ -224,6 +245,8 @@ type InsertLedgerEntryParams struct {
 	Amount          string
 	SplitCount      int32
 	PersonalAmount  string
+	PayerMemberID   uuid.UUID
+	SplitMode       string
 	CategoryID      uuid.UUID
 	OccurredOn      time.Time
 	Notes           string
@@ -240,6 +263,8 @@ func (q *Queries) InsertLedgerEntry(ctx context.Context, arg InsertLedgerEntryPa
 		arg.Amount,
 		arg.SplitCount,
 		arg.PersonalAmount,
+		arg.PayerMemberID,
+		arg.SplitMode,
 		arg.CategoryID,
 		arg.OccurredOn,
 		arg.Notes,
@@ -263,8 +288,36 @@ func (q *Queries) InsertLedgerEntry(ctx context.Context, arg InsertLedgerEntryPa
 		&i.RefundedEntryID,
 		&i.SplitCount,
 		&i.PersonalAmount,
+		&i.PayerMemberID,
+		&i.SplitMode,
 	)
 	return i, err
+}
+
+const insertLedgerSplits = `-- name: InsertLedgerSplits :exec
+INSERT INTO ledger_entry_splits (account_id, trip_id, ledger_entry_id, member_id, amount, sort_order)
+SELECT $1, $2, $3, m.member_id, a.amount::numeric, (m.ord - 1)::int
+FROM unnest($4::uuid[]) WITH ORDINALITY AS m(member_id, ord)
+JOIN unnest($5::text[]) WITH ORDINALITY AS a(amount, ord) ON a.ord = m.ord
+`
+
+type InsertLedgerSplitsParams struct {
+	AccountID     uuid.UUID
+	TripID        uuid.UUID
+	LedgerEntryID uuid.UUID
+	MemberIds     []uuid.UUID
+	Amounts       []string
+}
+
+func (q *Queries) InsertLedgerSplits(ctx context.Context, arg InsertLedgerSplitsParams) error {
+	_, err := q.db.Exec(ctx, insertLedgerSplits,
+		arg.AccountID,
+		arg.TripID,
+		arg.LedgerEntryID,
+		arg.MemberIds,
+		arg.Amounts,
+	)
+	return err
 }
 
 const ledgerCategoryTotals = `-- name: LedgerCategoryTotals :many
@@ -278,9 +331,9 @@ SELECT c.id AS category_id, c.name, c.icon, c.sort_order,
                               AND ($1::date IS NULL OR l.occurred_on >= $1::date)
                               AND ($2::date IS NULL OR l.occurred_on <= $2::date)
                               AND ($3::uuid IS NULL OR l.category_id = $3::uuid)
-                         THEN l.amount END), 0)::numeric AS filtered_refund,
+                         THEN l.personal_amount END), 0)::numeric AS filtered_refund,
        COALESCE(SUM(CASE WHEN l.kind = 'expense' THEN l.personal_amount END), 0)::numeric AS trip_expense,
-       COALESCE(SUM(CASE WHEN l.kind = 'refund' THEN l.amount END), 0)::numeric AS trip_refund
+       COALESCE(SUM(CASE WHEN l.kind = 'refund' THEN l.personal_amount END), 0)::numeric AS trip_refund
 FROM expense_categories c
 LEFT JOIN ledger_entries l
        ON l.account_id = c.account_id AND l.category_id = c.id AND l.trip_id = $4 AND l.deleted_at IS NULL
@@ -348,7 +401,7 @@ func (q *Queries) LedgerCategoryTotals(ctx context.Context, arg LedgerCategoryTo
 const ledgerDailyTotals = `-- name: LedgerDailyTotals :many
 SELECT occurred_on,
        COALESCE(SUM(CASE WHEN kind = 'expense' THEN personal_amount END), 0)::numeric AS expense_amount,
-       COALESCE(SUM(CASE WHEN kind = 'refund' THEN amount END), 0)::numeric AS refund_amount
+       COALESCE(SUM(CASE WHEN kind = 'refund' THEN personal_amount END), 0)::numeric AS refund_amount
 FROM ledger_entries
 WHERE account_id = $1 AND trip_id = $2 AND deleted_at IS NULL
   AND ($3::date IS NULL OR occurred_on >= $3::date)
@@ -424,7 +477,7 @@ func (q *Queries) LedgerEntryIDExists(ctx context.Context, arg LedgerEntryIDExis
 
 const ledgerFilteredTotals = `-- name: LedgerFilteredTotals :one
 SELECT COALESCE(SUM(CASE WHEN kind = 'expense' THEN personal_amount END), 0)::numeric AS expense_amount,
-       COALESCE(SUM(CASE WHEN kind = 'refund' THEN amount END), 0)::numeric AS refund_amount,
+       COALESCE(SUM(CASE WHEN kind = 'refund' THEN personal_amount END), 0)::numeric AS refund_amount,
        count(*) AS entry_count
 FROM ledger_entries
 WHERE account_id = $1 AND trip_id = $2 AND deleted_at IS NULL
@@ -447,7 +500,7 @@ type LedgerFilteredTotalsRow struct {
 	EntryCount    int64
 }
 
-// 统计（数据库设计 §5）：净额用 CASE 聚合，按实际 occurred_on；下面四条在同一个只读一致性事务中执行。
+// 统计（数据库设计 §5）：净额用 CASE 聚合，按实际 occurred_on；支出与退款都取「我」的份额 personal_amount；下面四条在同一个只读一致性事务中执行。
 func (q *Queries) LedgerFilteredTotals(ctx context.Context, arg LedgerFilteredTotalsParams) (LedgerFilteredTotalsRow, error) {
 	row := q.db.QueryRow(ctx, ledgerFilteredTotals,
 		arg.AccountID,
@@ -463,7 +516,7 @@ func (q *Queries) LedgerFilteredTotals(ctx context.Context, arg LedgerFilteredTo
 
 const ledgerTripTotals = `-- name: LedgerTripTotals :one
 SELECT COALESCE(SUM(CASE WHEN kind = 'expense' THEN personal_amount END), 0)::numeric AS expense_amount,
-       COALESCE(SUM(CASE WHEN kind = 'refund' THEN amount END), 0)::numeric AS refund_amount
+       COALESCE(SUM(CASE WHEN kind = 'refund' THEN personal_amount END), 0)::numeric AS refund_amount
 FROM ledger_entries
 WHERE account_id = $1 AND trip_id = $2 AND deleted_at IS NULL
 `
@@ -523,7 +576,7 @@ func (q *Queries) ListLedgerAttachments(ctx context.Context, arg ListLedgerAttac
 }
 
 const listLedgerEntries = `-- name: ListLedgerEntries :many
-SELECT l.id, l.account_id, l.version, l.created_at, l.updated_at, l.deleted_at, l.trip_id, l.kind, l.amount, l.category_id, l.occurred_on, l.notes, l.refunded_entry_id, l.split_count, l.personal_amount, t.currency_code
+SELECT l.id, l.account_id, l.version, l.created_at, l.updated_at, l.deleted_at, l.trip_id, l.kind, l.amount, l.category_id, l.occurred_on, l.notes, l.refunded_entry_id, l.split_count, l.personal_amount, l.payer_member_id, l.split_mode, t.currency_code
 FROM ledger_entries l
 JOIN trips t ON t.account_id = l.account_id AND t.id = l.trip_id
 WHERE l.account_id = $1 AND l.trip_id = $2 AND l.deleted_at IS NULL
@@ -593,6 +646,8 @@ func (q *Queries) ListLedgerEntries(ctx context.Context, arg ListLedgerEntriesPa
 			&i.LedgerEntry.RefundedEntryID,
 			&i.LedgerEntry.SplitCount,
 			&i.LedgerEntry.PersonalAmount,
+			&i.LedgerEntry.PayerMemberID,
+			&i.LedgerEntry.SplitMode,
 			&i.CurrencyCode,
 		); err != nil {
 			return nil, err
@@ -605,8 +660,46 @@ func (q *Queries) ListLedgerEntries(ctx context.Context, arg ListLedgerEntriesPa
 	return items, nil
 }
 
+const listLedgerSplits = `-- name: ListLedgerSplits :many
+SELECT ledger_entry_id, member_id, amount FROM ledger_entry_splits
+WHERE account_id = $1 AND trip_id = $2 AND ledger_entry_id = ANY($3::uuid[])
+ORDER BY ledger_entry_id, sort_order, member_id
+`
+
+type ListLedgerSplitsParams struct {
+	AccountID uuid.UUID
+	TripID    uuid.UUID
+	EntryIds  []uuid.UUID
+}
+
+type ListLedgerSplitsRow struct {
+	LedgerEntryID uuid.UUID
+	MemberID      uuid.UUID
+	Amount        string
+}
+
+func (q *Queries) ListLedgerSplits(ctx context.Context, arg ListLedgerSplitsParams) ([]ListLedgerSplitsRow, error) {
+	rows, err := q.db.Query(ctx, listLedgerSplits, arg.AccountID, arg.TripID, arg.EntryIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListLedgerSplitsRow{}
+	for rows.Next() {
+		var i ListLedgerSplitsRow
+		if err := rows.Scan(&i.LedgerEntryID, &i.MemberID, &i.Amount); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listLinkedRefundsForUpdate = `-- name: ListLinkedRefundsForUpdate :many
-SELECT id, account_id, version, created_at, updated_at, deleted_at, trip_id, kind, amount, category_id, occurred_on, notes, refunded_entry_id, split_count, personal_amount FROM ledger_entries
+SELECT id, account_id, version, created_at, updated_at, deleted_at, trip_id, kind, amount, category_id, occurred_on, notes, refunded_entry_id, split_count, personal_amount, payer_member_id, split_mode FROM ledger_entries
 WHERE account_id = $1 AND trip_id = $2 AND refunded_entry_id = $3
   AND deleted_at IS NULL AND kind = 'refund'
 ORDER BY created_at, id
@@ -645,6 +738,8 @@ func (q *Queries) ListLinkedRefundsForUpdate(ctx context.Context, arg ListLinked
 			&i.RefundedEntryID,
 			&i.SplitCount,
 			&i.PersonalAmount,
+			&i.PayerMemberID,
+			&i.SplitMode,
 		); err != nil {
 			return nil, err
 		}
@@ -742,7 +837,7 @@ const softDeleteLedgerEntry = `-- name: SoftDeleteLedgerEntry :one
 UPDATE ledger_entries
 SET deleted_at = $1, version = version + 1, updated_at = $1
 WHERE account_id = $2 AND trip_id = $3 AND id = $4
-RETURNING id, account_id, version, created_at, updated_at, deleted_at, trip_id, kind, amount, category_id, occurred_on, notes, refunded_entry_id, split_count, personal_amount
+RETURNING id, account_id, version, created_at, updated_at, deleted_at, trip_id, kind, amount, category_id, occurred_on, notes, refunded_entry_id, split_count, personal_amount, payer_member_id, split_mode
 `
 
 type SoftDeleteLedgerEntryParams struct {
@@ -776,22 +871,27 @@ func (q *Queries) SoftDeleteLedgerEntry(ctx context.Context, arg SoftDeleteLedge
 		&i.RefundedEntryID,
 		&i.SplitCount,
 		&i.PersonalAmount,
+		&i.PayerMemberID,
+		&i.SplitMode,
 	)
 	return i, err
 }
 
 const updateLedgerEntry = `-- name: UpdateLedgerEntry :one
 UPDATE ledger_entries
-SET amount = $1, split_count = $2, personal_amount = $3, category_id = $4, occurred_on = $5, notes = $6,
-    refunded_entry_id = $7, version = version + 1, updated_at = $8
-WHERE account_id = $9 AND trip_id = $10 AND id = $11
-RETURNING id, account_id, version, created_at, updated_at, deleted_at, trip_id, kind, amount, category_id, occurred_on, notes, refunded_entry_id, split_count, personal_amount
+SET amount = $1, split_count = $2, personal_amount = $3, payer_member_id = $4, split_mode = $5,
+    category_id = $6, occurred_on = $7, notes = $8,
+    refunded_entry_id = $9, version = version + 1, updated_at = $10
+WHERE account_id = $11 AND trip_id = $12 AND id = $13
+RETURNING id, account_id, version, created_at, updated_at, deleted_at, trip_id, kind, amount, category_id, occurred_on, notes, refunded_entry_id, split_count, personal_amount, payer_member_id, split_mode
 `
 
 type UpdateLedgerEntryParams struct {
 	Amount          string
 	SplitCount      int32
 	PersonalAmount  string
+	PayerMemberID   uuid.UUID
+	SplitMode       string
 	CategoryID      uuid.UUID
 	OccurredOn      time.Time
 	Notes           string
@@ -807,6 +907,8 @@ func (q *Queries) UpdateLedgerEntry(ctx context.Context, arg UpdateLedgerEntryPa
 		arg.Amount,
 		arg.SplitCount,
 		arg.PersonalAmount,
+		arg.PayerMemberID,
+		arg.SplitMode,
 		arg.CategoryID,
 		arg.OccurredOn,
 		arg.Notes,
@@ -833,6 +935,8 @@ func (q *Queries) UpdateLedgerEntry(ctx context.Context, arg UpdateLedgerEntryPa
 		&i.RefundedEntryID,
 		&i.SplitCount,
 		&i.PersonalAmount,
+		&i.PayerMemberID,
+		&i.SplitMode,
 	)
 	return i, err
 }

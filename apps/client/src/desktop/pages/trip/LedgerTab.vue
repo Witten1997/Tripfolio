@@ -19,9 +19,11 @@ import DailyNetBar from '@/desktop/components/DailyNetBar.vue'
 import ActionIcon from '@/desktop/components/ActionIcon.vue'
 import IconAction from '@/desktop/components/IconAction.vue'
 import LedgerEntryDialog from '@/desktop/components/LedgerEntryDialog.vue'
+import SettlementCard from '@/desktop/components/SettlementCard.vue'
 import SlidingSegmented from '@/desktop/components/SlidingSegmented.vue'
 import { ApiError } from '@/shared/api/auth'
 import { listCategories, type ExpenseCategory } from '@/shared/api/categories'
+import { listTripMembers, memberName, type TripMember } from '@/shared/api/members'
 import {
   deleteLedgerEntry,
   ledgerKindLabels,
@@ -74,6 +76,19 @@ const hasAdvancedFilter = computed(
 const hasFilter = computed(() => hasAdvancedFilter.value || !!filters.kind)
 
 const categories = shallowRef<ExpenseCategory[]>([])
+const members = shallowRef<TripMember[]>([])
+const settlementKey = ref(0)
+async function loadMembers() {
+  try {
+    members.value = await listTripMembers(context.tripId)
+  } catch {
+    /* 付款人名称退化为「已删除成员」，不阻塞账单 */
+  }
+}
+function payerLabel(entry: LedgerEntry) {
+  const name = memberName(members.value, entry.payer_member_id)
+  return entry.kind === 'refund' ? `${name}收款` : `${name}付款`
+}
 const categoryName = (id: string) => categories.value.find((c) => c.id === id)?.name ?? '已删除分类'
 
 const dialog = ref<InstanceType<typeof LedgerEntryDialog>>()
@@ -121,6 +136,7 @@ async function reloadStatistics() {
 }
 
 async function reloadAll() {
+  settlementKey.value++
   await Promise.all([reloadStatistics(), page.reload()])
 }
 
@@ -271,8 +287,15 @@ async function loadCategories() {
 
 // 日期与分类变化要同时刷新统计；明细由 useCursorPage 自己 watch
 watch(scopeQuery, reloadStatistics, { deep: true })
+// 成员管理保存后刷新名称与记账表单的成员选项
+watch(
+  () => context.membersVersion.value,
+  async () => {
+    await Promise.all([loadMembers(), dialog.value?.refreshMembers()])
+  },
+)
 onMounted(async () => {
-  await Promise.all([loadCategories(), reloadStatistics()])
+  await Promise.all([loadCategories(), loadMembers(), reloadStatistics()])
 })
 </script>
 
@@ -459,6 +482,9 @@ onMounted(async () => {
       </ElCard>
     </div>
 
+    <!-- 成员结算：不受筛选影响 -->
+    <SettlementCard :refresh-key="settlementKey" />
+
     <!-- 分类金额明细：图表的表格视图，也是进入分类明细的入口 -->
     <ElCard v-if="categoryRows.length" shadow="never" class="category-card">
       <template #header>
@@ -546,14 +572,20 @@ onMounted(async () => {
             </div>
             <p class="entry-meta">
               <span>{{ entry.occurred_on }}</span>
+              <span>{{ payerLabel(entry) }}</span>
               <span v-if="entry.notes" class="entry-notes">{{ entry.notes }}</span>
             </p>
           </div>
           <div class="entry-amount" :class="{ 'entry-amount--refund': entry.kind === 'refund' }">
             {{ entry.kind === 'refund' ? '−' : '' }}{{ formatMoney(entry.personal_amount) }}
             <span class="entry-currency">{{ entry.currency_code }}</span>
-            <span v-if="entry.kind === 'expense' && entry.split_count > 1" class="entry-share">
-              总额 {{ formatMoney(entry.amount) }} ÷ {{ entry.split_count }} 人
+            <span
+              v-if="entry.split_count > 1 || entry.personal_amount !== entry.amount"
+              class="entry-share"
+            >
+              总额 {{ formatMoney(entry.amount) }} · {{ entry.split_count }} 人{{
+                entry.split_mode === 'ratio' ? '按比例' : '均摊'
+              }}
             </span>
           </div>
           <div class="entry-actions tf-actions">

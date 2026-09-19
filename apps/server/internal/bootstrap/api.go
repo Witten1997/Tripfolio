@@ -29,6 +29,7 @@ import (
 	geoservice "tripfolio/server/internal/modules/geo"
 	"tripfolio/server/internal/modules/metadata"
 	"tripfolio/server/internal/modules/travel/itinerary"
+	"tripfolio/server/internal/modules/travel/member"
 	"tripfolio/server/internal/modules/travel/packing"
 	"tripfolio/server/internal/modules/travel/routeplan"
 	"tripfolio/server/internal/modules/travel/share"
@@ -47,9 +48,11 @@ type Services struct {
 	RoutePlans *routeplan.Service
 	Packing    *packing.Service
 	Todos      *todo.Service
+	Members    *member.Service
 	Shares     *share.Service
 	Ledger     *finance.LedgerService
 	Statistics *finance.StatisticsService
+	Settlement *finance.SettlementService
 	// Assets 始终装配；对象存储未配置时其授权类用例返回 503，读取类用例照常工作。
 	Assets *assets.Service
 	// AssetVerifier 是 worker 侧校验器；对象存储未配置时为 nil，校验任务被推迟。
@@ -91,6 +94,8 @@ func BuildServices(pool *pgxpool.Pool, cfg config.Config, logger *slog.Logger, m
 	ledgerReader := financepg.NewLedgerReader(pool)
 	ledger := finance.NewLedgerService(financepg.NewLedgerUnitOfWork(writer), ledgerReader, cursors, clk)
 	statistics := finance.NewStatisticsService(ledgerReader, cursors)
+	settlement := finance.NewSettlementService(ledgerReader)
+	members := member.NewService(travelpg.NewMemberUnitOfWork(writer), travelpg.NewMemberReader(pool), clk)
 
 	objects, err := buildObjectStore(cfg, logger)
 	if err != nil {
@@ -134,7 +139,7 @@ func BuildServices(pool *pgxpool.Pool, cfg config.Config, logger *slog.Logger, m
 
 	return Services{
 		Identity: identity, Sessions: sessions, Profile: profile, Categories: categories,
-		Trips: trips, Itinerary: itineraries, RoutePlans: routePlans, Packing: packings, Todos: todos, Ledger: ledger, Statistics: statistics,
+		Trips: trips, Itinerary: itineraries, RoutePlans: routePlans, Packing: packings, Todos: todos, Members: members, Ledger: ledger, Statistics: statistics, Settlement: settlement,
 		Assets: assetSvc, AssetVerifier: verifier, ObjectStore: objects, Geo: geoSvc, Shares: shares,
 	}, nil
 }

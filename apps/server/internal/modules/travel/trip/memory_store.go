@@ -12,6 +12,7 @@ import (
 
 	"tripfolio/server/internal/foundation/types"
 	"tripfolio/server/internal/foundation/write"
+	"tripfolio/server/internal/modules/travel/member"
 )
 
 // MemoryStore 是 Repo 与 Reader 的内存实现，供本包与传输层单元测试使用；配合 write.MemoryUnitOfWork 可回滚。
@@ -24,6 +25,8 @@ type MemoryStore struct {
 	merge          write.MergeSource
 	routeRevisions map[uuid.UUID]int64
 
+	// Members 是创建旅行时插入的成员，按插入顺序。
+	Members []member.Resource
 	// DefaultTimezone 是任何账号的默认时区。
 	DefaultTimezone string
 	// EstimatedAmounts、LocalTimes 按旅行模拟跨模块探针结果；ItineraryDates 是各旅行有效行程项目的归属日期。
@@ -118,6 +121,14 @@ func (m *MemoryStore) IDExists(_ context.Context, id uuid.UUID) (bool, error) {
 
 func (m *MemoryStore) AccountDefaultTimezone(context.Context, uuid.UUID) (string, error) {
 	return m.DefaultTimezone, nil
+}
+
+// InsertMember 实现 Repo；内存实现只记录，供测试核对。
+func (m *MemoryStore) InsertMember(_ context.Context, _ uuid.UUID, r member.Resource) (member.Resource, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.Members = append(m.Members, r)
+	return r, nil
 }
 
 func (m *MemoryStore) Insert(_ context.Context, accountID uuid.UUID, r Resource) (Resource, error) {

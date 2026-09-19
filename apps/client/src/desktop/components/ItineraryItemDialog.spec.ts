@@ -30,6 +30,23 @@ vi.mock('@/shared/api/ledger', async (original) => ({
   ...(await original<typeof import('@/shared/api/ledger')>()),
   createLedgerEntry: vi.fn(),
 }))
+vi.mock('@/shared/api/members', async (original) => ({
+  ...(await original<typeof import('@/shared/api/members')>()),
+  listTripMembers: vi.fn(async () => [
+    {
+      id: 'm-self',
+      trip_id: 'trip',
+      name: '我',
+      share_percent: '100',
+      sort_order: 0,
+      is_self: true,
+      version: '1',
+      created_at: '2026-09-01T00:00:00Z',
+      updated_at: '2026-09-01T00:00:00Z',
+      deleted_at: null,
+    },
+  ]),
+}))
 
 const Dialog = defineComponent({
   props: ['modelValue', 'title'],
@@ -168,6 +185,9 @@ describe('行程选点、详情与独立记账', () => {
         amount: '12.50',
         category_id: 'cat',
         kind: 'expense',
+        payer_member_id: 'm-self',
+        split_mode: 'even',
+        participant_member_ids: ['m-self'],
       }),
       expect.any(String),
     )

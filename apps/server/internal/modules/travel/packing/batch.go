@@ -75,21 +75,22 @@ func (s *Service) CreateBatch(ctx context.Context, a actor.Actor, operationID, t
 
 	req := write.Request{
 		AccountID: a.AccountID, OperationID: operationID, OperationType: "packing.batch_create",
-		Fingerprint: write.Fingerprint("packing.batch_create", tripID.String(), nil, cmd),
+		Fingerprint:          write.Fingerprint("packing.batch_create", tripID.String(), nil, cmd),
+		BatchChangesFastPath: true,
 	}
 	res, err := s.uow.Run(ctx, req, func(ctx context.Context, scope write.Scope, repo Repo) error {
-		started := time.Now()
-		tripErr := loadTrip(ctx, repo, a.AccountID, tripID)
-		write.RecordTiming(ctx, "trip_lookup", time.Since(started))
-		if err := tripErr; err != nil {
-			return err
-		}
 		now := s.clock.Now()
-		started = time.Now()
-		probes, err := repo.ProbeBatch(ctx, a.AccountID, tripID, cmd.Items)
+		started := time.Now()
+		trip, found, probes, err := repo.ProbeBatch(ctx, a.AccountID, tripID, cmd.Items)
 		write.RecordTiming(ctx, "batch_probe", time.Since(started))
 		if err != nil {
 			return err
+		}
+		if !found {
+			return apperr.NotFound()
+		}
+		if trip.DeletedAt != nil {
+			return tripDeleted()
 		}
 		taken := map[string]struct{}{}
 		toInsert := make([]Resource, 0, len(cmd.Items))

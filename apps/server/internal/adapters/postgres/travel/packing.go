@@ -91,35 +91,38 @@ func (r *packingRepo) NameTaken(ctx context.Context, accountID, tripID uuid.UUID
 	return r.scope.Queries.PackingNameTaken(ctx, dbgen.PackingNameTakenParams{AccountID: accountID, TripID: tripID, Category: string(category), Name: name, ExcludeID: exclude})
 }
 
-func (r *packingRepo) ProbeBatch(ctx context.Context, accountID, tripID uuid.UUID, items []packing.BatchItem) (map[uuid.UUID]packing.BatchProbe, error) {
+func (r *packingRepo) ProbeBatch(ctx context.Context, accountID, tripID uuid.UUID, items []packing.BatchItem) (packing.TripInfo, bool, map[uuid.UUID]packing.BatchProbe, error) {
 	input, err := json.Marshal(items)
 	if err != nil {
-		return nil, err
+		return packing.TripInfo{}, false, nil, err
 	}
 	const query = `
-SELECT input.id, EXISTS (
+SELECT input.id, trip.id IS NOT NULL, trip.deleted_at, EXISTS (
     SELECT 1 FROM packing_items p
     WHERE p.account_id = $1 AND p.trip_id = $2 AND p.deleted_at IS NULL
       AND p.category = input.category AND lower(btrim(p.name)) = lower(btrim(input.name))
 ), EXISTS (SELECT 1 FROM packing_items p WHERE p.id = input.id)
    OR EXISTS (SELECT 1 FROM entity_tombstones t
               WHERE t.account_id = $1 AND t.entity_type = 'packing_item' AND t.entity_id = input.id)
-FROM jsonb_to_recordset($3::jsonb) AS input(id uuid, category text, name text)`
+FROM jsonb_to_recordset($3::jsonb) AS input(id uuid, category text, name text)
+LEFT JOIN trips trip ON trip.account_id = $1 AND trip.id = $2`
 	rows, err := r.scope.Tx.Query(ctx, query, accountID, tripID, input)
 	if err != nil {
-		return nil, err
+		return packing.TripInfo{}, false, nil, err
 	}
 	defer rows.Close()
 	probes := make(map[uuid.UUID]packing.BatchProbe, len(items))
+	var trip packing.TripInfo
+	var found bool
 	for rows.Next() {
 		var id uuid.UUID
 		var probe packing.BatchProbe
-		if err := rows.Scan(&id, &probe.NameTaken, &probe.IDUsed); err != nil {
-			return nil, err
+		if err := rows.Scan(&id, &found, &trip.DeletedAt, &probe.NameTaken, &probe.IDUsed); err != nil {
+			return packing.TripInfo{}, false, nil, err
 		}
 		probes[id] = probe
 	}
-	return probes, rows.Err()
+	return trip, found, probes, rows.Err()
 }
 
 func (r *packingRepo) Insert(ctx context.Context, accountID uuid.UUID, p packing.Resource) (packing.Resource, error) {

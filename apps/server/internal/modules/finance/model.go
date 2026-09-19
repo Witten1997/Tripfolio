@@ -66,6 +66,8 @@ func (k LedgerKind) Valid() bool { return k == KindExpense || k == KindRefund }
 
 // LedgerResource 是账目的规范资源，也是同步日志与快照中的表示（接口设计 3.5 LedgerEntry）。
 // CurrencyCode 由旅行派生、只读；AttachmentAssetIDs 是票据图片资产 ID，按显示顺序排列。
+// PayerMemberID 是付款人（退款为收款人）；Splits 是服务端按 SplitMode 计算的各参与人份额；
+// SplitCount = 参与人数，PersonalAmount = 「我」的份额，均为派生只读字段。
 type LedgerResource struct {
 	ID                 uuid.UUID     `json:"id"`
 	TripID             uuid.UUID     `json:"trip_id"`
@@ -73,6 +75,9 @@ type LedgerResource struct {
 	Amount             string        `json:"amount"`
 	SplitCount         int32         `json:"split_count"`
 	PersonalAmount     string        `json:"personal_amount"`
+	PayerMemberID      uuid.UUID     `json:"payer_member_id"`
+	SplitMode          SplitMode     `json:"split_mode"`
+	Splits             []LedgerSplit `json:"splits"`
 	CurrencyCode       string        `json:"currency_code"`
 	CategoryID         uuid.UUID     `json:"category_id"`
 	OccurredOn         types.Date    `json:"occurred_on"`
@@ -86,7 +91,7 @@ type LedgerResource struct {
 }
 
 // LedgerFields 是账目可局部更新的字段名，用于 changed_fields 与字段级合并；kind 与 currency_code 不可改。
-var LedgerFields = []string{"amount", "split_count", "category_id", "occurred_on", "notes", "refunded_entry_id", "attachment_asset_ids"}
+var LedgerFields = []string{"amount", "payer_member_id", "split_mode", "splits", "category_id", "occurred_on", "notes", "refunded_entry_id", "attachment_asset_ids"}
 
 // MaxLedgerAttachments 是每条账目的票据上限（接口设计 3.5）。
 const MaxLedgerAttachments = 10

@@ -77,8 +77,9 @@ func TestHTTPExpenseCategoriesLifecycle(t *testing.T) {
 	trip := f.createTrip(token, map[string]any{"name": "关西", "start_date": "2026-10-01", "end_date": "2026-10-03"})
 	entryID := uuid.NewString()
 	if _, err := f.pool.Exec(context.Background(),
-		`INSERT INTO ledger_entries (id, account_id, trip_id, kind, amount, category_id, occurred_on, created_at, updated_at)
-		 VALUES ($1, $2, $3, 'expense', 12.5, $4, DATE '2026-10-01', now(), now())`, entryID, accountID, trip["id"], id); err != nil {
+		`INSERT INTO ledger_entries (id, account_id, trip_id, kind, amount, category_id, occurred_on, payer_member_id, created_at, updated_at)
+		 VALUES ($1, $2, $3, 'expense', 12.5, $4, DATE '2026-10-01',
+		         (SELECT m.id FROM trip_members m WHERE m.account_id = $2 AND m.trip_id = $3 AND m.is_self AND m.deleted_at IS NULL), now(), now())`, entryID, accountID, trip["id"], id); err != nil {
 		t.Fatal(err)
 	}
 	expectStatus(t, f.do(request{method: http.MethodDelete, path: "/expense-categories/" + id, token: token, headers: f.authHeaders(map[string]string{"If-Match": strongETag1})}),

@@ -1,0 +1,91 @@
+SharePercent:
+  type: string
+  description: 分摊百分比，0–100 的十进制字符串，最多 2 位小数
+  pattern: '^(100(\.0{1,2})?|\d{1,2}(\.\d{1,2})?)$'
+
+TripMember:
+  type: object
+  description: 旅行成员的规范资源（接口设计 3.5 TripMember）；同一结构也是同步日志与快照中的表示。is_self 成员由创建旅行时生成，不可删除
+  x-go-type: member.Resource
+  x-go-type-import:
+    path: tripfolio/server/internal/modules/travel/member
+  required:
+    [
+      id,
+      trip_id,
+      name,
+      share_percent,
+      sort_order,
+      is_self,
+      version,
+      created_at,
+      updated_at,
+      deleted_at,
+    ]
+  properties:
+    id:
+      type: string
+      format: uuid
+    trip_id:
+      type: string
+      format: uuid
+    name:
+      type: string
+      minLength: 1
+      maxLength: 30
+    share_percent:
+      $ref: '#/SharePercent'
+    sort_order:
+      type: integer
+      format: int32
+    is_self:
+      type: boolean
+    version:
+      $ref: ./write.yaml#/Version
+    created_at:
+      $ref: ./write.yaml#/Instant
+    updated_at:
+      $ref: ./write.yaml#/Instant
+    deleted_at:
+      type: string
+      format: date-time
+      nullable: true
+
+TripMemberListResponse:
+  type: object
+  required: [data]
+  properties:
+    data:
+      type: array
+      items:
+        $ref: '#/TripMember'
+
+TripMemberInput:
+  type: object
+  description: 整体保存中的一位成员；id 为现有成员则更新，否则创建
+  required: [id, name, share_percent]
+  properties:
+    id:
+      type: string
+      format: uuid
+    name:
+      type: string
+      minLength: 1
+      maxLength: 30
+    share_percent:
+      $ref: '#/SharePercent'
+
+TripMembersSave:
+  type: object
+  description: |
+    整体保存旅行成员：按数组顺序写 sort_order；未出现的有效成员被删除。
+    百分比之和必须恰好等于 100（422 SHARE_PERCENT_SUM）；is_self 成员必须出现；
+    被有效账目引用的成员不能删除（409 MEMBER_IN_USE）。
+  required: [members]
+  properties:
+    members:
+      type: array
+      minItems: 1
+      maxItems: 50
+      items:
+        $ref: '#/TripMemberInput'

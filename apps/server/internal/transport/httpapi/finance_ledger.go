@@ -46,6 +46,14 @@ func toUUIDs(ids *[]openapi_types.UUID) []uuid.UUID {
 	return out
 }
 
+func splitModeString(m *generated.SplitMode) *string {
+	if m == nil {
+		return nil
+	}
+	s := string(*m)
+	return &s
+}
+
 func deref(p *string) string {
 	if p == nil {
 		return ""
@@ -92,9 +100,9 @@ func (h *Handler) CreateLedgerEntry(ctx context.Context, req generated.CreateLed
 	b := req.Body
 	cmd := finance.CreateLedgerCommand{
 		ID: uuid.UUID(b.Id), Kind: string(b.Kind), Amount: b.Amount, CurrencyCode: b.CurrencyCode,
-		SplitCount: b.SplitCount,
 		CategoryID: uuid.UUID(b.CategoryId), OccurredOn: b.OccurredOn, Notes: b.Notes,
 		AttachmentAssetIDs: toUUIDs(b.AttachmentAssetIds),
+		PayerMemberID:      optionalUUID(b.PayerMemberId), SplitMode: splitModeString(b.SplitMode), ParticipantMemberIDs: toUUIDs(b.ParticipantMemberIds),
 	}
 	_, cmd.RefundedEntryID = nullableUUID(b.RefundedEntryId)
 	res, err := h.ledger.Create(ctx, a, uuid.UUID(req.Params.IdempotencyKey), uuid.UUID(req.TripId), cmd)
@@ -142,8 +150,12 @@ func (h *Handler) UpdateLedgerEntry(ctx context.Context, req generated.UpdateLed
 	b := req.Body
 	patch := finance.LedgerPatch{
 		Amount: b.Amount, CurrencyCode: b.CurrencyCode, CategoryID: optionalUUID(b.CategoryId),
-		SplitCount: b.SplitCount,
 		OccurredOn: b.OccurredOn, Notes: b.Notes,
+		PayerMemberID: optionalUUID(b.PayerMemberId), SplitMode: splitModeString(b.SplitMode),
+	}
+	if b.ParticipantMemberIds != nil {
+		ids := toUUIDs(b.ParticipantMemberIds)
+		patch.ParticipantMemberIDs = &ids
 	}
 	patch.RefundedSet, patch.RefundedEntryID = nullableUUID(b.RefundedEntryId)
 	if b.AttachmentAssetIds != nil {
@@ -175,6 +187,22 @@ func (h *Handler) DeleteLedgerEntry(ctx context.Context, req generated.DeleteLed
 		return nil, err
 	}
 	return generated.DeleteLedgerEntry200JSONResponse{Data: res}, nil
+}
+
+// GetTripSettlement 实现 GET /trips/{trip_id}/settlement。
+func (h *Handler) GetTripSettlement(ctx context.Context, req generated.GetTripSettlementRequestObject) (generated.GetTripSettlementResponseObject, error) {
+	a, err := mustActor(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if h.settlement == nil {
+		return nil, notWired()
+	}
+	s, err := h.settlement.Get(ctx, a, uuid.UUID(req.TripId))
+	if err != nil {
+		return nil, err
+	}
+	return generated.GetTripSettlement200JSONResponse{Data: s}, nil
 }
 
 // GetTripStatistics 实现 GET /trips/{trip_id}/statistics。

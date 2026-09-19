@@ -8,6 +8,8 @@ LedgerEntry:
   description: |
     账目（支出或退款）的规范资源（接口设计 3.5）；同一结构也是同步日志与快照中的表示。
     currency_code 由旅行派生，只读；attachment_asset_ids 是票据图片资产 ID，不含临时下载地址。
+    payer_member_id 为付款人（退款为收款人）；splits 为服务端按 split_mode 计算的各参与人份额，之和等于 amount；
+    split_count = 参与人数，personal_amount = is_self 成员的份额（不参与时为 0），两者只读。
   x-go-type: finance.LedgerResource
   x-go-type-import:
     path: tripfolio/server/internal/modules/finance
@@ -19,6 +21,9 @@ LedgerEntry:
       amount,
       split_count,
       personal_amount,
+      payer_member_id,
+      split_mode,
+      splits,
       currency_code,
       category_id,
       occurred_on,
@@ -46,9 +51,18 @@ LedgerEntry:
       format: int32
       minimum: 1
       maximum: 9999
-      description: 支出均摊人数；退款恒为 1
+      description: 参与分摊的成员数，只读
     personal_amount:
       $ref: ./common.yaml#/Money
+    payer_member_id:
+      type: string
+      format: uuid
+    split_mode:
+      $ref: '#/SplitMode'
+    splits:
+      type: array
+      items:
+        $ref: '#/LedgerSplit'
     currency_code:
       $ref: ./common.yaml#/CurrencyCode
     category_id:
@@ -81,6 +95,22 @@ LedgerEntry:
       format: date-time
       nullable: true
 
+SplitMode:
+  type: string
+  description: 分摊模式；even 按参与人等分，ratio 按参与人的成员百分比归一化
+  enum: [even, ratio]
+
+LedgerSplit:
+  type: object
+  description: 一位参与人的份额；按币种最小单位取整，余数按参与人顺序补齐
+  required: [member_id, amount]
+  properties:
+    member_id:
+      type: string
+      format: uuid
+    amount:
+      $ref: ./common.yaml#/Money
+
 LedgerEntryResponse:
   type: object
   required: [data]
@@ -107,6 +137,8 @@ LedgerCreate:
     创建支出或退款。currency_code 可省略，提供时必须等于旅行币种（否则 422 CURRENCY_MISMATCH）；
     occurred_on 默认旅行时区的今天。退款可通过 refunded_entry_id 关联同旅行的有效支出，
     分类须与原支出一致，关联退款合计不得超过原支出金额（422 REFUND_AMOUNT_EXCEEDED）。
+    payer_member_id 默认 is_self 成员，split_mode 默认 even，participant_member_ids 默认全部有效成员；
+    退款关联原支出且三者均缺省时继承原支出。成员须为本旅行有效成员（422 INVALID_REFERENCE）。
   required: [id, kind, amount, category_id]
   properties:
     id:
@@ -116,12 +148,19 @@ LedgerCreate:
       $ref: '#/LedgerKind'
     amount:
       $ref: ./common.yaml#/Money
-    split_count:
-      type: integer
-      format: int32
-      minimum: 1
-      maximum: 9999
-      description: 支出均摊人数，省略为 1；退款只能为 1
+    payer_member_id:
+      type: string
+      format: uuid
+    split_mode:
+      $ref: '#/SplitMode'
+    participant_member_ids:
+      type: array
+      minItems: 1
+      maxItems: 50
+      description: 参与分摊的成员，不重复；顺序决定余数分配
+      items:
+        type: string
+        format: uuid
     currency_code:
       $ref: ./common.yaml#/CurrencyCode
     category_id:
@@ -150,15 +189,22 @@ LedgerPatch:
   description: |
     局部更新：缺省字段保持原值；refunded_entry_id 显式 null 表示解除关联；attachment_asset_ids 出现时整体替换。
     kind 不可改。修改原支出的金额须仍能覆盖其关联退款；修改原支出的分类会同事务更新其关联退款。
+    participant_member_ids 出现时整体替换；amount、split_mode 或参与人变化时重算 splits。
   properties:
     amount:
       $ref: ./common.yaml#/Money
-    split_count:
-      type: integer
-      format: int32
-      minimum: 1
-      maximum: 9999
-      description: 支出均摊人数；退款只能为 1
+    payer_member_id:
+      type: string
+      format: uuid
+    split_mode:
+      $ref: '#/SplitMode'
+    participant_member_ids:
+      type: array
+      minItems: 1
+      maxItems: 50
+      items:
+        type: string
+        format: uuid
     currency_code:
       $ref: ./common.yaml#/CurrencyCode
     category_id:

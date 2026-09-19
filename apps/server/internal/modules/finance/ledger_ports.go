@@ -8,6 +8,7 @@ import (
 
 	"tripfolio/server/internal/foundation/types"
 	"tripfolio/server/internal/foundation/write"
+	"tripfolio/server/internal/modules/travel/member"
 	"tripfolio/server/internal/modules/travel/trip"
 )
 
@@ -26,6 +27,9 @@ type LedgerValues struct {
 	Amount             string
 	SplitCount         int32
 	PersonalAmount     string
+	PayerMemberID      uuid.UUID
+	SplitMode          SplitMode
+	Splits             []LedgerSplit
 	CategoryID         uuid.UUID
 	OccurredOn         types.Date
 	Notes              string
@@ -37,6 +41,7 @@ type LedgerValues struct {
 func (r LedgerResource) Values() LedgerValues {
 	return LedgerValues{
 		Amount: r.Amount, SplitCount: r.SplitCount, PersonalAmount: r.PersonalAmount,
+		PayerMemberID: r.PayerMemberID, SplitMode: r.SplitMode, Splits: append([]LedgerSplit(nil), r.Splits...),
 		CategoryID: r.CategoryID, OccurredOn: r.OccurredOn, Notes: r.Notes,
 		RefundedEntryID: r.RefundedEntryID, AttachmentAssetIDs: append([]uuid.UUID(nil), r.AttachmentAssetIDs...),
 	}
@@ -52,6 +57,8 @@ type LedgerRepo interface {
 	CategoryActive(ctx context.Context, accountID, categoryID uuid.UUID) (bool, error)
 	// MissingAssets 返回 ids 中不是本账号同旅行、未删除的图片资产的 ID；顺序与输入一致。
 	MissingAssets(ctx context.Context, accountID, tripID uuid.UUID, ids []uuid.UUID) ([]uuid.UUID, error)
+	// ActiveMembers 返回本旅行全部有效成员，按 sort_order、id 升序。
+	ActiveMembers(ctx context.Context, accountID, tripID uuid.UUID) ([]member.Resource, error)
 	Get(ctx context.Context, accountID, tripID, id uuid.UUID) (LedgerResource, bool, error)
 	GetForUpdate(ctx context.Context, accountID, tripID, id uuid.UUID) (LedgerResource, bool, error)
 	// IDExists 检查 ID 是否已被现有行（含软删除）或墓碑占用。
@@ -137,4 +144,6 @@ type LedgerReader interface {
 	List(ctx context.Context, accountID, tripID uuid.UUID, q LedgerListQuery) ([]LedgerResource, error)
 	// Statistics 在一个只读一致性事务中读取统计聚合；旅行不存在或非本人返回 found=false。
 	Statistics(ctx context.Context, accountID, tripID uuid.UUID, q StatisticsQuery) (StatisticsData, bool, error)
+	// Settlement 返回每位有效成员的已付与应付原始聚合，按 sort_order、id 升序。
+	Settlement(ctx context.Context, accountID, tripID uuid.UUID) ([]MemberAggregate, error)
 }

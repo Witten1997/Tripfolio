@@ -19,6 +19,7 @@ import (
 	"tripfolio/server/internal/modules/finance"
 	"tripfolio/server/internal/modules/geo"
 	"tripfolio/server/internal/modules/travel/itinerary"
+	"tripfolio/server/internal/modules/travel/member"
 	"tripfolio/server/internal/modules/travel/packing"
 	"tripfolio/server/internal/modules/travel/routeplan"
 	"tripfolio/server/internal/modules/travel/share"
@@ -451,6 +452,24 @@ func (e RouteSummaryStatus) Valid() bool {
 	case RouteSummaryStatusReady:
 		return true
 	case RouteSummaryStatusStale:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SplitMode.
+const (
+	Even  SplitMode = "even"
+	Ratio SplitMode = "ratio"
+)
+
+// Valid indicates whether the value is a known member of the SplitMode enum.
+func (e SplitMode) Valid() bool {
+	switch e {
+	case Even:
+		return true
+	case Ratio:
 		return true
 	default:
 		return false
@@ -1115,6 +1134,8 @@ type ItineraryStatus string
 // LedgerCreate 创建支出或退款。currency_code 可省略，提供时必须等于旅行币种（否则 422 CURRENCY_MISMATCH）；
 // occurred_on 默认旅行时区的今天。退款可通过 refunded_entry_id 关联同旅行的有效支出，
 // 分类须与原支出一致，关联退款合计不得超过原支出金额（422 REFUND_AMOUNT_EXCEEDED）。
+// payer_member_id 默认 is_self 成员，split_mode 默认 even，participant_member_ids 默认全部有效成员；
+// 退款关联原支出且三者均缺省时继承原支出。成员须为本旅行有效成员（422 INVALID_REFERENCE）。
 type LedgerCreate struct {
 	// Amount 非科学计数法的十进制字符串，无符号、无分组符，小数位不超过币种 minor_units；
 	// 服务端按币种规范化（"128.5" 与 "128.50" 相同），超精度被拒绝。存储上限 NUMERIC(18,4)，最多 14 位整数。
@@ -1142,21 +1163,29 @@ type LedgerCreate struct {
 	// Example: 2026-10-01
 	OccurredOn *Date `json:"occurred_on,omitempty"`
 
+	// ParticipantMemberIds 参与分摊的成员，不重复；顺序决定余数分配
+	ParticipantMemberIds *[]openapi_types.UUID `json:"participant_member_ids,omitempty"`
+	PayerMemberId        *openapi_types.UUID   `json:"payer_member_id,omitempty"`
+
 	// RefundedEntryId 仅 kind=refund 可填写
 	RefundedEntryId nullable.Nullable[openapi_types.UUID] `json:"refunded_entry_id,omitempty"`
 
-	// SplitCount 支出均摊人数，省略为 1；退款只能为 1
-	SplitCount *int32 `json:"split_count,omitempty"`
+	// SplitMode 分摊模式；even 按参与人等分，ratio 按参与人的成员百分比归一化
+	SplitMode *SplitMode `json:"split_mode,omitempty"`
 }
 
 // LedgerEntry 账目（支出或退款）的规范资源（接口设计 3.5）；同一结构也是同步日志与快照中的表示。
 // currency_code 由旅行派生，只读；attachment_asset_ids 是票据图片资产 ID，不含临时下载地址。
+// payer_member_id 为付款人（退款为收款人）；splits 为服务端按 split_mode 计算的各参与人份额，之和等于 amount；
+// split_count = 参与人数，personal_amount = is_self 成员的份额（不参与时为 0），两者只读。
 type LedgerEntry = finance.LedgerResource
 
 // LedgerEntryResponse defines model for LedgerEntryResponse.
 type LedgerEntryResponse struct {
 	// Data 账目（支出或退款）的规范资源（接口设计 3.5）；同一结构也是同步日志与快照中的表示。
 	// currency_code 由旅行派生，只读；attachment_asset_ids 是票据图片资产 ID，不含临时下载地址。
+	// payer_member_id 为付款人（退款为收款人）；splits 为服务端按 split_mode 计算的各参与人份额，之和等于 amount；
+	// split_count = 参与人数，personal_amount = is_self 成员的份额（不参与时为 0），两者只读。
 	Data LedgerEntry `json:"data"`
 }
 
@@ -1171,6 +1200,7 @@ type LedgerPage struct {
 
 // LedgerPatch 局部更新：缺省字段保持原值；refunded_entry_id 显式 null 表示解除关联；attachment_asset_ids 出现时整体替换。
 // kind 不可改。修改原支出的金额须仍能覆盖其关联退款；修改原支出的分类会同事务更新其关联退款。
+// participant_member_ids 出现时整体替换；amount、split_mode 或参与人变化时重算 splits。
 type LedgerPatch struct {
 	// Amount 非科学计数法的十进制字符串，无符号、无分组符，小数位不超过币种 minor_units；
 	// 服务端按币种规范化（"128.5" 与 "128.50" 相同），超精度被拒绝。存储上限 NUMERIC(18,4)，最多 14 位整数。
@@ -1190,11 +1220,24 @@ type LedgerPatch struct {
 	// OccurredOn YYYY-MM-DD，不带时区
 	//
 	// Example: 2026-10-01
-	OccurredOn      *Date                                 `json:"occurred_on,omitempty"`
-	RefundedEntryId nullable.Nullable[openapi_types.UUID] `json:"refunded_entry_id,omitempty"`
+	OccurredOn           *Date                                 `json:"occurred_on,omitempty"`
+	ParticipantMemberIds *[]openapi_types.UUID                 `json:"participant_member_ids,omitempty"`
+	PayerMemberId        *openapi_types.UUID                   `json:"payer_member_id,omitempty"`
+	RefundedEntryId      nullable.Nullable[openapi_types.UUID] `json:"refunded_entry_id,omitempty"`
 
-	// SplitCount 支出均摊人数；退款只能为 1
-	SplitCount *int32 `json:"split_count,omitempty"`
+	// SplitMode 分摊模式；even 按参与人等分，ratio 按参与人的成员百分比归一化
+	SplitMode *SplitMode `json:"split_mode,omitempty"`
+}
+
+// LedgerSplit 一位参与人的份额；按币种最小单位取整，余数按参与人顺序补齐
+type LedgerSplit struct {
+	// Amount 非科学计数法的十进制字符串，无符号、无分组符，小数位不超过币种 minor_units；
+	// 服务端按币种规范化（"128.5" 与 "128.50" 相同），超精度被拒绝。存储上限 NUMERIC(18,4)，最多 14 位整数。
+	//
+	//
+	// Example: 128.50
+	Amount   Money              `json:"amount"`
+	MemberId openapi_types.UUID `json:"member_id"`
 }
 
 // LoginRequest defines model for LoginRequest.
@@ -1218,6 +1261,34 @@ type MapSettingsCoordinateSystem string
 
 // MapSettingsProvider 地图与定位供应商
 type MapSettingsProvider string
+
+// MemberSettlement 单个成员的结算：paid_amount 已支付（作为付款人的支出 − 作为收款人的退款）、owed_amount 应承担（支出份额 − 退款份额）、net_amount = paid − owed，正数应收、负数应付
+type MemberSettlement struct {
+	IsSelf   bool               `json:"is_self"`
+	MemberId openapi_types.UUID `json:"member_id"`
+	Name     string             `json:"name"`
+
+	// NetAmount 可带负号的十进制字符串，仅用于统计里的净额、剩余预算等派生金额；格式其余同 Money。
+	// 净额 = 支出 − 退款，独立退款可使退款超过支出而为负。
+	//
+	//
+	// Example: -12.50
+	NetAmount SignedMoney `json:"net_amount"`
+
+	// OwedAmount 可带负号的十进制字符串，仅用于统计里的净额、剩余预算等派生金额；格式其余同 Money。
+	// 净额 = 支出 − 退款，独立退款可使退款超过支出而为负。
+	//
+	//
+	// Example: -12.50
+	OwedAmount SignedMoney `json:"owed_amount"`
+
+	// PaidAmount 可带负号的十进制字符串，仅用于统计里的净额、剩余预算等派生金额；格式其余同 Money。
+	// 净额 = 支出 − 退款，独立退款可使退款超过支出而为负。
+	//
+	//
+	// Example: -12.50
+	PaidAmount SignedMoney `json:"paid_amount"`
+}
 
 // Metadata defines model for Metadata.
 type Metadata struct {
@@ -1547,14 +1618,32 @@ type SessionListResponse struct {
 	Data []Session `json:"data"`
 }
 
+// SettlementTransfer 一笔建议转账：from 向 to 支付 amount
+type SettlementTransfer struct {
+	// Amount 非科学计数法的十进制字符串，无符号、无分组符，小数位不超过币种 minor_units；
+	// 服务端按币种规范化（"128.5" 与 "128.50" 相同），超精度被拒绝。存储上限 NUMERIC(18,4)，最多 14 位整数。
+	//
+	//
+	// Example: 128.50
+	Amount       Money              `json:"amount"`
+	FromMemberId openapi_types.UUID `json:"from_member_id"`
+	ToMemberId   openapi_types.UUID `json:"to_member_id"`
+}
+
 // Sha256 64 位小写十六进制的 SHA-256 摘要
 type Sha256 = string
+
+// SharePercent 分摊百分比，0–100 的十进制字符串，最多 2 位小数
+type SharePercent = string
 
 // SignedMoney 可带负号的十进制字符串，仅用于统计里的净额、剩余预算等派生金额；格式其余同 Money。
 // 净额 = 支出 − 退款，独立退款可使退款超过支出而为负。
 //
 // Example: -12.50
 type SignedMoney = string
+
+// SplitMode 分摊模式；even 按参与人等分，ratio 按参与人的成员百分比归一化
+type SplitMode string
 
 // StatisticsScope 实际采用的筛选范围；未筛选的项为 null
 type StatisticsScope struct {
@@ -1696,6 +1785,30 @@ type TripCreate struct {
 // TripListItem 列表项：Trip 加按旅行时区当天计算的阶段；列表不提供单资源 ETag
 type TripListItem = trip.ListItem
 
+// TripMember 旅行成员的规范资源（接口设计 3.5 TripMember）；同一结构也是同步日志与快照中的表示。is_self 成员由创建旅行时生成，不可删除
+type TripMember = member.Resource
+
+// TripMemberInput 整体保存中的一位成员；id 为现有成员则更新，否则创建
+type TripMemberInput struct {
+	Id   openapi_types.UUID `json:"id"`
+	Name string             `json:"name"`
+
+	// SharePercent 分摊百分比，0–100 的十进制字符串，最多 2 位小数
+	SharePercent SharePercent `json:"share_percent"`
+}
+
+// TripMemberListResponse defines model for TripMemberListResponse.
+type TripMemberListResponse struct {
+	Data []TripMember `json:"data"`
+}
+
+// TripMembersSave 整体保存旅行成员：按数组顺序写 sort_order；未出现的有效成员被删除。
+// 百分比之和必须恰好等于 100（422 SHARE_PERCENT_SUM）；is_self 成员必须出现；
+// 被有效账目引用的成员不能删除（409 MEMBER_IN_USE）。
+type TripMembersSave struct {
+	Members []TripMemberInput `json:"members"`
+}
+
 // TripPage Page<TripListItem>；键集分页，游标绑定账号、筛选与排序
 type TripPage struct {
 	Items []TripListItem `json:"items"`
@@ -1740,6 +1853,15 @@ type TripPatchRouteShortMode string
 type TripResponse struct {
 	// Data 旅行的规范资源（接口设计 3.2）；同一结构也是同步日志与快照中的表示
 	Data Trip `json:"data"`
+}
+
+// TripSettlement 旅行成员结算（接口设计 3.8 TripSettlement）；不受筛选影响，只算有效账目与有效成员
+type TripSettlement = finance.Settlement
+
+// TripSettlementResponse defines model for TripSettlementResponse.
+type TripSettlementResponse struct {
+	// Data 旅行成员结算（接口设计 3.8 TripSettlement）；不受筛选影响，只算有效账目与有效成员
+	Data TripSettlement `json:"data"`
 }
 
 // TripShare 主人可见的分享记录（接口设计 3.11）；url 由服务端按站点根地址拼出，客户端不参与拼接
@@ -2144,6 +2266,12 @@ type UpdateLedgerEntryParams struct {
 	IfMatch *IfMatch `json:"If-Match,omitempty"`
 }
 
+// SaveTripMembersParams defines parameters for SaveTripMembers.
+type SaveTripMembersParams struct {
+	// IdempotencyKey 写请求的操作编号（UUID）；相同成功操作重试复用同一键
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
 // ListPackingItemsParams defines parameters for ListPackingItems.
 type ListPackingItemsParams struct {
 	Category *PackingCategory `form:"category,omitempty" json:"category,omitempty"`
@@ -2307,6 +2435,9 @@ type CreateLedgerEntryJSONRequestBody = LedgerCreate
 
 // UpdateLedgerEntryJSONRequestBody defines body for UpdateLedgerEntry for application/json ContentType.
 type UpdateLedgerEntryJSONRequestBody = LedgerPatch
+
+// SaveTripMembersJSONRequestBody defines body for SaveTripMembers for application/json ContentType.
+type SaveTripMembersJSONRequestBody = TripMembersSave
 
 // CreatePackingItemJSONRequestBody defines body for CreatePackingItem for application/json ContentType.
 type CreatePackingItemJSONRequestBody = PackingCreate
@@ -2490,6 +2621,12 @@ type ServerInterface interface {
 	// UpdateLedgerEntry 局部更新；类型不可改，修改金额与分类须与关联退款保持一致
 	// (PATCH /trips/{trip_id}/ledger-entries/{entry_id})
 	UpdateLedgerEntry(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, entryId openapi_types.UUID, params UpdateLedgerEntryParams)
+	// ListTripMembers 旅行的有效成员，按 sort_order、id 排序
+	// (GET /trips/{trip_id}/members)
+	ListTripMembers(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID)
+	// SaveTripMembers 整体保存旅行成员：新增、改名、改比例、排序与删除；百分比之和须为 100
+	// (PUT /trips/{trip_id}/members)
+	SaveTripMembers(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, params SaveTripMembersParams)
 	// ListPackingItems 旅行的行李清单；按分类与状态筛选，键集分页
 	// (GET /trips/{trip_id}/packing-items)
 	ListPackingItems(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, params ListPackingItemsParams)
@@ -2517,6 +2654,9 @@ type ServerInterface interface {
 	// RecalculateRoutePlan 将路线计划置为待计算并投递后台任务
 	// (POST /trips/{trip_id}/route-plan/recalculate)
 	RecalculateRoutePlan(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, params RecalculateRoutePlanParams)
+	// GetTripSettlement 成员结算：每位成员的已支付、应承担、净额与最少转账方案
+	// (GET /trips/{trip_id}/settlement)
+	GetTripSettlement(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID)
 	// DisableTripShare 关闭分享，旧链接立即失效；未开启也返回 204
 	// (DELETE /trips/{trip_id}/share)
 	DisableTripShare(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID)
@@ -2877,6 +3017,18 @@ func (_ Unimplemented) UpdateLedgerEntry(w http.ResponseWriter, r *http.Request,
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// ListTripMembers 旅行的有效成员，按 sort_order、id 排序
+// (GET /trips/{trip_id}/members)
+func (_ Unimplemented) ListTripMembers(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// SaveTripMembers 整体保存旅行成员：新增、改名、改比例、排序与删除；百分比之和须为 100
+// (PUT /trips/{trip_id}/members)
+func (_ Unimplemented) SaveTripMembers(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, params SaveTripMembersParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // ListPackingItems 旅行的行李清单；按分类与状态筛选，键集分页
 // (GET /trips/{trip_id}/packing-items)
 func (_ Unimplemented) ListPackingItems(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, params ListPackingItemsParams) {
@@ -2928,6 +3080,12 @@ func (_ Unimplemented) GetRoutePlan(w http.ResponseWriter, r *http.Request, trip
 // RecalculateRoutePlan 将路线计划置为待计算并投递后台任务
 // (POST /trips/{trip_id}/route-plan/recalculate)
 func (_ Unimplemented) RecalculateRoutePlan(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, params RecalculateRoutePlanParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetTripSettlement 成员结算：每位成员的已支付、应承担、净额与最少转账方案
+// (GET /trips/{trip_id}/settlement)
+func (_ Unimplemented) GetTripSettlement(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -5540,6 +5698,86 @@ func (siw *ServerInterfaceWrapper) UpdateLedgerEntry(w http.ResponseWriter, r *h
 	handler.ServeHTTP(w, r)
 }
 
+// ListTripMembers operation middleware
+func (siw *ServerInterfaceWrapper) ListTripMembers(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "trip_id" -------------
+	var tripId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "trip_id", chi.URLParam(r, "trip_id"), &tripId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "trip_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListTripMembers(w, r, tripId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SaveTripMembers operation middleware
+func (siw *ServerInterfaceWrapper) SaveTripMembers(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "trip_id" -------------
+	var tripId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "trip_id", chi.URLParam(r, "trip_id"), &tripId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "trip_id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params SaveTripMembersParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SaveTripMembers(w, r, tripId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListPackingItems operation middleware
 func (siw *ServerInterfaceWrapper) ListPackingItems(w http.ResponseWriter, r *http.Request) {
 
@@ -6081,6 +6319,32 @@ func (siw *ServerInterfaceWrapper) RecalculateRoutePlan(w http.ResponseWriter, r
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.RecalculateRoutePlan(w, r, tripId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetTripSettlement operation middleware
+func (siw *ServerInterfaceWrapper) GetTripSettlement(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "trip_id" -------------
+	var tripId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "trip_id", chi.URLParam(r, "trip_id"), &tripId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "trip_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetTripSettlement(w, r, tripId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -6919,6 +7183,15 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/trips/{trip_id}/statistics", wrapper.GetTripStatistics)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/trips/{trip_id}/members", wrapper.ListTripMembers)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/trips/{trip_id}/members", wrapper.SaveTripMembers)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/trips/{trip_id}/settlement", wrapper.GetTripSettlement)
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/assets", wrapper.CreateAsset)
@@ -11803,6 +12076,180 @@ func (response UpdateLedgerEntry428ApplicationProblemPlusJSONResponse) VisitUpda
 	return err
 }
 
+type ListTripMembersRequestObject struct {
+	TripId openapi_types.UUID `json:"trip_id"`
+}
+
+type ListTripMembersResponseObject interface {
+	VisitListTripMembersResponse(w http.ResponseWriter) error
+}
+
+type ListTripMembers200JSONResponse TripMemberListResponse
+
+func (response ListTripMembers200JSONResponse) VisitListTripMembersResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListTripMembers401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response ListTripMembers401ApplicationProblemPlusJSONResponse) VisitListTripMembersResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListTripMembers404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response ListTripMembers404ApplicationProblemPlusJSONResponse) VisitListTripMembersResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListTripMembers410ApplicationProblemPlusJSONResponse struct {
+	GoneApplicationProblemPlusJSONResponse
+}
+
+func (response ListTripMembers410ApplicationProblemPlusJSONResponse) VisitListTripMembersResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(410)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SaveTripMembersRequestObject struct {
+	TripId openapi_types.UUID `json:"trip_id"`
+	Params SaveTripMembersParams
+	Body   *SaveTripMembersJSONRequestBody
+}
+
+type SaveTripMembersResponseObject interface {
+	VisitSaveTripMembersResponse(w http.ResponseWriter) error
+}
+
+type SaveTripMembers200JSONResponse WriteResponse
+
+func (response SaveTripMembers200JSONResponse) VisitSaveTripMembersResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SaveTripMembers401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response SaveTripMembers401ApplicationProblemPlusJSONResponse) VisitSaveTripMembersResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SaveTripMembers404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response SaveTripMembers404ApplicationProblemPlusJSONResponse) VisitSaveTripMembersResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SaveTripMembers409ApplicationProblemPlusJSONResponse struct {
+	ConflictApplicationProblemPlusJSONResponse
+}
+
+func (response SaveTripMembers409ApplicationProblemPlusJSONResponse) VisitSaveTripMembersResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SaveTripMembers410ApplicationProblemPlusJSONResponse struct {
+	GoneApplicationProblemPlusJSONResponse
+}
+
+func (response SaveTripMembers410ApplicationProblemPlusJSONResponse) VisitSaveTripMembersResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(410)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SaveTripMembers422ApplicationProblemPlusJSONResponse struct {
+	ValidationFailedApplicationProblemPlusJSONResponse
+}
+
+func (response SaveTripMembers422ApplicationProblemPlusJSONResponse) VisitSaveTripMembersResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListPackingItemsRequestObject struct {
 	TripId openapi_types.UUID `json:"trip_id"`
 	Params ListPackingItemsParams
@@ -12630,6 +13077,76 @@ func (response RecalculateRoutePlan404ApplicationProblemPlusJSONResponse) VisitR
 	}
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetTripSettlementRequestObject struct {
+	TripId openapi_types.UUID `json:"trip_id"`
+}
+
+type GetTripSettlementResponseObject interface {
+	VisitGetTripSettlementResponse(w http.ResponseWriter) error
+}
+
+type GetTripSettlement200JSONResponse TripSettlementResponse
+
+func (response GetTripSettlement200JSONResponse) VisitGetTripSettlementResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetTripSettlement401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response GetTripSettlement401ApplicationProblemPlusJSONResponse) VisitGetTripSettlementResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetTripSettlement404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response GetTripSettlement404ApplicationProblemPlusJSONResponse) VisitGetTripSettlementResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetTripSettlement410ApplicationProblemPlusJSONResponse struct {
+	GoneApplicationProblemPlusJSONResponse
+}
+
+func (response GetTripSettlement410ApplicationProblemPlusJSONResponse) VisitGetTripSettlementResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(410)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -13688,6 +14205,12 @@ type StrictServerInterface interface {
 	// UpdateLedgerEntry 局部更新；类型不可改，修改金额与分类须与关联退款保持一致
 	// (PATCH /trips/{trip_id}/ledger-entries/{entry_id})
 	UpdateLedgerEntry(ctx context.Context, request UpdateLedgerEntryRequestObject) (UpdateLedgerEntryResponseObject, error)
+	// ListTripMembers 旅行的有效成员，按 sort_order、id 排序
+	// (GET /trips/{trip_id}/members)
+	ListTripMembers(ctx context.Context, request ListTripMembersRequestObject) (ListTripMembersResponseObject, error)
+	// SaveTripMembers 整体保存旅行成员：新增、改名、改比例、排序与删除；百分比之和须为 100
+	// (PUT /trips/{trip_id}/members)
+	SaveTripMembers(ctx context.Context, request SaveTripMembersRequestObject) (SaveTripMembersResponseObject, error)
 	// ListPackingItems 旅行的行李清单；按分类与状态筛选，键集分页
 	// (GET /trips/{trip_id}/packing-items)
 	ListPackingItems(ctx context.Context, request ListPackingItemsRequestObject) (ListPackingItemsResponseObject, error)
@@ -13715,6 +14238,9 @@ type StrictServerInterface interface {
 	// RecalculateRoutePlan 将路线计划置为待计算并投递后台任务
 	// (POST /trips/{trip_id}/route-plan/recalculate)
 	RecalculateRoutePlan(ctx context.Context, request RecalculateRoutePlanRequestObject) (RecalculateRoutePlanResponseObject, error)
+	// GetTripSettlement 成员结算：每位成员的已支付、应承担、净额与最少转账方案
+	// (GET /trips/{trip_id}/settlement)
+	GetTripSettlement(ctx context.Context, request GetTripSettlementRequestObject) (GetTripSettlementResponseObject, error)
 	// DisableTripShare 关闭分享，旧链接立即失效；未开启也返回 204
 	// (DELETE /trips/{trip_id}/share)
 	DisableTripShare(ctx context.Context, request DisableTripShareRequestObject) (DisableTripShareResponseObject, error)
@@ -15343,6 +15869,66 @@ func (sh *strictHandler) UpdateLedgerEntry(w http.ResponseWriter, r *http.Reques
 	}
 }
 
+// ListTripMembers operation middleware
+func (sh *strictHandler) ListTripMembers(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID) {
+	var request ListTripMembersRequestObject
+
+	request.TripId = tripId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListTripMembers(ctx, request.(ListTripMembersRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListTripMembers")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListTripMembersResponseObject); ok {
+		if err := validResponse.VisitListTripMembersResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SaveTripMembers operation middleware
+func (sh *strictHandler) SaveTripMembers(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, params SaveTripMembersParams) {
+	var request SaveTripMembersRequestObject
+
+	request.TripId = tripId
+	request.Params = params
+
+	var body SaveTripMembersJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SaveTripMembers(ctx, request.(SaveTripMembersRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SaveTripMembers")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SaveTripMembersResponseObject); ok {
+		if err := validResponse.VisitSaveTripMembersResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // ListPackingItems operation middleware
 func (sh *strictHandler) ListPackingItems(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, params ListPackingItemsParams) {
 	var request ListPackingItemsRequestObject
@@ -15609,6 +16195,32 @@ func (sh *strictHandler) RecalculateRoutePlan(w http.ResponseWriter, r *http.Req
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(RecalculateRoutePlanResponseObject); ok {
 		if err := validResponse.VisitRecalculateRoutePlanResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetTripSettlement operation middleware
+func (sh *strictHandler) GetTripSettlement(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID) {
+	var request GetTripSettlementRequestObject
+
+	request.TripId = tripId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetTripSettlement(ctx, request.(GetTripSettlementRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetTripSettlement")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetTripSettlementResponseObject); ok {
+		if err := validResponse.VisitGetTripSettlementResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

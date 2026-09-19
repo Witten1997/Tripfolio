@@ -18,6 +18,7 @@ import (
 	"tripfolio/server/internal/foundation/types"
 	"tripfolio/server/internal/foundation/write"
 	"tripfolio/server/internal/modules/metadata"
+	"tripfolio/server/internal/modules/travel/member"
 	"tripfolio/server/internal/modules/travel/routeplan"
 )
 
@@ -160,6 +161,12 @@ func (s *Service) reload(a actor.Actor, id uuid.UUID) func(ctx context.Context, 
 }
 
 func ref(r Resource) write.EntityRef { return write.Ref(EntityType, r.ID, int64(r.Version)) }
+
+// recordMember 登记创建旅行时生成的成员「我」的变更，使其进入 affected 与同步日志。
+func recordMember(scope write.Scope, m member.Resource) {
+	tripID := m.TripID
+	scope.Record(write.Change{EntityType: member.EntityType, EntityID: m.ID, TripID: &tripID, Version: int64(m.Version), Kind: write.ChangeUpsert, Snapshot: m, ChangedFields: member.Fields})
+}
 
 func record(scope write.Scope, r Resource, kind write.ChangeKind, fields []string, requiresSnapshot bool) {
 	id := r.ID
@@ -411,6 +418,11 @@ func (s *Service) Create(ctx context.Context, a actor.Actor, operationID uuid.UU
 		}
 		record(scope, created, write.ChangeUpsert, CreateFields, false)
 		scope.SetPrimary(ref(created))
+		self, err := repo.InsertMember(ctx, a.AccountID, member.NewSelf(uuid.New(), created.ID, now))
+		if err != nil {
+			return err
+		}
+		recordMember(scope, self)
 		return nil
 	}, s.reload(a, cmd.ID))
 }

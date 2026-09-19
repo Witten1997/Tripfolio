@@ -131,3 +131,20 @@ func (d Decimal) Format(minorUnits int) string {
 	}
 	return out
 }
+
+// Units 返回按 4 位小数定点的整数值副本，供分摊等需要整数运算的场景。
+func (d Decimal) Units() *big.Int { return new(big.Int).Set(d.value()) }
+
+// FromUnits 由 4 位小数定点整数构造 Decimal。
+func FromUnits(units *big.Int) Decimal { return Decimal{units: new(big.Int).Set(units)} }
+
+// Quantum 返回币种最小单位对应的定点整数（minorUnits=2 时为 100）。
+func Quantum(minorUnits int) *big.Int {
+	if minorUnits < 0 {
+		minorUnits = 0
+	}
+	if minorUnits > Scale {
+		minorUnits = Scale
+	}
+	return new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(Scale-minorUnits)), nil)
+}

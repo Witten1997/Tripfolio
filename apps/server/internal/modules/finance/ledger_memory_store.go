@@ -12,6 +12,7 @@ import (
 	"tripfolio/server/internal/foundation/money"
 	"tripfolio/server/internal/foundation/types"
 	"tripfolio/server/internal/foundation/write"
+	"tripfolio/server/internal/modules/travel/member"
 	"tripfolio/server/internal/modules/travel/trip"
 )
 
@@ -26,6 +27,8 @@ type LedgerMemoryStore struct {
 	categories map[uuid.UUID]CategoryResource
 	catOwners  map[uuid.UUID]uuid.UUID
 	assets     map[uuid.UUID]memoryAsset
+	members    map[uuid.UUID]member.Resource
+	memOwners  map[uuid.UUID]uuid.UUID
 	tombstones map[uuid.UUID]struct{}
 	merge      write.MergeSource
 }
@@ -42,7 +45,8 @@ func NewLedgerMemoryStore() *LedgerMemoryStore {
 		entries: map[uuid.UUID]LedgerResource{}, owners: map[uuid.UUID]uuid.UUID{},
 		trips: map[uuid.UUID]trip.Resource{}, tripOwners: map[uuid.UUID]uuid.UUID{},
 		categories: map[uuid.UUID]CategoryResource{}, catOwners: map[uuid.UUID]uuid.UUID{},
-		assets: map[uuid.UUID]memoryAsset{}, tombstones: map[uuid.UUID]struct{}{},
+		assets: map[uuid.UUID]memoryAsset{}, members: map[uuid.UUID]member.Resource{}, memOwners: map[uuid.UUID]uuid.UUID{},
+		tombstones: map[uuid.UUID]struct{}{},
 	}
 }
 
@@ -77,6 +81,73 @@ func (m *LedgerMemoryStore) PutCategory(accountID uuid.UUID, c CategoryResource)
 	defer m.mu.Unlock()
 	m.categories[c.ID] = c
 	m.catOwners[c.ID] = accountID
+}
+
+// PutMember 登记一位旅行成员。
+func (m *LedgerMemoryStore) PutMember(accountID uuid.UUID, r member.Resource) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.members[r.ID] = r
+	m.memOwners[r.ID] = accountID
+}
+
+// ActiveMembers 实现 LedgerRepo。
+func (m *LedgerMemoryStore) ActiveMembers(_ context.Context, accountID, tripID uuid.UUID) ([]member.Resource, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.activeMembers(accountID, tripID), nil
+}
+
+func (m *LedgerMemoryStore) activeMembers(accountID, tripID uuid.UUID) []member.Resource {
+	out := []member.Resource{}
+	for id, r := range m.members {
+		if m.memOwners[id] == accountID && r.TripID == tripID && r.DeletedAt == nil {
+			out = append(out, r)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].SortOrder != out[j].SortOrder {
+			return out[i].SortOrder < out[j].SortOrder
+		}
+		return compareLedgerIDs(out[i].ID, out[j].ID) < 0
+	})
+	return out
+}
+
+// Settlement 实现 LedgerReader：用与 SQL 相同的语义在内存中聚合。
+func (m *LedgerMemoryStore) Settlement(_ context.Context, accountID, tripID uuid.UUID) ([]MemberAggregate, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	paid := map[uuid.UUID]money.Decimal{}
+	owed := map[uuid.UUID]money.Decimal{}
+	for id, r := range m.entries {
+		if m.owners[id] != accountID || r.TripID != tripID || r.DeletedAt != nil {
+			continue
+		}
+		sign := func(d money.Decimal) money.Decimal {
+			if r.Kind == KindRefund {
+				return money.Zero().Sub(d)
+			}
+			return d
+		}
+		amount, err := money.ParseDecimal(r.Amount)
+		if err != nil {
+			return nil, err
+		}
+		paid[r.PayerMemberID] = paid[r.PayerMemberID].Add(sign(amount))
+		for _, s := range r.Splits {
+			share, err := money.ParseDecimal(s.Amount)
+			if err != nil {
+				return nil, err
+			}
+			owed[s.MemberID] = owed[s.MemberID].Add(sign(share))
+		}
+	}
+	out := []MemberAggregate{}
+	for _, mem := range m.activeMembers(accountID, tripID) {
+		out = append(out, MemberAggregate{MemberID: mem.ID, Name: mem.Name, IsSelf: mem.IsSelf, Paid: paid[mem.ID].Format(4), Owed: owed[mem.ID].Format(4)})
+	}
+	return out, nil
 }
 
 // PutAsset 登记一个图片资产；deleted 为 true 表示已删除。
@@ -196,6 +267,7 @@ func (m *LedgerMemoryStore) get(accountID, tripID, id uuid.UUID) (LedgerResource
 
 func cloneLedger(r LedgerResource) LedgerResource {
 	r.AttachmentAssetIDs = append([]uuid.UUID{}, r.AttachmentAssetIDs...)
+	r.Splits = append([]LedgerSplit{}, r.Splits...)
 	return r
 }
 
@@ -258,6 +330,7 @@ func (m *LedgerMemoryStore) mutate(accountID, tripID, id uuid.UUID, fn func(r *L
 func (m *LedgerMemoryStore) Update(_ context.Context, accountID, tripID, id uuid.UUID, v LedgerValues, now time.Time) (LedgerResource, error) {
 	return m.mutate(accountID, tripID, id, func(r *LedgerResource) {
 		r.Amount, r.SplitCount, r.PersonalAmount = v.Amount, v.SplitCount, v.PersonalAmount
+		r.PayerMemberID, r.SplitMode, r.Splits = v.PayerMemberID, v.SplitMode, append([]LedgerSplit{}, v.Splits...)
 		r.CategoryID, r.OccurredOn, r.Notes = v.CategoryID, v.OccurredOn, v.Notes
 		r.RefundedEntryID = v.RefundedEntryID
 		r.AttachmentAssetIDs = append([]uuid.UUID{}, v.AttachmentAssetIDs...)
@@ -378,11 +451,7 @@ func (m *LedgerMemoryStore) Statistics(_ context.Context, accountID, tripID uuid
 	data := StatisticsData{Trip: info}
 	type agg struct{ expense, refund money.Decimal }
 	add := func(a *agg, r LedgerResource) {
-		amount := r.Amount
-		if r.Kind == KindExpense {
-			amount = r.PersonalAmount
-		}
-		d, err := money.ParseDecimal(amount)
+		d, err := money.ParseDecimal(r.PersonalAmount)
 		if err != nil {
 			return
 		}

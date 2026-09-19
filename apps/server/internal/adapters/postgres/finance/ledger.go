@@ -18,13 +18,14 @@ import (
 	"tripfolio/server/internal/foundation/write"
 	"tripfolio/server/internal/modules/finance"
 	"tripfolio/server/internal/modules/metadata"
+	"tripfolio/server/internal/modules/travel/member"
 	"tripfolio/server/internal/modules/travel/trip"
 )
 
 // 本文件实现 finance 模块账目与统计的 PostgreSQL 适配：金额 NUMERIC(18,4) 按旅行币种小数位转回规范字符串，
 // currency_code 从 trips 派生，票据引用存 ledger_attachments 并按 sort_order 还原顺序。
 
-func toLedgerResource(row dbgen.LedgerEntry, currency string, attachments []uuid.UUID) (finance.LedgerResource, error) {
+func toLedgerResource(row dbgen.LedgerEntry, currency string, attachments []uuid.UUID, splits []finance.LedgerSplit) (finance.LedgerResource, error) {
 	units, ok := metadata.MinorUnits(currency)
 	if !ok {
 		return finance.LedgerResource{}, fmt.Errorf("账目 %s 的旅行币种 %q 不受支持", row.ID, currency)
@@ -45,9 +46,12 @@ func toLedgerResource(row dbgen.LedgerEntry, currency string, attachments []uuid
 	if attachments == nil {
 		attachments = []uuid.UUID{}
 	}
+	if splits == nil {
+		splits = []finance.LedgerSplit{}
+	}
 	return finance.LedgerResource{
 		ID: row.ID, TripID: row.TripID, Kind: finance.LedgerKind(row.Kind), Amount: amount,
-		SplitCount: row.SplitCount, PersonalAmount: personal, CurrencyCode: currency,
+		SplitCount: row.SplitCount, PersonalAmount: personal, PayerMemberID: row.PayerMemberID, SplitMode: finance.SplitMode(row.SplitMode), Splits: splits, CurrencyCode: currency,
 		CategoryID: row.CategoryID, OccurredOn: types.DateOf(row.OccurredOn), Notes: row.Notes, RefundedEntryID: refunded,
 		AttachmentAssetIDs: attachments, Version: types.Version(row.Version),
 		CreatedAt: pgcore.UTC(row.CreatedAt), UpdatedAt: pgcore.UTC(row.UpdatedAt), DeletedAt: pgcore.UTCPtr(row.DeletedAt),
@@ -95,6 +99,30 @@ func ledgerTripInfo(ctx context.Context, q *dbgen.Queries, accountID, tripID uui
 	}, true, nil
 }
 
+// splitsFor 按账目分组读取分摊份额，保持 sort_order 顺序；金额按币种小数位转回规范字符串。
+func splitsFor(ctx context.Context, q *dbgen.Queries, accountID, tripID uuid.UUID, currency string, entryIDs []uuid.UUID) (map[uuid.UUID][]finance.LedgerSplit, error) {
+	out := map[uuid.UUID][]finance.LedgerSplit{}
+	if len(entryIDs) == 0 {
+		return out, nil
+	}
+	units, ok := metadata.MinorUnits(currency)
+	if !ok {
+		return nil, fmt.Errorf("旅行 %s 的币种 %q 不受支持", tripID, currency)
+	}
+	rows, err := q.ListLedgerSplits(ctx, dbgen.ListLedgerSplitsParams{AccountID: accountID, TripID: tripID, EntryIds: entryIDs})
+	if err != nil {
+		return nil, err
+	}
+	for _, r := range rows {
+		amount, err := money.FromStorage(r.Amount, units)
+		if err != nil {
+			return nil, fmt.Errorf("账目 %s 的份额 %q 无法按 %s 表示: %w", r.LedgerEntryID, r.Amount, currency, err)
+		}
+		out[r.LedgerEntryID] = append(out[r.LedgerEntryID], finance.LedgerSplit{MemberID: r.MemberID, Amount: amount})
+	}
+	return out, nil
+}
+
 // attachmentsFor 按账目分组读取票据资产 ID，保持 sort_order 顺序。
 func attachmentsFor(ctx context.Context, q *dbgen.Queries, accountID, tripID uuid.UUID, entryIDs []uuid.UUID) (map[uuid.UUID][]uuid.UUID, error) {
 	out := map[uuid.UUID][]uuid.UUID{}
@@ -137,7 +165,11 @@ func getLedgerEntry(ctx context.Context, q *dbgen.Queries, accountID, tripID, id
 	if err != nil {
 		return finance.LedgerResource{}, false, err
 	}
-	res, err := toLedgerResource(row, currency, att[id])
+	sp, err := splitsFor(ctx, q, accountID, tripID, currency, []uuid.UUID{id})
+	if err != nil {
+		return finance.LedgerResource{}, false, err
+	}
+	res, err := toLedgerResource(row, currency, att[id], sp[id])
 	return res, err == nil, err
 }
 
@@ -191,6 +223,10 @@ func (r *ledgerRepo) MissingAssets(ctx context.Context, accountID, tripID uuid.U
 	return missing, nil
 }
 
+func (r *ledgerRepo) ActiveMembers(ctx context.Context, accountID, tripID uuid.UUID) ([]member.Resource, error) {
+	return travelpg.ListActiveMembers(ctx, r.scope.Queries, accountID, tripID)
+}
+
 func (r *ledgerRepo) Get(ctx context.Context, accountID, tripID, id uuid.UUID) (finance.LedgerResource, bool, error) {
 	return getLedgerEntry(ctx, r.scope.Queries, accountID, tripID, id, false)
 }
@@ -217,10 +253,27 @@ func (r *ledgerRepo) replaceAttachments(ctx context.Context, accountID, tripID, 
 	})
 }
 
+// replaceSplits 整体替换分摊份额；存储为 NUMERIC 文本。
+func (r *ledgerRepo) replaceSplits(ctx context.Context, accountID, tripID, entryID uuid.UUID, splits []finance.LedgerSplit) error {
+	if err := r.scope.Queries.DeleteLedgerSplits(ctx, dbgen.DeleteLedgerSplitsParams{AccountID: accountID, TripID: tripID, LedgerEntryID: entryID}); err != nil {
+		return err
+	}
+	if len(splits) == 0 {
+		return nil
+	}
+	ids := make([]uuid.UUID, 0, len(splits))
+	amounts := make([]string, 0, len(splits))
+	for _, s := range splits {
+		ids = append(ids, s.MemberID)
+		amounts = append(amounts, s.Amount)
+	}
+	return r.scope.Queries.InsertLedgerSplits(ctx, dbgen.InsertLedgerSplitsParams{AccountID: accountID, TripID: tripID, LedgerEntryID: entryID, MemberIds: ids, Amounts: amounts})
+}
+
 func (r *ledgerRepo) Insert(ctx context.Context, accountID uuid.UUID, e finance.LedgerResource) (finance.LedgerResource, error) {
 	row, err := r.scope.Queries.InsertLedgerEntry(ctx, dbgen.InsertLedgerEntryParams{
 		ID: e.ID, AccountID: accountID, TripID: e.TripID, Kind: string(e.Kind), Amount: e.Amount,
-		SplitCount: e.SplitCount, PersonalAmount: e.PersonalAmount, CategoryID: e.CategoryID,
+		SplitCount: e.SplitCount, PersonalAmount: e.PersonalAmount, PayerMemberID: e.PayerMemberID, SplitMode: string(e.SplitMode), CategoryID: e.CategoryID,
 		OccurredOn: e.OccurredOn.Time(), Notes: e.Notes, RefundedEntryID: nullUUID(e.RefundedEntryID), CreatedAt: e.CreatedAt,
 	})
 	if err != nil {
@@ -229,13 +282,16 @@ func (r *ledgerRepo) Insert(ctx context.Context, accountID uuid.UUID, e finance.
 	if err := r.replaceAttachments(ctx, accountID, e.TripID, e.ID, e.AttachmentAssetIDs, e.CreatedAt); err != nil {
 		return finance.LedgerResource{}, err
 	}
-	return toLedgerResource(row, e.CurrencyCode, append([]uuid.UUID{}, e.AttachmentAssetIDs...))
+	if err := r.replaceSplits(ctx, accountID, e.TripID, e.ID, e.Splits); err != nil {
+		return finance.LedgerResource{}, err
+	}
+	return toLedgerResource(row, e.CurrencyCode, append([]uuid.UUID{}, e.AttachmentAssetIDs...), append([]finance.LedgerSplit{}, e.Splits...))
 }
 
 func (r *ledgerRepo) Update(ctx context.Context, accountID, tripID, id uuid.UUID, v finance.LedgerValues, now time.Time) (finance.LedgerResource, error) {
 	row, err := r.scope.Queries.UpdateLedgerEntry(ctx, dbgen.UpdateLedgerEntryParams{
 		AccountID: accountID, TripID: tripID, ID: id, Amount: v.Amount,
-		SplitCount: v.SplitCount, PersonalAmount: v.PersonalAmount, CategoryID: v.CategoryID, OccurredOn: v.OccurredOn.Time(),
+		SplitCount: v.SplitCount, PersonalAmount: v.PersonalAmount, PayerMemberID: v.PayerMemberID, SplitMode: string(v.SplitMode), CategoryID: v.CategoryID, OccurredOn: v.OccurredOn.Time(),
 		Notes: v.Notes, RefundedEntryID: nullUUID(v.RefundedEntryID), UpdatedAt: now,
 	})
 	if err != nil {
@@ -244,11 +300,14 @@ func (r *ledgerRepo) Update(ctx context.Context, accountID, tripID, id uuid.UUID
 	if err := r.replaceAttachments(ctx, accountID, tripID, id, v.AttachmentAssetIDs, now); err != nil {
 		return finance.LedgerResource{}, err
 	}
+	if err := r.replaceSplits(ctx, accountID, tripID, id, v.Splits); err != nil {
+		return finance.LedgerResource{}, err
+	}
 	info, _, err := ledgerTripInfo(ctx, r.scope.Queries, accountID, tripID)
 	if err != nil {
 		return finance.LedgerResource{}, err
 	}
-	return toLedgerResource(row, info.CurrencyCode, append([]uuid.UUID{}, v.AttachmentAssetIDs...))
+	return toLedgerResource(row, info.CurrencyCode, append([]uuid.UUID{}, v.AttachmentAssetIDs...), append([]finance.LedgerSplit{}, v.Splits...))
 }
 
 func (r *ledgerRepo) SoftDelete(ctx context.Context, accountID, tripID, id uuid.UUID, now time.Time) (finance.LedgerResource, error) {
@@ -264,7 +323,11 @@ func (r *ledgerRepo) SoftDelete(ctx context.Context, accountID, tripID, id uuid.
 	if err != nil {
 		return finance.LedgerResource{}, err
 	}
-	return toLedgerResource(row, info.CurrencyCode, att[id])
+	sp, err := splitsFor(ctx, r.scope.Queries, accountID, tripID, info.CurrencyCode, []uuid.UUID{id})
+	if err != nil {
+		return finance.LedgerResource{}, err
+	}
+	return toLedgerResource(row, info.CurrencyCode, att[id], sp[id])
 }
 
 func (r *ledgerRepo) LinkedRefundsForUpdate(ctx context.Context, accountID, tripID, expenseID uuid.UUID) ([]finance.LedgerResource, error) {
@@ -287,9 +350,13 @@ func (r *ledgerRepo) LinkedRefundsForUpdate(ctx context.Context, accountID, trip
 	if err != nil {
 		return nil, err
 	}
+	sp, err := splitsFor(ctx, r.scope.Queries, accountID, tripID, info.CurrencyCode, ids)
+	if err != nil {
+		return nil, err
+	}
 	out := make([]finance.LedgerResource, 0, len(rows))
 	for _, row := range rows {
-		res, err := toLedgerResource(row, info.CurrencyCode, att[row.ID])
+		res, err := toLedgerResource(row, info.CurrencyCode, att[row.ID], sp[row.ID])
 		if err != nil {
 			return nil, err
 		}
@@ -351,13 +418,34 @@ func (r *LedgerReader) List(ctx context.Context, accountID, tripID uuid.UUID, q 
 	if err != nil {
 		return nil, err
 	}
+	currency := ""
+	if len(rows) > 0 {
+		currency = rows[0].CurrencyCode
+	}
+	sp, err := splitsFor(ctx, r.q, accountID, tripID, currency, ids)
+	if err != nil {
+		return nil, err
+	}
 	out := make([]finance.LedgerResource, 0, len(rows))
 	for _, row := range rows {
-		res, err := toLedgerResource(row.LedgerEntry, row.CurrencyCode, att[row.LedgerEntry.ID])
+		res, err := toLedgerResource(row.LedgerEntry, row.CurrencyCode, att[row.LedgerEntry.ID], sp[row.LedgerEntry.ID])
 		if err != nil {
 			return nil, err
 		}
 		out = append(out, res)
+	}
+	return out, nil
+}
+
+// Settlement 实现 finance.LedgerReader：每位有效成员的已付与应付聚合。
+func (r *LedgerReader) Settlement(ctx context.Context, accountID, tripID uuid.UUID) ([]finance.MemberAggregate, error) {
+	rows, err := r.q.TripMemberSettlement(ctx, dbgen.TripMemberSettlementParams{AccountID: accountID, TripID: tripID})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]finance.MemberAggregate, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, finance.MemberAggregate{MemberID: row.MemberID, Name: row.Name, IsSelf: row.IsSelf, Paid: row.PaidAmount, Owed: row.OwedAmount})
 	}
 	return out, nil
 }

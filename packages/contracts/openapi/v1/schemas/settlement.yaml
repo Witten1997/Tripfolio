@@ -1,0 +1,59 @@
+MemberSettlement:
+  type: object
+  description: 单个成员的结算：paid_amount 已支付（作为付款人的支出 − 作为收款人的退款）、owed_amount 应承担（支出份额 − 退款份额）、net_amount = paid − owed，正数应收、负数应付
+  required: [member_id, name, is_self, paid_amount, owed_amount, net_amount]
+  properties:
+    member_id:
+      type: string
+      format: uuid
+    name:
+      type: string
+    is_self:
+      type: boolean
+    paid_amount:
+      $ref: ./common.yaml#/SignedMoney
+    owed_amount:
+      $ref: ./common.yaml#/SignedMoney
+    net_amount:
+      $ref: ./common.yaml#/SignedMoney
+
+SettlementTransfer:
+  type: object
+  description: 一笔建议转账：from 向 to 支付 amount
+  required: [from_member_id, to_member_id, amount]
+  properties:
+    from_member_id:
+      type: string
+      format: uuid
+    to_member_id:
+      type: string
+      format: uuid
+    amount:
+      $ref: ./common.yaml#/Money
+
+TripSettlement:
+  type: object
+  description: 旅行成员结算（接口设计 3.8 TripSettlement）；不受筛选影响，只算有效账目与有效成员
+  x-go-type: finance.Settlement
+  x-go-type-import:
+    path: tripfolio/server/internal/modules/finance
+  required: [currency_code, members, transfers]
+  properties:
+    currency_code:
+      $ref: ./common.yaml#/CurrencyCode
+    members:
+      type: array
+      items:
+        $ref: '#/MemberSettlement'
+    transfers:
+      type: array
+      description: 最少转账方案，净额为负者向净额为正者转账
+      items:
+        $ref: '#/SettlementTransfer'
+
+TripSettlementResponse:
+  type: object
+  required: [data]
+  properties:
+    data:
+      $ref: '#/TripSettlement'
