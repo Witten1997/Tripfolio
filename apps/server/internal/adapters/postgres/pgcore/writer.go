@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/riverqueue/river"
 
@@ -20,6 +21,12 @@ import (
 )
 
 // Writer 实现总览 4.1 的统一写事务：账号锁 → 收据去重 → 业务写入 → 变更日志 → 收据 → River 入队 → 提交。
+//
+// 数据库通常在远端，每次往返都是可感知的延迟，因此固定阶段尽量合并：
+//   - BEGIN、账号锁与收据查询放进同一条流水线，一次往返；
+//   - 变更日志、序号推进与收据写入合成一条语句，没有后台任务时与 COMMIT 同批发送，一次往返。
+//
+// 业务函数与 reload 各自的查询仍按需往返，由各模块自行合并。
 type Writer struct {
 	pool   *pgxpool.Pool
 	queue  *river.Client[pgx.Tx]
@@ -97,46 +104,117 @@ func (s *TxScope) ChangedFieldsSince(ctx context.Context, accountID uuid.UUID, e
 	return out, true, nil
 }
 
+const lockAndReceiptQuery = `SELECT s.last_seq, a.status FROM account_sync_state s
+JOIN accounts a ON a.id = s.account_id WHERE s.account_id = $1 FOR UPDATE OF s`
+
+const receiptLookupQuery = `SELECT request_hash, result FROM mutation_receipts WHERE account_id = $1 AND operation_id = $2`
+
+// finalizeQuery 一次写入本次事务的全部变更日志、推进账号序号并保存收据。
+// 变更以 JSON 数组传入，按顺序分配 last_seq+1 起的连续序列；没有变更时只写收据。
+const finalizeQuery = `
+WITH input AS (
+    SELECT value, ordinality FROM jsonb_array_elements($6::jsonb) WITH ORDINALITY AS t(value, ordinality)
+), changes AS (
+    INSERT INTO sync_changes (
+        account_id, seq, batch_id, batch_end_seq, entity_type, entity_id, trip_id,
+        entity_version, change_kind, schema_version, snapshot, changed_fields, requires_snapshot, created_at
+    )
+    SELECT $1, $2 + input.ordinality, $3, $2 + $4, input.value->>'entity_type',
+           (input.value->>'entity_id')::uuid, (input.value->>'trip_id')::uuid,
+           (input.value->>'version')::bigint, input.value->>'kind', 1,
+           CASE WHEN input.value->>'kind' = 'upsert' THEN input.value->'snapshot' ELSE NULL END,
+           CASE WHEN input.value->>'kind' = 'upsert' THEN
+               ARRAY(SELECT jsonb_array_elements_text(input.value->'changed_fields'))
+           ELSE NULL END,
+           (input.value->>'requires_snapshot')::boolean, $5
+    FROM input
+    RETURNING seq
+), advanced AS (
+    UPDATE account_sync_state SET last_seq = $2 + $4, updated_at = $5
+    WHERE account_id = $1 AND $4 > 0 AND (SELECT count(*) FROM changes) = $4
+    RETURNING account_id
+)
+INSERT INTO mutation_receipts (account_id, operation_id, operation_type, request_hash, result, created_at)
+SELECT $1, $3, $7, $8, $9, $5
+WHERE $4 = 0 OR EXISTS (SELECT 1 FROM advanced)
+RETURNING operation_id`
+
+type changeEntry struct {
+	EntityType       string           `json:"entity_type"`
+	EntityID         uuid.UUID        `json:"entity_id"`
+	TripID           *uuid.UUID       `json:"trip_id"`
+	Version          int64            `json:"version"`
+	Kind             write.ChangeKind `json:"kind"`
+	Snapshot         any              `json:"snapshot"`
+	ChangedFields    []string         `json:"changed_fields"`
+	RequiresSnapshot bool             `json:"requires_snapshot"`
+}
+
+func encodeChanges(changes []write.Change) ([]byte, error) {
+	entries := make([]changeEntry, 0, len(changes))
+	for _, c := range changes {
+		e := changeEntry{
+			EntityType: c.EntityType, EntityID: c.EntityID, TripID: c.TripID,
+			Version: c.Version, Kind: c.Kind, RequiresSnapshot: c.RequiresSnapshot,
+		}
+		if c.Kind == write.ChangeUpsert {
+			e.Snapshot = c.Snapshot
+			e.ChangedFields = c.ChangedFields
+			if e.ChangedFields == nil {
+				e.ChangedFields = []string{}
+			}
+		}
+		entries = append(entries, e)
+	}
+	payload, err := json.Marshal(entries)
+	if err != nil {
+		return nil, fmt.Errorf("序列化变更日志: %w", err)
+	}
+	return payload, nil
+}
+
 // Run 执行一次写事务。fn 在账号锁内执行业务写入；reload 读取 primary 的当前资源填充 Data。
 func (w *Writer) Run(ctx context.Context, req write.Request, fn func(ctx context.Context, scope *TxScope) error, reload func(ctx context.Context, scope *TxScope) (any, error)) (write.Result, error) {
 	started := time.Now()
-	tx, err := w.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.ReadCommitted})
-	write.RecordTiming(ctx, "pool_begin", time.Since(started))
+	conn, err := w.pool.Acquire(ctx)
+	write.RecordTiming(ctx, "pool_acquire", time.Since(started))
 	if err != nil {
 		return write.Result{}, apperr.Dependency(err)
 	}
-	defer func() { _ = tx.Rollback(ctx) }()
+	defer conn.Release()
+	tx := &connTx{conn: conn}
+	defer func() {
+		if !tx.closed {
+			_ = tx.Rollback(ctx)
+		}
+	}()
 
-	q := dbgen.New(tx)
-	now := w.clock.Now()
+	// BEGIN、账号锁与收据查询一次往返；账号锁必须是事务第一条语句（总览 4.1）。
+	started = time.Now()
 	var lock dbgen.LockAccountForWriteRow
 	var receipt dbgen.MutationReceipt
 	var receiptFound bool
-	fastPath := req.SingleChangeFastPath || req.BatchChangesFastPath
-	started = time.Now()
-	if fastPath {
-		batch := &pgx.Batch{}
-		batch.Queue(`SELECT s.last_seq, a.status FROM account_sync_state s
-JOIN accounts a ON a.id = s.account_id WHERE s.account_id = $1 FOR UPDATE OF s`, req.AccountID)
-		batch.Queue(`SELECT request_hash, result FROM mutation_receipts WHERE account_id = $1 AND operation_id = $2`, req.AccountID, req.OperationID)
-		results := tx.SendBatch(ctx, batch)
+	batch := &pgx.Batch{}
+	batch.Queue("BEGIN ISOLATION LEVEL READ COMMITTED")
+	batch.Queue(lockAndReceiptQuery, req.AccountID)
+	batch.Queue(receiptLookupQuery, req.AccountID, req.OperationID)
+	results := conn.SendBatch(ctx, batch)
+	_, err = results.Exec()
+	if err == nil {
 		err = results.QueryRow().Scan(&lock.LastSeq, &lock.Status)
-		if err == nil {
-			lookupErr := results.QueryRow().Scan(&receipt.RequestHash, &receipt.Result)
-			if lookupErr != nil && !errors.Is(lookupErr, pgx.ErrNoRows) {
-				err = lookupErr
-			} else {
-				receiptFound = lookupErr == nil
-			}
-		}
-		if closeErr := results.Close(); err == nil {
-			err = closeErr
-		}
-		write.RecordTiming(ctx, "account_lock_receipt", time.Since(started))
-	} else {
-		lock, err = q.LockAccountForWrite(ctx, req.AccountID)
-		write.RecordTiming(ctx, "account_lock", time.Since(started))
 	}
+	if err == nil {
+		lookupErr := results.QueryRow().Scan(&receipt.RequestHash, &receipt.Result)
+		if lookupErr != nil && !errors.Is(lookupErr, pgx.ErrNoRows) {
+			err = lookupErr
+		} else {
+			receiptFound = lookupErr == nil
+		}
+	}
+	if closeErr := results.Close(); err == nil {
+		err = closeErr
+	}
+	write.RecordTiming(ctx, "begin_lock_receipt", time.Since(started))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return write.Result{}, apperr.Unauthorized("SESSION_EXPIRED", "")
@@ -146,18 +224,10 @@ JOIN accounts a ON a.id = s.account_id WHERE s.account_id = $1 FOR UPDATE OF s`,
 	if lock.Status != "active" {
 		return write.Result{}, apperr.Forbidden("ACCOUNT_DELETING", "账号正在注销")
 	}
-	scope := &TxScope{Tx: tx, Queries: q, AccountID: req.AccountID, Now: now}
+	now := w.clock.Now()
+	scope := &TxScope{Tx: tx, Queries: dbgen.New(tx), AccountID: req.AccountID, Now: now}
 
 	// 幂等：已成功的相同操作直接重放
-	if !fastPath {
-		started = time.Now()
-		receipt, err = q.GetMutationReceipt(ctx, dbgen.GetMutationReceiptParams{AccountID: req.AccountID, OperationID: req.OperationID})
-		write.RecordTiming(ctx, "receipt_lookup", time.Since(started))
-		receiptFound = err == nil
-		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-			return write.Result{}, apperr.Internal(err)
-		}
-	}
 	if receiptFound {
 		if string(receipt.RequestHash) != string(req.Fingerprint[:]) {
 			return write.Result{}, apperr.Conflicted("IDEMPOTENCY_CONFLICT", "同一操作编号携带了不同的内容")
@@ -210,45 +280,9 @@ JOIN accounts a ON a.id = s.account_id WHERE s.account_id = $1 FOR UPDATE OF s`,
 	if err != nil {
 		return write.Result{}, apperr.Internal(err)
 	}
-	if req.SingleChangeFastPath && len(scope.changes) == 1 && len(scope.jobs) == 0 {
-		started = time.Now()
-		err = finalizeSingleChange(ctx, tx, req, lock.LastSeq+1, scope.changes[0], stored, now)
-		write.RecordTiming(ctx, "sync_finalize", time.Since(started))
-		if err != nil {
-			return write.Result{}, apperr.Internal(err)
-		}
-	} else if req.BatchChangesFastPath && len(scope.changes) > 0 && len(scope.jobs) == 0 {
-		started = time.Now()
-		err = finalizeBatchChanges(ctx, tx, req, lock.LastSeq, scope.changes, stored, now)
-		write.RecordTiming(ctx, "sync_finalize", time.Since(started))
-		if err != nil {
-			return write.Result{}, apperr.Internal(err)
-		}
-	} else {
-		// 变更日志：连续序列，同一批次
-		started = time.Now()
-		endSeq, err := RecordChanges(ctx, q, req.AccountID, req.OperationID, lock.LastSeq, scope.changes, now)
-		write.RecordTiming(ctx, "sync_changes", time.Since(started))
-		if err != nil {
-			return write.Result{}, apperr.Internal(err)
-		}
-		if endSeq != lock.LastSeq {
-			started = time.Now()
-			err = q.AdvanceAccountSeq(ctx, dbgen.AdvanceAccountSeqParams{AccountID: req.AccountID, LastSeq: endSeq, UpdatedAt: now})
-			write.RecordTiming(ctx, "advance_seq", time.Since(started))
-			if err != nil {
-				return write.Result{}, apperr.Internal(err)
-			}
-		}
-		started = time.Now()
-		err = q.InsertMutationReceipt(ctx, dbgen.InsertMutationReceiptParams{
-			AccountID: req.AccountID, OperationID: req.OperationID, OperationType: req.OperationType,
-			RequestHash: req.Fingerprint[:], Result: stored, CreatedAt: now,
-		})
-		write.RecordTiming(ctx, "receipt_insert", time.Since(started))
-		if err != nil {
-			return write.Result{}, apperr.Internal(err)
-		}
+	payload, err := encodeChanges(scope.changes)
+	if err != nil {
+		return write.Result{}, apperr.Internal(err)
 	}
 
 	if len(scope.jobs) > 0 {
@@ -263,11 +297,15 @@ JOIN accounts a ON a.id = s.account_id WHERE s.account_id = $1 FOR UPDATE OF s`,
 			}
 			params = append(params, river.InsertManyParams{Args: args})
 		}
-		if _, err := w.queue.InsertManyTx(ctx, tx, params); err != nil {
+		started = time.Now()
+		_, err := w.queue.InsertManyTx(ctx, tx, params)
+		write.RecordTiming(ctx, "enqueue", time.Since(started))
+		if err != nil {
 			return write.Result{}, apperr.Internal(err)
 		}
 	}
 
+	// reload 在提交前读取，结果与提交后一致：同一事务内没有其他写入者。
 	if reload != nil {
 		started = time.Now()
 		data, err := reload(ctx, scope)
@@ -277,127 +315,42 @@ JOIN accounts a ON a.id = s.account_id WHERE s.account_id = $1 FOR UPDATE OF s`,
 		}
 		result.Data = data
 	}
+
+	// 变更日志、序号、收据与 COMMIT 同批发送：语句失败时 COMMIT 在出错事务里会被服务端当作 ROLLBACK 处理。
 	started = time.Now()
-	err = tx.Commit(ctx)
-	write.RecordTiming(ctx, "commit", time.Since(started))
+	final := &pgx.Batch{}
+	final.Queue(finalizeQuery, req.AccountID, lock.LastSeq, req.OperationID, len(scope.changes), now,
+		payload, req.OperationType, req.Fingerprint[:], stored)
+	final.Queue("COMMIT")
+	results = conn.SendBatch(ctx, final)
+	var operationID uuid.UUID
+	err = results.QueryRow().Scan(&operationID)
+	if err == nil && operationID != req.OperationID {
+		err = fmt.Errorf("操作收据编号不匹配: %s", operationID)
+	}
+	if err == nil {
+		var tag pgconn.CommandTag
+		tag, err = results.Exec()
+		if err == nil && tag.String() == "ROLLBACK" {
+			err = pgx.ErrTxCommitRollback
+		}
+	}
+	closeErr := results.Close()
+	if err == nil {
+		err = closeErr
+	}
+	// 批次已把事务带到终态（提交或服务端回滚），后续不再发送回滚语句。
+	if err == nil || errors.Is(err, pgx.ErrTxCommitRollback) || conn.Conn().PgConn().TxStatus() == 'I' {
+		tx.markClosed()
+	}
+	write.RecordTiming(ctx, "finalize_commit", time.Since(started))
 	if err != nil {
-		return write.Result{}, apperr.Dependency(err)
+		if errors.Is(err, pgx.ErrTxCommitRollback) {
+			return write.Result{}, apperr.Dependency(err)
+		}
+		return write.Result{}, apperr.Internal(err)
 	}
 	return result, nil
-}
-
-func finalizeSingleChange(ctx context.Context, tx pgx.Tx, req write.Request, seq int64, change write.Change, result []byte, now time.Time) error {
-	var snapshot []byte
-	var fields []string
-	if change.Kind == write.ChangeUpsert {
-		var err error
-		snapshot, err = json.Marshal(change.Snapshot)
-		if err != nil {
-			return fmt.Errorf("序列化变更快照: %w", err)
-		}
-		fields = change.ChangedFields
-		if fields == nil {
-			fields = []string{}
-		}
-	}
-	var tripID uuid.NullUUID
-	if change.TripID != nil {
-		tripID = uuid.NullUUID{UUID: *change.TripID, Valid: true}
-	}
-	const query = `
-WITH change AS (
-    INSERT INTO sync_changes (
-        account_id, seq, batch_id, batch_end_seq, entity_type, entity_id, trip_id,
-        entity_version, change_kind, schema_version, snapshot, changed_fields, requires_snapshot, created_at
-    ) VALUES ($1, $2, $3, $2, $4, $5, $6, $7, $8, 1, $9, $10, $11, $12)
-    RETURNING seq
-), advanced AS (
-    UPDATE account_sync_state SET last_seq = $2, updated_at = $12
-    WHERE account_id = $1 AND EXISTS (SELECT 1 FROM change)
-    RETURNING account_id
-)
-INSERT INTO mutation_receipts (account_id, operation_id, operation_type, request_hash, result, created_at)
-SELECT $1, $3, $13, $14, $15, $12 FROM advanced
-RETURNING operation_id`
-	var operationID uuid.UUID
-	err := tx.QueryRow(ctx, query,
-		req.AccountID, seq, req.OperationID, change.EntityType, change.EntityID, tripID,
-		change.Version, string(change.Kind), snapshot, fields, change.RequiresSnapshot, now,
-		req.OperationType, req.Fingerprint[:], result,
-	).Scan(&operationID)
-	if err != nil {
-		return err
-	}
-	if operationID != req.OperationID {
-		return fmt.Errorf("操作收据编号不匹配: %s", operationID)
-	}
-	return nil
-}
-
-func finalizeBatchChanges(ctx context.Context, tx pgx.Tx, req write.Request, lastSeq int64, changes []write.Change, result []byte, now time.Time) error {
-	type entry struct {
-		EntityType       string           `json:"entity_type"`
-		EntityID         uuid.UUID        `json:"entity_id"`
-		TripID           *uuid.UUID       `json:"trip_id"`
-		Version          int64            `json:"version"`
-		Kind             write.ChangeKind `json:"kind"`
-		Snapshot         any              `json:"snapshot"`
-		ChangedFields    []string         `json:"changed_fields"`
-		RequiresSnapshot bool             `json:"requires_snapshot"`
-	}
-	entries := make([]entry, 0, len(changes))
-	for _, change := range changes {
-		e := entry{
-			EntityType: change.EntityType, EntityID: change.EntityID, TripID: change.TripID,
-			Version: change.Version, Kind: change.Kind, RequiresSnapshot: change.RequiresSnapshot,
-		}
-		if change.Kind == write.ChangeUpsert {
-			e.Snapshot = change.Snapshot
-			e.ChangedFields = change.ChangedFields
-			if e.ChangedFields == nil {
-				e.ChangedFields = []string{}
-			}
-		}
-		entries = append(entries, e)
-	}
-	payload, err := json.Marshal(entries)
-	if err != nil {
-		return fmt.Errorf("序列化批量变更: %w", err)
-	}
-	const query = `
-WITH changes AS (
-    INSERT INTO sync_changes (
-        account_id, seq, batch_id, batch_end_seq, entity_type, entity_id, trip_id,
-        entity_version, change_kind, schema_version, snapshot, changed_fields, requires_snapshot, created_at
-    )
-    SELECT $1, $2 + input.ordinality, $3, $2 + $4, input.value->>'entity_type',
-           (input.value->>'entity_id')::uuid, (input.value->>'trip_id')::uuid,
-           (input.value->>'version')::bigint, input.value->>'kind', 1,
-           input.value->'snapshot',
-           CASE WHEN input.value->>'kind' = 'upsert' THEN
-               ARRAY(SELECT jsonb_array_elements_text(input.value->'changed_fields'))
-           ELSE NULL END,
-           (input.value->>'requires_snapshot')::boolean, $5
-    FROM jsonb_array_elements($6::jsonb) WITH ORDINALITY AS input(value, ordinality)
-    RETURNING seq
-), advanced AS (
-    UPDATE account_sync_state SET last_seq = $2 + $4, updated_at = $5
-    WHERE account_id = $1 AND (SELECT count(*) FROM changes) = $4
-    RETURNING account_id
-)
-INSERT INTO mutation_receipts (account_id, operation_id, operation_type, request_hash, result, created_at)
-SELECT $1, $3, $7, $8, $9, $5 FROM advanced
-RETURNING operation_id`
-	var operationID uuid.UUID
-	err = tx.QueryRow(ctx, query, req.AccountID, lastSeq, req.OperationID, len(changes), now,
-		payload, req.OperationType, req.Fingerprint[:], result).Scan(&operationID)
-	if err != nil {
-		return err
-	}
-	if operationID != req.OperationID {
-		return fmt.Errorf("操作收据编号不匹配: %s", operationID)
-	}
-	return nil
 }
 
 // RecordChanges 为 changes 分配从 lastSeq+1 起的连续序列并写入 sync_changes；返回新的最后序列。

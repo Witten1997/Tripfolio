@@ -75,8 +75,7 @@ func (s *Service) CreateBatch(ctx context.Context, a actor.Actor, operationID, t
 
 	req := write.Request{
 		AccountID: a.AccountID, OperationID: operationID, OperationType: "packing.batch_create",
-		Fingerprint:          write.Fingerprint("packing.batch_create", tripID.String(), nil, cmd),
-		BatchChangesFastPath: true,
+		Fingerprint: write.Fingerprint("packing.batch_create", tripID.String(), nil, cmd),
 	}
 	res, err := s.uow.Run(ctx, req, func(ctx context.Context, scope write.Scope, repo Repo) error {
 		now := s.clock.Now()

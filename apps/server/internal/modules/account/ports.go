@@ -20,6 +20,8 @@ type Store interface {
 
 	CreateSession(ctx context.Context, s Session) (Session, error)
 	SessionByID(ctx context.Context, id uuid.UUID) (Session, bool, error)
+	// SessionWithAccount 一次读取会话及其账号，供请求期鉴权使用；会话不存在返回 found=false。
+	SessionWithAccount(ctx context.Context, id uuid.UUID) (Session, Account, bool, error)
 	// RotateSessionTx 在行锁下执行 fn，fn 返回要写回的会话；用于刷新令牌。
 	RotateSessionTx(ctx context.Context, id uuid.UUID, fn func(s Session) (SessionRotation, error)) (Session, error)
 	TouchSession(ctx context.Context, id uuid.UUID, now time.Time) error

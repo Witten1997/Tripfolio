@@ -119,6 +119,53 @@ func (q *Queries) GetSessionForUpdate(ctx context.Context, id uuid.UUID) (Accoun
 	return i, err
 }
 
+const getSessionWithAccount = `-- name: GetSessionWithAccount :one
+SELECT s.id, s.account_id, s.client_kind, s.device_id, s.device_name, s.refresh_token_hash, s.previous_refresh_token_hash, s.previous_rotated_at, s.csrf_token_hash, s.reauthenticated_at, s.created_at, s.last_seen_at, s.expires_at, s.revoked_at, a.id, a.email, a.email_key, a.email_verified_at, a.password_hash, a.password_changed_at, a.nickname, a.avatar_asset_id, a.default_timezone, a.status, a.version, a.created_at, a.updated_at
+FROM account_sessions s
+JOIN accounts a ON a.id = s.account_id
+WHERE s.id = $1
+`
+
+type GetSessionWithAccountRow struct {
+	AccountSession AccountSession
+	Account        Account
+}
+
+func (q *Queries) GetSessionWithAccount(ctx context.Context, id uuid.UUID) (GetSessionWithAccountRow, error) {
+	row := q.db.QueryRow(ctx, getSessionWithAccount, id)
+	var i GetSessionWithAccountRow
+	err := row.Scan(
+		&i.AccountSession.ID,
+		&i.AccountSession.AccountID,
+		&i.AccountSession.ClientKind,
+		&i.AccountSession.DeviceID,
+		&i.AccountSession.DeviceName,
+		&i.AccountSession.RefreshTokenHash,
+		&i.AccountSession.PreviousRefreshTokenHash,
+		&i.AccountSession.PreviousRotatedAt,
+		&i.AccountSession.CsrfTokenHash,
+		&i.AccountSession.ReauthenticatedAt,
+		&i.AccountSession.CreatedAt,
+		&i.AccountSession.LastSeenAt,
+		&i.AccountSession.ExpiresAt,
+		&i.AccountSession.RevokedAt,
+		&i.Account.ID,
+		&i.Account.Email,
+		&i.Account.EmailKey,
+		&i.Account.EmailVerifiedAt,
+		&i.Account.PasswordHash,
+		&i.Account.PasswordChangedAt,
+		&i.Account.Nickname,
+		&i.Account.AvatarAssetID,
+		&i.Account.DefaultTimezone,
+		&i.Account.Status,
+		&i.Account.Version,
+		&i.Account.CreatedAt,
+		&i.Account.UpdatedAt,
+	)
+	return i, err
+}
+
 const listActiveSessions = `-- name: ListActiveSessions :many
 SELECT id, account_id, client_kind, device_id, device_name, refresh_token_hash, previous_refresh_token_hash, previous_rotated_at, csrf_token_hash, reauthenticated_at, created_at, last_seen_at, expires_at, revoked_at FROM account_sessions
 WHERE account_id = $1 AND revoked_at IS NULL AND expires_at > $2

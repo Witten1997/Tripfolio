@@ -105,9 +105,6 @@ type Request struct {
 	OperationID   uuid.UUID
 	OperationType string
 	Fingerprint   [32]byte
-	// SingleChangeFastPath combines the lock/receipt read and the final writes for a one-change transaction.
-	SingleChangeFastPath bool
-	BatchChangesFastPath bool
 }
 
 // Fingerprint 计算规范化指纹（接口设计 1.2）：操作类型、目标标识、基线版本与命令结构体的确定性 JSON。

@@ -57,3 +57,9 @@ WHERE account_id = $1 AND id <> $2 AND revoked_at IS NULL;
 SELECT * FROM account_sessions
 WHERE account_id = $1 AND revoked_at IS NULL AND expires_at > $2
 ORDER BY created_at DESC;
+
+-- name: GetSessionWithAccount :one
+SELECT sqlc.embed(s), sqlc.embed(a)
+FROM account_sessions s
+JOIN accounts a ON a.id = s.account_id
+WHERE s.id = $1;

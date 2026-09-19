@@ -159,6 +159,17 @@ func (s *Store) SessionByID(ctx context.Context, id uuid.UUID) (account.Session,
 	return toSession(row), true, nil
 }
 
+func (s *Store) SessionWithAccount(ctx context.Context, id uuid.UUID) (account.Session, account.Account, bool, error) {
+	row, err := s.q.GetSessionWithAccount(ctx, id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return account.Session{}, account.Account{}, false, nil
+	}
+	if err != nil {
+		return account.Session{}, account.Account{}, false, err
+	}
+	return toSession(row.AccountSession), toAccount(row.Account), true, nil
+}
+
 func (s *Store) RotateSessionTx(ctx context.Context, id uuid.UUID, fn func(account.Session) (account.SessionRotation, error)) (account.Session, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {

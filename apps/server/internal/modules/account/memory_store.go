@@ -109,6 +109,20 @@ func (m *MemoryStore) SessionByID(_ context.Context, id uuid.UUID) (Session, boo
 	return s, ok, nil
 }
 
+func (m *MemoryStore) SessionWithAccount(_ context.Context, id uuid.UUID) (Session, Account, bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	s, ok := m.sessions[id]
+	if !ok {
+		return Session{}, Account{}, false, nil
+	}
+	a, ok := m.accounts[s.AccountID]
+	if !ok {
+		return Session{}, Account{}, false, nil
+	}
+	return s, a, true, nil
+}
+
 func (m *MemoryStore) RotateSessionTx(_ context.Context, id uuid.UUID, fn func(Session) (SessionRotation, error)) (Session, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

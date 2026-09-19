@@ -330,6 +330,7 @@ func (s *IdentityService) ResetPassword(ctx context.Context, challengeID uuid.UU
 	if err := s.store.RevokeAccountSessions(ctx, acc.ID, now); err != nil {
 		return apperr.Internal(err)
 	}
+	s.sessions.InvalidateAccount(acc.ID)
 	return nil
 }
 
@@ -349,6 +350,7 @@ func (s *IdentityService) Reauthenticate(ctx context.Context, a actor.Actor, pas
 	if err := s.store.SetReauthenticated(ctx, a.SessionID, s.clock.Now()); err != nil {
 		return apperr.Internal(err)
 	}
+	s.sessions.InvalidateSession(a.SessionID)
 	return nil
 }
 
@@ -379,6 +381,7 @@ func (s *IdentityService) ChangePassword(ctx context.Context, a actor.Actor, cur
 	if err := s.store.RevokeOtherSessions(ctx, a.AccountID, a.SessionID, now); err != nil {
 		return apperr.Internal(err)
 	}
+	s.sessions.InvalidateAccount(a.AccountID)
 	return nil
 }
 

@@ -18,8 +18,13 @@ func NewPool(ctx context.Context, databaseURL string, maxConns int32) (*pgxpool.
 		return nil, fmt.Errorf("解析数据库连接串: %w", err)
 	}
 	cfg.MaxConns = maxConns
+	// 数据库通常在远端（如 Supabase），新建连接要经历 TCP、TLS 与认证多次往返，落在请求路径上就是整秒的延迟。
+	// 常驻至少 2 条连接并让健康检查在后台补足，使低频访问时请求也总能拿到热连接。
+	cfg.MinConns = min(2, maxConns)
 	cfg.MaxConnLifetime = time.Hour
+	cfg.MaxConnLifetimeJitter = 10 * time.Minute
 	cfg.MaxConnIdleTime = 15 * time.Minute
+	cfg.HealthCheckPeriod = 30 * time.Second
 	params := cfg.ConnConfig.RuntimeParams
 	params["application_name"] = "tripfolio"
 	params["lock_timeout"] = "5s"

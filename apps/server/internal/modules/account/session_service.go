@@ -21,12 +21,19 @@ type SessionService struct {
 	tokens *security.TokenIssuer
 	clock  clock.Clock
 	policy Policy
+	cache  *authCache
 }
 
 // NewSessionService 创建服务。
 func NewSessionService(store Store, tokens *security.TokenIssuer, clk clock.Clock, policy Policy) *SessionService {
-	return &SessionService{store: store, tokens: tokens, clock: clk, policy: policy}
+	return &SessionService{store: store, tokens: tokens, clock: clk, policy: policy, cache: newAuthCache(policy.AuthCacheTTL)}
 }
+
+// InvalidateSession 使指定会话的鉴权缓存失效；会话状态被改写后调用。
+func (s *SessionService) InvalidateSession(id uuid.UUID) { s.cache.remove(id) }
+
+// InvalidateAccount 使账号下全部会话的鉴权缓存失效；批量撤销会话或账号状态变化后调用。
+func (s *SessionService) InvalidateAccount(accountID uuid.UUID) { s.cache.removeAccount(accountID) }
 
 // Open 创建会话并签发令牌对。网页会话同时签发 CSRF 令牌。
 func (s *SessionService) Open(ctx context.Context, accountID uuid.UUID, client ClientInfo) (Tokens, error) {
@@ -129,6 +136,7 @@ func (s *SessionService) Refresh(ctx context.Context, rawRefresh string) (AuthRe
 	if err != nil {
 		if reuse {
 			_ = s.store.RevokeSession(ctx, sessionID, now)
+			s.cache.remove(sessionID)
 		}
 		if _, ok := apperr.As(err); ok {
 			return AuthResult{}, err
@@ -154,33 +162,43 @@ func (s *SessionService) Refresh(ctx context.Context, rawRefresh string) (AuthRe
 }
 
 // Authenticate 校验访问令牌并核对会话与账号状态，返回 Actor。
+// 令牌本身有签名，解析不查库；会话与账号状态优先取进程内缓存，未命中时用一条 JOIN 查询读取并回填。
 func (s *SessionService) Authenticate(ctx context.Context, accessToken string) (actor.Actor, error) {
 	now := s.clock.Now()
 	claims, err := s.tokens.Parse(accessToken, now)
 	if err != nil {
 		return actor.Actor{}, apperr.Unauthorized("SESSION_EXPIRED", "登录已失效，请重新登录")
 	}
-	sess, found, err := s.store.SessionByID(ctx, claims.SessionID)
+	if a, touch, ok := s.cache.lookup(claims.SessionID, now); ok && a.AccountID == claims.AccountID {
+		if touch {
+			s.touchAsync(claims.SessionID, now)
+		}
+		return a, nil
+	}
+	sess, acc, found, err := s.store.SessionWithAccount(ctx, claims.SessionID)
 	if err != nil {
 		return actor.Actor{}, apperr.Internal(err)
 	}
 	if !found || sess.AccountID != claims.AccountID || !sess.Active(now) {
 		return actor.Actor{}, apperr.Unauthorized("SESSION_EXPIRED", "登录已失效，请重新登录")
 	}
-	acc, found, err := s.store.AccountByID(ctx, sess.AccountID)
-	if err != nil {
-		return actor.Actor{}, apperr.Internal(err)
-	}
-	if !found {
-		return actor.Actor{}, apperr.Unauthorized("SESSION_EXPIRED", "")
-	}
-	if now.Sub(sess.LastSeenAt) >= time.Minute {
-		_ = s.store.TouchSession(ctx, sess.ID, now)
-	}
-	return actor.Actor{
+	a := actor.Actor{
 		AccountID: acc.ID, SessionID: sess.ID, ClientKind: sess.ClientKind,
 		AccountStatus: acc.Status, ReauthenticatedAt: sess.ReauthenticatedAt,
-	}, nil
+	}
+	if s.cache.store(sess.ID, a, sess.ExpiresAt, sess.LastSeenAt, now) {
+		s.touchAsync(sess.ID, now)
+	}
+	return a, nil
+}
+
+// touchAsync 在请求之外写回 last_seen_at：它只是活跃度记录，不值得让请求多等一次网络往返。
+func (s *SessionService) touchAsync(id uuid.UUID, now time.Time) {
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = s.store.TouchSession(ctx, id, now)
+	}()
 }
 
 // VerifyCSRF 校验网页会话的双重提交令牌：请求头值的摘要必须等于会话保存的摘要。
@@ -201,6 +219,7 @@ func (s *SessionService) Logout(ctx context.Context, sessionID uuid.UUID) error 
 	if err := s.store.RevokeSession(ctx, sessionID, s.clock.Now()); err != nil {
 		return apperr.Internal(err)
 	}
+	s.cache.remove(sessionID)
 	return nil
 }
 
@@ -225,6 +244,7 @@ func (s *SessionService) Revoke(ctx context.Context, a actor.Actor, sessionID uu
 	if err := s.store.RevokeSession(ctx, sessionID, s.clock.Now()); err != nil {
 		return apperr.Internal(err)
 	}
+	s.cache.remove(sessionID)
 	return nil
 }
 

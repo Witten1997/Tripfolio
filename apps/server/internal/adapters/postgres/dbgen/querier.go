@@ -72,6 +72,7 @@ type Querier interface {
 	GetRouteSummaryForUpdate(ctx context.Context, arg GetRouteSummaryForUpdateParams) (TripRouteSummary, error)
 	GetSession(ctx context.Context, id uuid.UUID) (AccountSession, error)
 	GetSessionForUpdate(ctx context.Context, id uuid.UUID) (AccountSession, error)
+	GetSessionWithAccount(ctx context.Context, id uuid.UUID) (GetSessionWithAccountRow, error)
 	// 待办（数据库设计表 7）。逾期不落列，按应用传入的旅行时区“今天”在 SQL 中筛选；空截止日期用哨兵排在最后，与索引表达式一致。
 	GetTodoItem(ctx context.Context, arg GetTodoItemParams) (TodoItem, error)
 	GetTodoItemForUpdate(ctx context.Context, arg GetTodoItemForUpdateParams) (TodoItem, error)
