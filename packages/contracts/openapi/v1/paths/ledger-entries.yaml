@@ -31,11 +31,22 @@ collection:
         schema:
           type: string
           format: uuid
+      - name: split_mode
+        in: query
+        required: false
+        schema:
+          $ref: ../schemas/ledger.yaml#/SplitMode
       - name: kind
         in: query
         required: false
         schema:
           $ref: ../openapi.yaml#/components/schemas/LedgerKind
+      - name: has_refunds
+        in: query
+        required: false
+        description: 按是否存在有效关联退款筛选原账单
+        schema:
+          type: boolean
       - name: refunded_entry_id
         in: query
         required: false

@@ -395,7 +395,9 @@ func (r *LedgerReader) Get(ctx context.Context, accountID, tripID, id uuid.UUID)
 // List 实现 finance.LedgerReader。
 func (r *LedgerReader) List(ctx context.Context, accountID, tripID uuid.UUID, q finance.LedgerListQuery) ([]finance.LedgerResource, error) {
 	p := dbgen.ListLedgerEntriesParams{
-		AccountID: accountID, TripID: tripID, DateFrom: datePtr(q.DateFrom), DateTo: datePtr(q.DateTo),
+		HasRefunds: q.HasRefunds,
+		SplitMode:  (*string)(q.SplitMode),
+		AccountID:  accountID, TripID: tripID, DateFrom: datePtr(q.DateFrom), DateTo: datePtr(q.DateTo),
 		CategoryID: nullUUID(q.CategoryID), RefundedEntryID: nullUUID(q.RefundedEntryID), RowLimit: int32(q.Limit),
 	}
 	if q.Kind != nil {
@@ -469,7 +471,7 @@ func (r *LedgerReader) Statistics(ctx context.Context, accountID, tripID uuid.UU
 	}
 	from, to, cat := datePtr(q.DateFrom), datePtr(q.DateTo), nullUUID(q.CategoryID)
 
-	filtered, err := qs.LedgerFilteredTotals(ctx, dbgen.LedgerFilteredTotalsParams{AccountID: accountID, TripID: tripID, DateFrom: from, DateTo: to, CategoryID: cat})
+	filtered, err := qs.LedgerFilteredTotals(ctx, dbgen.LedgerFilteredTotalsParams{AccountID: accountID, TripID: tripID, DateFrom: from, DateTo: to, CategoryID: cat, SplitMode: (*string)(q.SplitMode)})
 	if err != nil {
 		return finance.StatisticsData{}, false, err
 	}
@@ -481,7 +483,7 @@ func (r *LedgerReader) Statistics(ctx context.Context, accountID, tripID uuid.UU
 	}
 	data.TripExpense, data.TripRefund = whole.ExpenseAmount, whole.RefundAmount
 
-	cats, err := qs.LedgerCategoryTotals(ctx, dbgen.LedgerCategoryTotalsParams{AccountID: accountID, TripID: tripID, DateFrom: from, DateTo: to, CategoryID: cat})
+	cats, err := qs.LedgerCategoryTotals(ctx, dbgen.LedgerCategoryTotalsParams{AccountID: accountID, TripID: tripID, DateFrom: from, DateTo: to, CategoryID: cat, SplitMode: (*string)(q.SplitMode)})
 	if err != nil {
 		return finance.StatisticsData{}, false, err
 	}
@@ -494,6 +496,7 @@ func (r *LedgerReader) Statistics(ctx context.Context, accountID, tripID uuid.UU
 	}
 
 	daily, err := qs.LedgerDailyTotals(ctx, dbgen.LedgerDailyTotalsParams{
+		SplitMode: (*string)(q.SplitMode),
 		AccountID: accountID, TripID: tripID, DateFrom: from, DateTo: to, CategoryID: cat, CursorDate: datePtr(q.DailyAfter), RowLimit: int32(q.DailyLimit),
 	})
 	if err != nil {

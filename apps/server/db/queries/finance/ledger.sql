@@ -115,7 +115,13 @@ WHERE l.account_id = sqlc.arg(account_id) AND l.trip_id = sqlc.arg(trip_id) AND 
   AND (sqlc.narg(date_to)::date IS NULL OR l.occurred_on <= sqlc.narg(date_to)::date)
   AND (sqlc.narg(category_id)::uuid IS NULL OR l.category_id = sqlc.narg(category_id)::uuid)
   AND (sqlc.narg(kind)::text IS NULL OR l.kind = sqlc.narg(kind)::text)
+  AND (sqlc.narg(split_mode)::text IS NULL OR l.split_mode = sqlc.narg(split_mode)::text)
   AND (sqlc.narg(refunded_entry_id)::uuid IS NULL OR l.refunded_entry_id = sqlc.narg(refunded_entry_id)::uuid)
+  AND (sqlc.narg(has_refunds)::boolean IS NULL OR sqlc.narg(has_refunds)::boolean = EXISTS (
+      SELECT 1 FROM ledger_entries r
+      WHERE r.account_id = l.account_id AND r.trip_id = l.trip_id AND r.refunded_entry_id = l.id
+        AND r.kind = 'refund' AND r.deleted_at IS NULL
+  ))
   AND (sqlc.narg(cursor_occurred_on)::date IS NULL
        OR (l.occurred_on, l.id) < (sqlc.narg(cursor_occurred_on)::date, sqlc.narg(cursor_id)::uuid))
 ORDER BY l.occurred_on DESC, l.id DESC
@@ -130,7 +136,8 @@ FROM ledger_entries
 WHERE account_id = sqlc.arg(account_id) AND trip_id = sqlc.arg(trip_id) AND deleted_at IS NULL
   AND (sqlc.narg(date_from)::date IS NULL OR occurred_on >= sqlc.narg(date_from)::date)
   AND (sqlc.narg(date_to)::date IS NULL OR occurred_on <= sqlc.narg(date_to)::date)
-  AND (sqlc.narg(category_id)::uuid IS NULL OR category_id = sqlc.narg(category_id)::uuid);
+  AND (sqlc.narg(category_id)::uuid IS NULL OR category_id = sqlc.narg(category_id)::uuid)
+  AND (sqlc.narg(split_mode)::text IS NULL OR split_mode = sqlc.narg(split_mode)::text);
 
 -- name: LedgerTripTotals :one
 SELECT COALESCE(SUM(CASE WHEN kind = 'expense' THEN personal_amount END), 0)::numeric AS expense_amount,
@@ -145,11 +152,13 @@ SELECT c.id AS category_id, c.name, c.icon, c.sort_order,
                               AND (sqlc.narg(date_from)::date IS NULL OR l.occurred_on >= sqlc.narg(date_from)::date)
                               AND (sqlc.narg(date_to)::date IS NULL OR l.occurred_on <= sqlc.narg(date_to)::date)
                               AND (sqlc.narg(category_id)::uuid IS NULL OR l.category_id = sqlc.narg(category_id)::uuid)
+                              AND (sqlc.narg(split_mode)::text IS NULL OR l.split_mode = sqlc.narg(split_mode)::text)
                          THEN l.personal_amount END), 0)::numeric AS filtered_expense,
        COALESCE(SUM(CASE WHEN l.kind = 'refund'
                               AND (sqlc.narg(date_from)::date IS NULL OR l.occurred_on >= sqlc.narg(date_from)::date)
                               AND (sqlc.narg(date_to)::date IS NULL OR l.occurred_on <= sqlc.narg(date_to)::date)
                               AND (sqlc.narg(category_id)::uuid IS NULL OR l.category_id = sqlc.narg(category_id)::uuid)
+                              AND (sqlc.narg(split_mode)::text IS NULL OR l.split_mode = sqlc.narg(split_mode)::text)
                          THEN l.personal_amount END), 0)::numeric AS filtered_refund,
        COALESCE(SUM(CASE WHEN l.kind = 'expense' THEN l.personal_amount END), 0)::numeric AS trip_expense,
        COALESCE(SUM(CASE WHEN l.kind = 'refund' THEN l.personal_amount END), 0)::numeric AS trip_refund
@@ -172,6 +181,7 @@ WHERE account_id = sqlc.arg(account_id) AND trip_id = sqlc.arg(trip_id) AND dele
   AND (sqlc.narg(date_to)::date IS NULL OR occurred_on <= sqlc.narg(date_to)::date)
   AND (sqlc.narg(category_id)::uuid IS NULL OR category_id = sqlc.narg(category_id)::uuid)
   AND (sqlc.narg(cursor_date)::date IS NULL OR occurred_on < sqlc.narg(cursor_date)::date)
+  AND (sqlc.narg(split_mode)::text IS NULL OR split_mode = sqlc.narg(split_mode)::text)
 GROUP BY occurred_on
 ORDER BY occurred_on DESC
 LIMIT sqlc.arg(row_limit);

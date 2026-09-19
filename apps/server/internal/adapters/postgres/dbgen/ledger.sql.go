@@ -326,18 +326,20 @@ SELECT c.id AS category_id, c.name, c.icon, c.sort_order,
                               AND ($1::date IS NULL OR l.occurred_on >= $1::date)
                               AND ($2::date IS NULL OR l.occurred_on <= $2::date)
                               AND ($3::uuid IS NULL OR l.category_id = $3::uuid)
+                              AND ($4::text IS NULL OR l.split_mode = $4::text)
                          THEN l.personal_amount END), 0)::numeric AS filtered_expense,
        COALESCE(SUM(CASE WHEN l.kind = 'refund'
                               AND ($1::date IS NULL OR l.occurred_on >= $1::date)
                               AND ($2::date IS NULL OR l.occurred_on <= $2::date)
                               AND ($3::uuid IS NULL OR l.category_id = $3::uuid)
+                              AND ($4::text IS NULL OR l.split_mode = $4::text)
                          THEN l.personal_amount END), 0)::numeric AS filtered_refund,
        COALESCE(SUM(CASE WHEN l.kind = 'expense' THEN l.personal_amount END), 0)::numeric AS trip_expense,
        COALESCE(SUM(CASE WHEN l.kind = 'refund' THEN l.personal_amount END), 0)::numeric AS trip_refund
 FROM expense_categories c
 LEFT JOIN ledger_entries l
-       ON l.account_id = c.account_id AND l.category_id = c.id AND l.trip_id = $4 AND l.deleted_at IS NULL
-WHERE c.account_id = $5
+       ON l.account_id = c.account_id AND l.category_id = c.id AND l.trip_id = $5 AND l.deleted_at IS NULL
+WHERE c.account_id = $6
 GROUP BY c.id, c.name, c.icon, c.sort_order, c.deleted_at
 HAVING c.deleted_at IS NULL OR count(l.id) > 0
 ORDER BY c.sort_order, c.id
@@ -347,6 +349,7 @@ type LedgerCategoryTotalsParams struct {
 	DateFrom   *time.Time
 	DateTo     *time.Time
 	CategoryID uuid.NullUUID
+	SplitMode  *string
 	TripID     uuid.UUID
 	AccountID  uuid.UUID
 }
@@ -368,6 +371,7 @@ func (q *Queries) LedgerCategoryTotals(ctx context.Context, arg LedgerCategoryTo
 		arg.DateFrom,
 		arg.DateTo,
 		arg.CategoryID,
+		arg.SplitMode,
 		arg.TripID,
 		arg.AccountID,
 	)
@@ -408,9 +412,10 @@ WHERE account_id = $1 AND trip_id = $2 AND deleted_at IS NULL
   AND ($4::date IS NULL OR occurred_on <= $4::date)
   AND ($5::uuid IS NULL OR category_id = $5::uuid)
   AND ($6::date IS NULL OR occurred_on < $6::date)
+  AND ($7::text IS NULL OR split_mode = $7::text)
 GROUP BY occurred_on
 ORDER BY occurred_on DESC
-LIMIT $7
+LIMIT $8
 `
 
 type LedgerDailyTotalsParams struct {
@@ -420,6 +425,7 @@ type LedgerDailyTotalsParams struct {
 	DateTo     *time.Time
 	CategoryID uuid.NullUUID
 	CursorDate *time.Time
+	SplitMode  *string
 	RowLimit   int32
 }
 
@@ -438,6 +444,7 @@ func (q *Queries) LedgerDailyTotals(ctx context.Context, arg LedgerDailyTotalsPa
 		arg.DateTo,
 		arg.CategoryID,
 		arg.CursorDate,
+		arg.SplitMode,
 		arg.RowLimit,
 	)
 	if err != nil {
@@ -484,6 +491,7 @@ WHERE account_id = $1 AND trip_id = $2 AND deleted_at IS NULL
   AND ($3::date IS NULL OR occurred_on >= $3::date)
   AND ($4::date IS NULL OR occurred_on <= $4::date)
   AND ($5::uuid IS NULL OR category_id = $5::uuid)
+  AND ($6::text IS NULL OR split_mode = $6::text)
 `
 
 type LedgerFilteredTotalsParams struct {
@@ -492,6 +500,7 @@ type LedgerFilteredTotalsParams struct {
 	DateFrom   *time.Time
 	DateTo     *time.Time
 	CategoryID uuid.NullUUID
+	SplitMode  *string
 }
 
 type LedgerFilteredTotalsRow struct {
@@ -508,6 +517,7 @@ func (q *Queries) LedgerFilteredTotals(ctx context.Context, arg LedgerFilteredTo
 		arg.DateFrom,
 		arg.DateTo,
 		arg.CategoryID,
+		arg.SplitMode,
 	)
 	var i LedgerFilteredTotalsRow
 	err := row.Scan(&i.ExpenseAmount, &i.RefundAmount, &i.EntryCount)
@@ -584,11 +594,17 @@ WHERE l.account_id = $1 AND l.trip_id = $2 AND l.deleted_at IS NULL
   AND ($4::date IS NULL OR l.occurred_on <= $4::date)
   AND ($5::uuid IS NULL OR l.category_id = $5::uuid)
   AND ($6::text IS NULL OR l.kind = $6::text)
-  AND ($7::uuid IS NULL OR l.refunded_entry_id = $7::uuid)
-  AND ($8::date IS NULL
-       OR (l.occurred_on, l.id) < ($8::date, $9::uuid))
+  AND ($7::text IS NULL OR l.split_mode = $7::text)
+  AND ($8::uuid IS NULL OR l.refunded_entry_id = $8::uuid)
+  AND ($9::boolean IS NULL OR $9::boolean = EXISTS (
+      SELECT 1 FROM ledger_entries r
+      WHERE r.account_id = l.account_id AND r.trip_id = l.trip_id AND r.refunded_entry_id = l.id
+        AND r.kind = 'refund' AND r.deleted_at IS NULL
+  ))
+  AND ($10::date IS NULL
+       OR (l.occurred_on, l.id) < ($10::date, $11::uuid))
 ORDER BY l.occurred_on DESC, l.id DESC
-LIMIT $10
+LIMIT $12
 `
 
 type ListLedgerEntriesParams struct {
@@ -598,7 +614,9 @@ type ListLedgerEntriesParams struct {
 	DateTo           *time.Time
 	CategoryID       uuid.NullUUID
 	Kind             *string
+	SplitMode        *string
 	RefundedEntryID  uuid.NullUUID
+	HasRefunds       *bool
 	CursorOccurredOn *time.Time
 	CursorID         uuid.NullUUID
 	RowLimit         int32
@@ -618,7 +636,9 @@ func (q *Queries) ListLedgerEntries(ctx context.Context, arg ListLedgerEntriesPa
 		arg.DateTo,
 		arg.CategoryID,
 		arg.Kind,
+		arg.SplitMode,
 		arg.RefundedEntryID,
+		arg.HasRefunds,
 		arg.CursorOccurredOn,
 		arg.CursorID,
 		arg.RowLimit,

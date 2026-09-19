@@ -259,10 +259,10 @@ func (q *Queries) TripMemberIDExists(ctx context.Context, arg TripMemberIDExists
 const tripMemberSettlement = `-- name: TripMemberSettlement :many
 SELECT m.id AS member_id, m.name, m.is_self,
        COALESCE((SELECT SUM(CASE WHEN l.kind = 'expense' THEN l.amount ELSE -l.amount END) FROM ledger_entries l
-                 WHERE l.account_id = m.account_id AND l.trip_id = m.trip_id AND l.payer_member_id = m.id AND l.deleted_at IS NULL), 0)::numeric AS paid_amount,
+                 WHERE l.account_id = m.account_id AND l.trip_id = m.trip_id AND l.payer_member_id = m.id AND l.deleted_at IS NULL AND l.split_mode <> 'personal'), 0)::numeric AS paid_amount,
        COALESCE((SELECT SUM(CASE WHEN l.kind = 'expense' THEN s.amount ELSE -s.amount END) FROM ledger_entry_splits s
                  JOIN ledger_entries l ON l.account_id = s.account_id AND l.trip_id = s.trip_id AND l.id = s.ledger_entry_id
-                 WHERE s.account_id = m.account_id AND s.trip_id = m.trip_id AND s.member_id = m.id AND l.deleted_at IS NULL), 0)::numeric AS owed_amount
+                 WHERE s.account_id = m.account_id AND s.trip_id = m.trip_id AND s.member_id = m.id AND l.deleted_at IS NULL AND l.split_mode <> 'personal'), 0)::numeric AS owed_amount
 FROM trip_members m
 WHERE m.account_id = $1 AND m.trip_id = $2 AND m.deleted_at IS NULL
 ORDER BY m.sort_order, m.id

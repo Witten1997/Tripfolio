@@ -16,12 +16,13 @@ import (
 type SplitMode string
 
 const (
-	SplitEven  SplitMode = "even"
-	SplitRatio SplitMode = "ratio"
+	SplitEven     SplitMode = "even"
+	SplitRatio    SplitMode = "ratio"
+	SplitPersonal SplitMode = "personal"
 )
 
 // Valid 判断是否为已知模式。
-func (m SplitMode) Valid() bool { return m == SplitEven || m == SplitRatio }
+func (m SplitMode) Valid() bool { return m == SplitEven || m == SplitRatio || m == SplitPersonal }
 
 // LedgerSplit 是一位参与人的份额（接口设计 3.5 LedgerSplit）。
 type LedgerSplit struct {
@@ -59,7 +60,7 @@ func validateSplitMode(raw *string) (*SplitMode, *apperr.FieldError) {
 	}
 	m := SplitMode(*raw)
 	if !m.Valid() {
-		e := apperr.Field("split_mode", "INVALID", "分摊模式须为 even 或 ratio")
+		e := apperr.Field("split_mode", "INVALID", "分摊模式须为 even、ratio 或 personal")
 		return nil, &e
 	}
 	return &m, nil
@@ -102,6 +103,14 @@ func resolveSplitPlan(members []member.Resource, payer *uuid.UUID, mode *SplitMo
 	plan := splitPlan{Mode: SplitEven}
 	if mode != nil {
 		plan.Mode = *mode
+	}
+	if plan.Mode == SplitPersonal {
+		if self == nil {
+			return splitPlan{}, invalidReference("旅行没有成员「我」，无法记录个人账单")
+		}
+		plan.Payer = self.ID
+		plan.Participants = []member.Resource{*self}
+		return plan, nil
 	}
 	switch {
 	case payer != nil:

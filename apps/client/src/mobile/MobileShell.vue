@@ -32,6 +32,7 @@ const protectedBottomBarRoutes = new Set([
   'change-password',
   'login-devices',
   'recycle-bin',
+  'expense-categories',
 ])
 // 受保护页面已由路由守卫完成会话校验，底栏显示只跟当前页面有关，避免接口加载或令牌刷新时跳动。
 const showBottomBar = computed(() => {
@@ -60,6 +61,7 @@ const accountActive = computed(() =>
     'login-devices',
     'themes',
     'recycle-bin',
+    'expense-categories',
   ].includes(String(route.name ?? '')),
 )
 

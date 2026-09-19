@@ -19,10 +19,31 @@ async function signOut() {
     </header>
     <VanCellGroup inset title="旅行设置" class="mobile-account-page__links">
       <VanCell title="主题" label="切换界面外观" is-link :to="{ name: 'themes' }" />
-      <VanCell title="回收站" label="恢复或清理已删除的旅行" is-link :to="{ name: 'recycle-bin' }" />
-      <VanCell title="个人设置" label="管理头像、昵称和默认时区" is-link :to="{ name: 'personal-settings' }" />
+      <VanCell
+        title="账单分类管理"
+        label="管理分类名称、图标与排序"
+        is-link
+        :to="{ name: 'expense-categories' }"
+      />
+      <VanCell
+        title="回收站"
+        label="恢复或清理已删除的旅行"
+        is-link
+        :to="{ name: 'recycle-bin' }"
+      />
+      <VanCell
+        title="个人设置"
+        label="管理头像、昵称和默认时区"
+        is-link
+        :to="{ name: 'personal-settings' }"
+      />
       <VanCell title="修改密码" label="更新账号密码" is-link :to="{ name: 'change-password' }" />
-      <VanCell title="登录设备管理" label="查看并撤销已登录的设备" is-link :to="{ name: 'login-devices' }" />
+      <VanCell
+        title="登录设备管理"
+        label="查看并撤销已登录的设备"
+        is-link
+        :to="{ name: 'login-devices' }"
+      />
     </VanCellGroup>
     <div class="mobile-account-page__logout tf-surface">
       <VanButton type="danger" plain block @click="signOut">退出登录</VanButton>
@@ -57,5 +78,4 @@ async function signOut() {
   padding: 14px 16px;
   border-radius: var(--tf-radius-card);
 }
-
 </style>

@@ -186,7 +186,7 @@ describe('行程选点、详情与独立记账', () => {
         category_id: 'cat',
         kind: 'expense',
         payer_member_id: 'm-self',
-        split_mode: 'even',
+        split_mode: 'personal',
         participant_member_ids: ['m-self'],
       }),
       expect.any(String),

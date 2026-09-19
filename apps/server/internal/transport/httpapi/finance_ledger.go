@@ -72,7 +72,9 @@ func (h *Handler) ListLedgerEntries(ctx context.Context, req generated.ListLedge
 	}
 	p := req.Params
 	f := finance.LedgerFilters{
-		DateFrom: deref(p.DateFrom), DateTo: deref(p.DateTo), CategoryID: optionalUUID(p.CategoryId),
+		HasRefunds: p.HasRefunds,
+		SplitMode:  deref(splitModeString(p.SplitMode)),
+		DateFrom:   deref(p.DateFrom), DateTo: deref(p.DateTo), CategoryID: optionalUUID(p.CategoryId),
 		RefundedEntryID: optionalUUID(p.RefundedEntryId), Limit: pageLimit(p.Limit), Cursor: deref(p.Cursor),
 	}
 	if p.Kind != nil {
@@ -216,7 +218,8 @@ func (h *Handler) GetTripStatistics(ctx context.Context, req generated.GetTripSt
 	}
 	p := req.Params
 	f := finance.StatisticsFilters{
-		DateFrom: deref(p.DateFrom), DateTo: deref(p.DateTo), CategoryID: optionalUUID(p.CategoryId),
+		SplitMode: deref(splitModeString(p.SplitMode)),
+		DateFrom:  deref(p.DateFrom), DateTo: deref(p.DateTo), CategoryID: optionalUUID(p.CategoryId),
 		DailyLimit: pageLimit(p.DailyLimit), DailyCursor: deref(p.DailyCursor),
 	}
 	s, err := h.statistics.Get(ctx, a, uuid.UUID(req.TripId), f)

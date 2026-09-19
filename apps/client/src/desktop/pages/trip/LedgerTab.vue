@@ -27,6 +27,7 @@ import { listTripMembers, memberName, type TripMember } from '@/shared/api/membe
 import {
   deleteLedgerEntry,
   ledgerKindLabels,
+  listAllLedgerEntries,
   listLedgerEntries,
   type LedgerEntry,
   type LedgerKind,
@@ -41,12 +42,14 @@ import {
   type WriteOutcome,
 } from '@/shared/api/writes'
 import { canonicalizeAmount } from '@/shared/money'
+import { splitModeLabels, type SplitMode } from '@/shared/travel/ledgerDraft'
 import {
   categoryAmountRows,
   dailyBars,
   formatMoney,
   formatShare,
   pieSlices,
+  sumMoney,
   toNumber,
 } from '@/shared/travel/statisticsView'
 import { useTripContext } from '@/shared/travel/tripContext'
@@ -59,25 +62,69 @@ const filters = reactive<{
   dateFrom: string
   dateTo: string
   categoryId: string
+  splitMode: '' | SplitMode
   kind: '' | LedgerKind
-}>({ dateFrom: '', dateTo: '', categoryId: '', kind: '' })
+}>({ dateFrom: '', dateTo: '', categoryId: '', splitMode: '', kind: '' })
 const filtersOpened = ref(false)
 const kindOptions: Array<{ value: '' | LedgerKind; label: string }> = [
   { value: '', label: '全部' },
-  { value: 'expense', label: '支出' },
-  { value: 'refund', label: '退款' },
+  { value: 'expense', label: '未退款' },
+  { value: 'refund', label: '有退款' },
 ]
 function setKind(value: string) {
   if (value === '' || value === 'expense' || value === 'refund') filters.kind = value
 }
 const hasAdvancedFilter = computed(
-  () => !!filters.dateFrom || !!filters.dateTo || !!filters.categoryId,
+  () => !!filters.dateFrom || !!filters.dateTo || !!filters.categoryId || !!filters.splitMode,
 )
 const hasFilter = computed(() => hasAdvancedFilter.value || !!filters.kind)
 
 const categories = shallowRef<ExpenseCategory[]>([])
 const members = shallowRef<TripMember[]>([])
 const settlementKey = ref(0)
+const refunds = shallowRef<LedgerEntry[]>([])
+const refundsLoading = ref(false)
+const refundsError = ref<string | null>(null)
+const expandedRefunds = reactive(new Set<string>())
+let refundsGeneration = 0
+async function loadRefunds() {
+  const request = ++refundsGeneration
+  refundsLoading.value = true
+  refundsError.value = null
+  try {
+    const result = await listAllLedgerEntries(context.tripId, { kind: 'refund' })
+    if (request === refundsGeneration) refunds.value = result
+  } catch (cause) {
+    if (request === refundsGeneration)
+      refundsError.value = actionError(cause, '无法加载退款记录，请重试')
+  } finally {
+    if (request === refundsGeneration) refundsLoading.value = false
+  }
+}
+const refundsByEntry = computed(() => {
+  const result = new Map<string, LedgerEntry[]>()
+  for (const refund of refunds.value) {
+    if (!refund.refunded_entry_id) continue
+    const group = result.get(refund.refunded_entry_id) ?? []
+    group.push(refund)
+    result.set(refund.refunded_entry_id, group)
+  }
+  return result
+})
+function entryRefunds(entry: LedgerEntry) {
+  return refundsByEntry.value.get(entry.id) ?? []
+}
+function refundedAmount(entry: LedgerEntry) {
+  return sumMoney(entryRefunds(entry).map((r) => r.amount))
+}
+function fullyRefunded(entry: LedgerEntry) {
+  const remaining = sumMoney([entry.amount, `-${refundedAmount(entry)}`])
+  return remaining.startsWith('-') || !/[1-9]/.test(remaining)
+}
+function toggleRefunds(id: string) {
+  if (expandedRefunds.has(id)) expandedRefunds.delete(id)
+  else expandedRefunds.add(id)
+}
 async function loadMembers() {
   try {
     members.value = await listTripMembers(context.tripId)
@@ -98,15 +145,21 @@ const actionFailure = ref<string | null>(null)
 const busy = ref<string | null>(null)
 const intents = new Map<string, ReturnType<typeof createWriteIntent>>()
 
-/** 日期与分类筛选同时作用于统计与明细；类型只筛明细。 */
+/** 日期、分类与分摊模式筛选同时作用于统计与明细；类型只筛明细。 */
 const scopeQuery = computed(() => ({
   date_from: filters.dateFrom || undefined,
   date_to: filters.dateTo || undefined,
   category_id: filters.categoryId || undefined,
+  split_mode: filters.splitMode || undefined,
 }))
 
 const page = useCursorPage<LedgerEntry, LedgerQuery>(
-  () => ({ ...scopeQuery.value, kind: filters.kind || undefined, limit: 50 }),
+  () => ({
+    ...scopeQuery.value,
+    kind: 'expense',
+    has_refunds: filters.kind ? filters.kind === 'refund' : undefined,
+    limit: 50,
+  }),
   (query) => listLedgerEntries(context.tripId, query),
 )
 
@@ -137,7 +190,7 @@ async function reloadStatistics() {
 
 async function reloadAll() {
   settlementKey.value++
-  await Promise.all([reloadStatistics(), page.reload()])
+  await Promise.all([reloadStatistics(), page.reload(), loadRefunds()])
 }
 
 const totals = computed(() => statistics.value?.filtered_totals ?? null)
@@ -211,13 +264,27 @@ function intentFor(slot: string) {
 }
 
 async function remove(entry: LedgerEntry) {
+  if (entry.kind === 'expense') {
+    try {
+      const linked = await listAllLedgerEntries(context.tripId, {
+        kind: 'refund',
+        refunded_entry_id: entry.id,
+      })
+      if (linked.length) {
+        actionFailure.value = '这笔账单有退款记录，请先展开退款并删除退款记录，再删除账单。'
+        expandedRefunds.add(entry.id)
+        return
+      }
+    } catch (cause) {
+      actionFailure.value = actionError(cause, '无法核对退款记录，请重试')
+      return
+    }
+  }
   if (busy.value) return
   const isExpense = entry.kind === 'expense'
   try {
     await ElMessageBox.confirm(
-      isExpense
-        ? '删除这笔支出后，关联到它的退款会解除关联并保留。'
-        : '删除后这笔退款不再冲减分类净支出。',
+      isExpense ? '删除后这笔账单不再计入支出统计。' : '删除后这笔退款不再冲减分类净支出。',
       `删除这笔${ledgerKindLabels[entry.kind]}？`,
       { type: 'warning', confirmButtonText: '删除', cancelButtonText: '保留' },
     )
@@ -264,6 +331,7 @@ function clearFilters() {
   filters.dateFrom = ''
   filters.dateTo = ''
   filters.categoryId = ''
+  filters.splitMode = ''
   filters.kind = ''
 }
 
@@ -295,7 +363,7 @@ watch(
   },
 )
 onMounted(async () => {
-  await Promise.all([loadCategories(), loadMembers(), reloadStatistics()])
+  await Promise.all([loadCategories(), loadMembers(), reloadStatistics(), loadRefunds()])
 })
 </script>
 
@@ -422,16 +490,32 @@ onMounted(async () => {
             class="filter-date"
             aria-label="筛选结束日期"
           />
-          <ElSelect
-            v-model="filters.categoryId"
-            clearable
-            filterable
-            placeholder="全部分类"
-            class="filter-category"
-            aria-label="按分类筛选"
-          >
-            <ElOption v-for="c in categories" :key="c.id" :value="c.id" :label="c.name" />
-          </ElSelect>
+          <div class="filter-selects">
+            <ElSelect
+              v-model="filters.categoryId"
+              clearable
+              filterable
+              placeholder="全部分类"
+              class="filter-category"
+              aria-label="按分类筛选"
+            >
+              <ElOption v-for="c in categories" :key="c.id" :value="c.id" :label="c.name" />
+            </ElSelect>
+            <ElSelect
+              v-model="filters.splitMode"
+              clearable
+              placeholder="全部分摊模式"
+              class="filter-split-mode"
+              aria-label="按分摊模式筛选"
+            >
+              <ElOption
+                v-for="(label, mode) in splitModeLabels"
+                :key="mode"
+                :value="mode"
+                :label="label"
+              />
+            </ElSelect>
+          </div>
           <ElButton v-if="hasFilter" text @click="clearFilters">清除筛选</ElButton>
         </div>
       </Transition>
@@ -445,6 +529,9 @@ onMounted(async () => {
       @close="notice = []"
     />
     <ElAlert v-if="actionFailure" type="error" :title="actionFailure" :closable="false" show-icon />
+    <ElAlert v-if="refundsError" type="error" :title="refundsError" :closable="false" show-icon
+      ><ElButton @click="loadRefunds">重新加载退款</ElButton></ElAlert
+    >
 
     <!-- 图表：分类占比与每日净支出 -->
     <div class="charts">
@@ -575,6 +662,16 @@ onMounted(async () => {
               <span>{{ payerLabel(entry) }}</span>
               <span v-if="entry.notes" class="entry-notes">{{ entry.notes }}</span>
             </p>
+            <button
+              v-if="entryRefunds(entry).length"
+              type="button"
+              class="entry-refund-summary"
+              :aria-expanded="expandedRefunds.has(entry.id)"
+              @click="toggleRefunds(entry.id)"
+            >
+              已退款 {{ formatMoney(refundedAmount(entry)) }} {{ entry.currency_code }} ·
+              {{ expandedRefunds.has(entry.id) ? '收起' : '查看 / 编辑' }}
+            </button>
           </div>
           <div class="entry-amount" :class="{ 'entry-amount--refund': entry.kind === 'refund' }">
             {{ entry.kind === 'refund' ? '−' : '' }}{{ formatMoney(entry.personal_amount) }}
@@ -589,6 +686,12 @@ onMounted(async () => {
             </span>
           </div>
           <div class="entry-actions tf-actions">
+            <ElButton
+              text
+              :disabled="!!busy || refundsLoading || !!refundsError || fullyRefunded(entry)"
+              @click="dialog?.openRefund(entry)"
+              >{{ fullyRefunded(entry) ? '已全退' : '退款' }}</ElButton
+            >
             <IconAction
               icon="edit"
               :label="`编辑${categoryName(entry.category_id)}账目（${formatMoney(entry.personal_amount)} ${entry.currency_code}）`"
@@ -606,6 +709,37 @@ onMounted(async () => {
               @click="remove(entry)"
             />
           </div>
+          <ul
+            v-if="expandedRefunds.has(entry.id) && entryRefunds(entry).length"
+            class="entry-refunds"
+            aria-label="退款记录"
+          >
+            <li v-for="refund in entryRefunds(entry)" :key="refund.id">
+              <div>
+                <strong>退款 {{ formatMoney(refund.amount) }} {{ refund.currency_code }}</strong
+                ><span
+                  >{{ refund.occurred_on
+                  }}<template v-if="refund.notes"> · {{ refund.notes }}</template></span
+                >
+              </div>
+              <div class="tf-actions">
+                <IconAction
+                  icon="edit"
+                  :label="`编辑退款 ${formatMoney(refund.amount)} ${refund.currency_code}`"
+                  text
+                  :disabled="!!busy"
+                  @click="dialog?.open(refund)"
+                /><IconAction
+                  icon="trash"
+                  :label="`删除退款 ${formatMoney(refund.amount)} ${refund.currency_code}`"
+                  text
+                  type="danger"
+                  :disabled="!!busy"
+                  @click="remove(refund)"
+                />
+              </div>
+            </li>
+          </ul>
         </li>
       </ul>
       <div v-if="page.cursor.value" class="load-more">
@@ -620,11 +754,57 @@ onMounted(async () => {
       </div>
     </template>
 
-    <LedgerEntryDialog ref="dialog" :categories="categories" @saved="saved" />
+    <LedgerEntryDialog ref="dialog" v-model:categories="categories" @saved="saved" />
   </div>
 </template>
 
 <style scoped>
+.entry-refund-summary {
+  margin-top: 8px;
+  padding: 4px 0;
+  border: 0;
+  background: transparent;
+  color: var(--tf-success);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.entry-refund-summary:focus-visible {
+  outline: 2px solid var(--tf-accent);
+  outline-offset: 2px;
+}
+.entry-refunds {
+  flex: 0 0 100%;
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 8px 0 0;
+  padding: 12px;
+  list-style: none;
+  border-radius: var(--tf-radius-control);
+  background: var(--tf-surface-sunken);
+}
+.entry-refunds li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+.entry-refunds li > div:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.entry-refunds span {
+  color: var(--tf-text-3);
+}
+.entry-refunds .tf-actions {
+  display: flex;
+}
 .ledger-tab {
   display: flex;
   flex-direction: column;
@@ -726,11 +906,20 @@ onMounted(async () => {
 .filters .el-button {
   margin-left: 0;
 }
-.filter-date {
+.filters :deep(.filter-date) {
   width: 180px;
 }
-.filter-category {
-  width: 150px;
+.filter-selects {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  width: 308px;
+  max-width: 100%;
+}
+.filter-category,
+.filter-split-mode {
+  width: 100%;
+  min-width: 0;
 }
 .tab-actions {
   display: flex;
@@ -824,6 +1013,7 @@ onMounted(async () => {
 }
 .entry {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 14px;
   padding: 12px 0;
@@ -901,11 +1091,21 @@ onMounted(async () => {
     gap: 10px;
   }
   .filters {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     align-items: stretch;
   }
-  .filter-date,
-  .filter-category {
+  .filters :deep(.filter-date) {
     width: 100%;
+    min-width: 0;
+  }
+  .filter-selects {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+  .filters > .el-button {
+    grid-column: 1 / -1;
+    justify-self: start;
   }
   .entry {
     display: grid;

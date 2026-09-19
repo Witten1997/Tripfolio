@@ -460,16 +460,40 @@ func (e RouteSummaryStatus) Valid() bool {
 
 // Defines values for SplitMode.
 const (
-	Even  SplitMode = "even"
-	Ratio SplitMode = "ratio"
+	SplitModeEven     SplitMode = "even"
+	SplitModePersonal SplitMode = "personal"
+	SplitModeRatio    SplitMode = "ratio"
 )
 
 // Valid indicates whether the value is a known member of the SplitMode enum.
 func (e SplitMode) Valid() bool {
 	switch e {
-	case Even:
+	case SplitModeEven:
 		return true
-	case Ratio:
+	case SplitModePersonal:
+		return true
+	case SplitModeRatio:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for StatisticsScopeSplitMode.
+const (
+	StatisticsScopeSplitModeEven     StatisticsScopeSplitMode = "even"
+	StatisticsScopeSplitModePersonal StatisticsScopeSplitMode = "personal"
+	StatisticsScopeSplitModeRatio    StatisticsScopeSplitMode = "ratio"
+)
+
+// Valid indicates whether the value is a known member of the StatisticsScopeSplitMode enum.
+func (e StatisticsScopeSplitMode) Valid() bool {
+	switch e {
+	case StatisticsScopeSplitModeEven:
+		return true
+	case StatisticsScopeSplitModePersonal:
+		return true
+	case StatisticsScopeSplitModeRatio:
 		return true
 	default:
 		return false
@@ -1135,6 +1159,7 @@ type ItineraryStatus string
 // occurred_on 默认旅行时区的今天。退款可通过 refunded_entry_id 关联同旅行的有效支出，
 // 分类须与原支出一致，关联退款合计不得超过原支出金额（422 REFUND_AMOUNT_EXCEEDED）。
 // payer_member_id 默认 is_self 成员，split_mode 默认 even，participant_member_ids 默认全部有效成员；
+// personal 模式固定由 is_self 成员支付并承担全额，无需指定付款人与参与人。
 // 退款关联原支出且三者均缺省时继承原支出。成员须为本旅行有效成员（422 INVALID_REFERENCE）。
 type LedgerCreate struct {
 	// Amount 非科学计数法的十进制字符串，无符号、无分组符，小数位不超过币种 minor_units；
@@ -1170,7 +1195,7 @@ type LedgerCreate struct {
 	// RefundedEntryId 仅 kind=refund 可填写
 	RefundedEntryId nullable.Nullable[openapi_types.UUID] `json:"refunded_entry_id,omitempty"`
 
-	// SplitMode 分摊模式；even 按参与人等分，ratio 按参与人的成员百分比归一化
+	// SplitMode 分摊模式；even 按参与人等分，ratio 按参与人的成员百分比归一化，personal 由「我」支付并承担全额，不计入成员结算
 	SplitMode *SplitMode `json:"split_mode,omitempty"`
 }
 
@@ -1201,6 +1226,7 @@ type LedgerPage struct {
 // LedgerPatch 局部更新：缺省字段保持原值；refunded_entry_id 显式 null 表示解除关联；attachment_asset_ids 出现时整体替换。
 // kind 不可改。修改原支出的金额须仍能覆盖其关联退款；修改原支出的分类会同事务更新其关联退款。
 // participant_member_ids 出现时整体替换；amount、split_mode 或参与人变化时重算 splits。
+// personal 模式固定由 is_self 成员支付并承担全额，忽略指定的付款人与参与人。
 type LedgerPatch struct {
 	// Amount 非科学计数法的十进制字符串，无符号、无分组符，小数位不超过币种 minor_units；
 	// 服务端按币种规范化（"128.5" 与 "128.50" 相同），超精度被拒绝。存储上限 NUMERIC(18,4)，最多 14 位整数。
@@ -1225,7 +1251,7 @@ type LedgerPatch struct {
 	PayerMemberId        *openapi_types.UUID                   `json:"payer_member_id,omitempty"`
 	RefundedEntryId      nullable.Nullable[openapi_types.UUID] `json:"refunded_entry_id,omitempty"`
 
-	// SplitMode 分摊模式；even 按参与人等分，ratio 按参与人的成员百分比归一化
+	// SplitMode 分摊模式；even 按参与人等分，ratio 按参与人的成员百分比归一化，personal 由「我」支付并承担全额，不计入成员结算
 	SplitMode *SplitMode `json:"split_mode,omitempty"`
 }
 
@@ -1642,15 +1668,19 @@ type SharePercent = string
 // Example: -12.50
 type SignedMoney = string
 
-// SplitMode 分摊模式；even 按参与人等分，ratio 按参与人的成员百分比归一化
+// SplitMode 分摊模式；even 按参与人等分，ratio 按参与人的成员百分比归一化，personal 由「我」支付并承担全额，不计入成员结算
 type SplitMode string
 
 // StatisticsScope 实际采用的筛选范围；未筛选的项为 null
 type StatisticsScope struct {
-	CategoryId nullable.Nullable[openapi_types.UUID] `json:"category_id"`
-	DateFrom   nullable.Nullable[string]             `json:"date_from"`
-	DateTo     nullable.Nullable[string]             `json:"date_to"`
+	CategoryId nullable.Nullable[openapi_types.UUID]       `json:"category_id"`
+	DateFrom   nullable.Nullable[string]                   `json:"date_from"`
+	DateTo     nullable.Nullable[string]                   `json:"date_to"`
+	SplitMode  nullable.Nullable[StatisticsScopeSplitMode] `json:"split_mode,omitempty"`
 }
+
+// StatisticsScopeSplitMode defines model for StatisticsScope.SplitMode.
+type StatisticsScopeSplitMode string
 
 // StatisticsTotals 筛选范围内的支出、退款、净额与账目条数；净额 = 支出 − 退款，可能为负
 type StatisticsTotals struct {
@@ -2234,7 +2264,11 @@ type ListLedgerEntriesParams struct {
 	// DateTo 实际发生日期闭区间终点，须不早于 date_from
 	DateTo     *string             `form:"date_to,omitempty" json:"date_to,omitempty"`
 	CategoryId *openapi_types.UUID `form:"category_id,omitempty" json:"category_id,omitempty"`
+	SplitMode  *SplitMode          `form:"split_mode,omitempty" json:"split_mode,omitempty"`
 	Kind       *LedgerKind         `form:"kind,omitempty" json:"kind,omitempty"`
+
+	// HasRefunds 按是否存在有效关联退款筛选原账单
+	HasRefunds *bool `form:"has_refunds,omitempty" json:"has_refunds,omitempty"`
 
 	// RefundedEntryId 只返回关联到该原支出的退款
 	RefundedEntryId *openapi_types.UUID `form:"refunded_entry_id,omitempty" json:"refunded_entry_id,omitempty"`
@@ -2332,6 +2366,7 @@ type GetTripStatisticsParams struct {
 	// DateTo 须不早于 date_from
 	DateTo     *string             `form:"date_to,omitempty" json:"date_to,omitempty"`
 	CategoryId *openapi_types.UUID `form:"category_id,omitempty" json:"category_id,omitempty"`
+	SplitMode  *SplitMode          `form:"split_mode,omitempty" json:"split_mode,omitempty"`
 
 	// DailyLimit 每日明细的页大小
 	DailyLimit  *int    `form:"daily_limit,omitempty" json:"daily_limit,omitempty"`
@@ -5382,6 +5417,19 @@ func (siw *ServerInterfaceWrapper) ListLedgerEntries(w http.ResponseWriter, r *h
 		return
 	}
 
+	// ------------- Optional query parameter "split_mode" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "split_mode", r.URL.Query(), &params.SplitMode, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "split_mode"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "split_mode", Err: err})
+		}
+		return
+	}
+
 	// ------------- Optional query parameter "kind" -------------
 
 	err = runtime.BindQueryParameterWithOptions("form", true, false, "kind", r.URL.Query(), &params.Kind, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
@@ -5391,6 +5439,19 @@ func (siw *ServerInterfaceWrapper) ListLedgerEntries(w http.ResponseWriter, r *h
 			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "kind"})
 		} else {
 			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "kind", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "has_refunds" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "has_refunds", r.URL.Query(), &params.HasRefunds, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "has_refunds"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "has_refunds", Err: err})
 		}
 		return
 	}
@@ -6511,6 +6572,19 @@ func (siw *ServerInterfaceWrapper) GetTripStatistics(w http.ResponseWriter, r *h
 			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "category_id"})
 		} else {
 			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "category_id", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "split_mode" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "split_mode", r.URL.Query(), &params.SplitMode, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "split_mode"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "split_mode", Err: err})
 		}
 		return
 	}

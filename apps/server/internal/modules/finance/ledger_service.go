@@ -63,8 +63,14 @@ func ledgerListScope(tripID uuid.UUID, q LedgerListQuery) string {
 	if q.Kind != nil {
 		fmt.Fprintf(&b, "|kind=%s", *q.Kind)
 	}
+	if q.SplitMode != nil {
+		fmt.Fprintf(&b, "|split_mode=%s", *q.SplitMode)
+	}
 	if q.RefundedEntryID != nil {
 		fmt.Fprintf(&b, "|refunded=%s", *q.RefundedEntryID)
+	}
+	if q.HasRefunds != nil {
+		fmt.Fprintf(&b, "|has_refunds=%t", *q.HasRefunds)
 	}
 	return b.String()
 }
@@ -75,8 +81,12 @@ func (s *LedgerService) List(ctx context.Context, a actor.Actor, tripID uuid.UUI
 		return paging.Page[LedgerResource]{}, err
 	}
 	var fields []apperr.FieldError
-	q := LedgerListQuery{CategoryID: f.CategoryID, RefundedEntryID: f.RefundedEntryID}
+	q := LedgerListQuery{CategoryID: f.CategoryID, RefundedEntryID: f.RefundedEntryID, HasRefunds: f.HasRefunds}
 	var ferr *apperr.FieldError
+	if f.SplitMode != "" {
+		q.SplitMode, ferr = validateSplitMode(&f.SplitMode)
+		addField(&fields, ferr)
+	}
 	if f.DateFrom != "" {
 		q.DateFrom, ferr = parseLedgerDate("date_from", &f.DateFrom)
 		addField(&fields, ferr)
@@ -377,6 +387,8 @@ func (p LedgerPatch) submittedFields() []string {
 		f = append(f, "amount")
 	}
 	if p.PayerMemberID != nil {
+		f = append(f, "payer_member_id")
+	} else if p.SplitMode != nil && *p.SplitMode == string(SplitPersonal) {
 		f = append(f, "payer_member_id")
 	}
 	if p.SplitMode != nil {

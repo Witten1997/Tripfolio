@@ -990,7 +990,7 @@ export type paths = {
         };
         /**
          * 旅行开支统计：总额、分类汇总与占比、每日明细摘要及总预算对比
-         * @description 在同一个只读一致性事务中读取各项聚合。日期与分类筛选只影响 filtered_totals、by_category 的筛选金额与 daily；
+         * @description 在同一个只读一致性事务中读取各项聚合。日期、分类与分摊模式筛选只影响 filtered_totals、by_category 的筛选金额与 daily；
          *     trip_budget 始终基于整趟旅行。无日期筛选时统计全部关联账目，不自动套用旅行起止日期。
          */
         get: operations["getTripStatistics"];
@@ -1585,6 +1585,7 @@ export type components = {
          *     occurred_on 默认旅行时区的今天。退款可通过 refunded_entry_id 关联同旅行的有效支出，
          *     分类须与原支出一致，关联退款合计不得超过原支出金额（422 REFUND_AMOUNT_EXCEEDED）。
          *     payer_member_id 默认 is_self 成员，split_mode 默认 even，participant_member_ids 默认全部有效成员；
+         *     personal 模式固定由 is_self 成员支付并承担全额，无需指定付款人与参与人。
          *     退款关联原支出且三者均缺省时继承原支出。成员须为本旅行有效成员（422 INVALID_REFERENCE）。
          */
         LedgerCreate: {
@@ -1667,6 +1668,7 @@ export type components = {
          * @description 局部更新：缺省字段保持原值；refunded_entry_id 显式 null 表示解除关联；attachment_asset_ids 出现时整体替换。
          *     kind 不可改。修改原支出的金额须仍能覆盖其关联退款；修改原支出的分类会同事务更新其关联退款。
          *     participant_member_ids 出现时整体替换；amount、split_mode 或参与人变化时重算 splits。
+         *     personal 模式固定由 is_self 成员支付并承担全额，忽略指定的付款人与参与人。
          */
         LedgerPatch: {
             amount?: components["schemas"]["Money"];
@@ -2067,16 +2069,18 @@ export type components = {
          */
         SignedMoney: string;
         /**
-         * @description 分摊模式；even 按参与人等分，ratio 按参与人的成员百分比归一化
+         * @description 分摊模式；even 按参与人等分，ratio 按参与人的成员百分比归一化，personal 由「我」支付并承担全额，不计入成员结算
          * @enum {string}
          */
-        SplitMode: "even" | "ratio";
+        SplitMode: "even" | "ratio" | "personal";
         /** @description 实际采用的筛选范围；未筛选的项为 null */
         StatisticsScope: {
             /** Format: uuid */
             category_id: string | null;
             date_from: string | null;
             date_to: string | null;
+            /** @enum {string|null} */
+            split_mode?: "personal" | "even" | "ratio" | null;
         };
         /** @description 筛选范围内的支出、退款、净额与账目条数；净额 = 支出 − 退款，可能为负 */
         StatisticsTotals: {
@@ -4050,10 +4054,13 @@ export interface operations {
                 date_from?: string;
                 /** @description 实际发生日期闭区间终点，须不早于 date_from */
                 date_to?: string;
+                /** @description 按是否存在有效关联退款筛选原账单 */
+                has_refunds?: boolean;
                 kind?: components["schemas"]["LedgerKind"];
                 limit?: number;
                 /** @description 只返回关联到该原支出的退款 */
                 refunded_entry_id?: string;
+                split_mode?: components["schemas"]["SplitMode"];
             };
             header?: never;
             path: {
@@ -4705,6 +4712,7 @@ export interface operations {
                 date_from?: string;
                 /** @description 须不早于 date_from */
                 date_to?: string;
+                split_mode?: components["schemas"]["SplitMode"];
             };
             header?: never;
             path: {

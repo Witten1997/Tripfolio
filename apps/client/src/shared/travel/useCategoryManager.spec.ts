@@ -51,7 +51,7 @@ describe('账号共用分类管理', () => {
     expect(manager.items.value.map((item) => item.id)).toEqual(['c', 'a', 'b'])
   })
 
-  it('预设分类可以改图标和排序，只 PATCH 发生变化的字段，图标清空为 null', async () => {
+  it('预设分类可以改图标，只 PATCH 发生变化的字段，图标清空为 null', async () => {
     const requests: Request[] = []
     transport.mockImplementation(async (request) => {
       requests.push(request.clone())
@@ -63,10 +63,9 @@ describe('账号共用分类管理', () => {
     await manager.open()
     manager.start(category())
     manager.draft.icon = ''
-    manager.draft.sort_order = 0
     expect(await manager.save()).toBe(true)
     const patch = requests.find((request) => request.method === 'PATCH')!
-    expect(await patch.json()).toEqual({ icon: null, sort_order: 0 })
+    expect(await patch.json()).toEqual({ icon: null })
     expect(patch.headers.get('If-Match')).toBe('"2"')
     expect(patch.headers.get('Idempotency-Key')).toMatch(/^[0-9a-f-]{36}$/)
     expect(manager.active.value).toBe(false)
@@ -118,13 +117,11 @@ describe('账号共用分类管理', () => {
     manager.start()
     manager.draft.name = '咖啡'
     manager.draft.icon = 'food'
-    manager.draft.sort_order = 5
     expect(await manager.save()).toBe(false)
     expect(manager.uncertainCreate.value).toBe(true)
     expect(manager.draft.name).toBe('咖啡')
     manager.draft.name = '后来修改的草稿'
     manager.draft.icon = 'unsupported'
-    manager.draft.sort_order = -1
     useMetadataStore().status = 'error'
     manager.start()
     manager.start(category())
@@ -139,7 +136,8 @@ describe('账号共用分类管理', () => {
     expect(await manager.save()).toBe(true)
     const [first, second] = await Promise.all(requests.map((request) => request.json()))
     expect(first).toEqual(second)
-    expect(first).toMatchObject({ name: '咖啡', icon: 'food', sort_order: 5 })
+    expect(first).toMatchObject({ name: '咖啡', icon: 'food' })
+    expect(first).not.toHaveProperty('sort_order')
     expect(first.id).toMatch(/^[0-9a-f-]{36}$/)
     expect(requests[0]!.headers.get('Idempotency-Key')).toBe(
       requests[1]!.headers.get('Idempotency-Key'),
@@ -277,18 +275,62 @@ describe('账号共用分类管理', () => {
     expect(writes[1]!.headers.get('If-Match')).toBe('"3"')
   })
 
-  it('不支持的图标与负排序值不发起写入', async () => {
+  it('不支持的图标不发起写入', async () => {
     transport.mockResolvedValue(json(200, { data: [] }))
     const manager = useCategoryManager()
     await manager.open()
     manager.start()
     manager.draft.name = '测试'
     manager.draft.icon = 'unsupported'
-    manager.draft.sort_order = -1
     expect(await manager.save()).toBe(false)
     expect(manager.errors.value.icon).toContain('支持的图标')
-    expect(manager.errors.value.sort_order).toContain('整数排序值')
     expect(transport.mock.calls.every(([request]) => request.method === 'GET')).toBe(true)
+  })
+
+  it('拖动排序按新位置写入排序值，只更新位置变化的分类，失败后刷新列表', async () => {
+    const writes: Request[] = []
+    let failNext = false
+    transport.mockImplementation(async (request) => {
+      if (request.method === 'GET')
+        return json(200, {
+          data: [
+            category({ id: 'a', name: '交通', sort_order: 0, version: '1' }),
+            category({ id: 'b', name: '住宿', sort_order: 1, version: '1' }),
+            category({ id: 'c', name: '美食', sort_order: 2, version: '1' }),
+          ],
+        })
+      writes.push(request.clone())
+      if (failNext) {
+        failNext = false
+        throw new TypeError('network')
+      }
+      return json(200, { data: receipt(category()) })
+    })
+    const manager = useCategoryManager()
+    await manager.open()
+    expect(await manager.reorder(['a', 'b'])).toBe(false)
+    expect(await manager.reorder(['a', 'b', 'c'])).toBe(true)
+    expect(writes).toHaveLength(0)
+    expect(await manager.reorder(['c', 'a', 'b'])).toBe(true)
+    expect(writes.map((request) => new URL(request.url).pathname.split('/').pop())).toEqual([
+      'c',
+      'a',
+      'b',
+    ])
+    expect(await Promise.all(writes.map((request) => request.json()))).toEqual([
+      { sort_order: 0 },
+      { sort_order: 1 },
+      { sort_order: 2 },
+    ])
+    expect(writes[0]!.headers.get('If-Match')).toBe('"1"')
+    expect(manager.feedback.value).toContain('顺序已保存')
+    failNext = true
+    writes.length = 0
+    expect(await manager.reorder(['b', 'a', 'c'])).toBe(false)
+    expect(writes).toHaveLength(1)
+    expect(manager.error.value).toContain('尚未确认')
+    expect(manager.reordering.value).toBe(false)
+    expect(manager.items.value.map((item) => item.id)).toEqual(['a', 'b', 'c'])
   })
 
   it('切换编辑项后，迟到的最新版本不会替换当前分类', async () => {

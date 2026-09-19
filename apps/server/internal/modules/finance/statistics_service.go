@@ -49,6 +49,9 @@ func statisticsScope(tripID uuid.UUID, q StatisticsQuery) string {
 	if q.CategoryID != nil {
 		s += "|category=" + q.CategoryID.String()
 	}
+	if q.SplitMode != nil {
+		s += "|split_mode=" + string(*q.SplitMode)
+	}
 	return s
 }
 
@@ -68,6 +71,10 @@ func (s *StatisticsService) Get(ctx context.Context, a actor.Actor, tripID uuid.
 	var fields []apperr.FieldError
 	q := StatisticsQuery{CategoryID: f.CategoryID}
 	var ferr *apperr.FieldError
+	if f.SplitMode != "" {
+		q.SplitMode, ferr = validateSplitMode(&f.SplitMode)
+		addField(&fields, ferr)
+	}
 	if f.DateFrom != "" {
 		q.DateFrom, ferr = parseLedgerDate("date_from", &f.DateFrom)
 		addField(&fields, ferr)
@@ -218,7 +225,7 @@ func buildStatistics(data StatisticsData, q StatisticsQuery, units int) (Statist
 	}
 
 	return Statistics{
-		Scope:        StatisticsScope{DateFrom: q.DateFrom, DateTo: q.DateTo, CategoryID: q.CategoryID},
+		Scope:        StatisticsScope{DateFrom: q.DateFrom, DateTo: q.DateTo, CategoryID: q.CategoryID, SplitMode: q.SplitMode},
 		CurrencyCode: data.Trip.CurrencyCode,
 		FilteredTotals: Totals{
 			ExpenseAmount: fmtMoney(filteredExpense), RefundAmount: fmtMoney(filteredRefund),

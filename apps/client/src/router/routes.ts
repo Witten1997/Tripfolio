@@ -100,6 +100,11 @@ const pages = {
 /** 只在移动壳提供的页面（本地数据库等平台能力的自检）。 */
 const mobileOnlyRoutes: RouteRecordRaw[] = [
   {
+    path: '/expense-categories',
+    name: 'expense-categories',
+    component: () => import('@/mobile/pages/CategoryManagerPage.vue'),
+  },
+  {
     path: '/dev/local-db',
     name: 'dev-local-db',
     component: () => import('@/mobile/pages/DevLocalDbPage.vue'),

@@ -595,7 +595,7 @@ defineExpose({ open })
   </ResponsiveEditorShell>
   <LedgerEntryDialog
     ref="ledgerDialog"
-    :categories="expenseCategories"
+    v-model:categories="expenseCategories"
     @update:opened="ledgerOpened = $event"
     @saved="expenseSaved"
   />

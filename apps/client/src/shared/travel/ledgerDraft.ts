@@ -7,6 +7,7 @@ import { DraftError } from '@/shared/travel/tripDraft'
 export type SplitMode = LedgerEntry['split_mode']
 
 export const splitModeLabels: Record<SplitMode, string> = {
+  personal: '个人',
   even: '均摊',
   ratio: '按比例',
 }
@@ -48,7 +49,7 @@ export function emptyLedgerDraft(): LedgerDraft {
     refunded_entry_id: '',
     notes: '',
     payer_member_id: '',
-    split_mode: 'even',
+    split_mode: 'personal',
     participant_member_ids: [],
   }
 }
@@ -107,7 +108,10 @@ export function validateLedgerDraft(draft: LedgerDraft, money: TripMoney): Ledge
   else if (!validDate(occurredOn)) errors.occurred_on = '请选择有效的实际日期'
   if (draft.notes.length > 4000) errors.notes = '备注最多 4000 个字符'
   if (!draft.payer_member_id) errors.payer_member_id = '请选择付款人'
-  const participants = [...new Set(draft.participant_member_ids)]
+  const participants =
+    draft.split_mode === 'personal'
+      ? [draft.payer_member_id]
+      : [...new Set(draft.participant_member_ids)]
   if (participants.length < 1) errors.participant_member_ids = '至少选择一位参与人'
   // 关联原支出只对退款有意义
   const refunded = draft.kind === 'refund' ? draft.refunded_entry_id || null : null
@@ -172,6 +176,7 @@ export function splitPreview(
   participants: readonly TripMember[],
   minorUnits: number,
 ): Map<string, string> | null {
+  if (mode === 'personal') participants = participants.filter((m) => m.is_self)
   if (!participants.length) return null
   let canonical: string
   try {

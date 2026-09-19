@@ -1,4 +1,4 @@
-import { computed, reactive, ref, shallowRef } from 'vue'
+import { computed, nextTick, reactive, ref, shallowRef, watch } from 'vue'
 
 import { ApiError } from '@/shared/api/auth'
 import {
@@ -15,22 +15,7 @@ import { actionError, createWriteIntent, fieldErrors, writeWarnings } from '@/sh
 import { randomId } from '@/shared/randomId'
 import { useMetadataStore } from '@/shared/stores/metadata'
 
-export const categoryIcons: Record<string, { label: string; symbol: string }> = {
-  transport: { label: '交通', symbol: '🚆' },
-  lodging: { label: '住宿', symbol: '🏨' },
-  food: { label: '美食', symbol: '🍜' },
-  attraction: { label: '景点', symbol: '🏞️' },
-  shopping: { label: '购物', symbol: '🛍️' },
-  entertainment: { label: '娱乐', symbol: '🎭' },
-  ticket: { label: '票券', symbol: '🎫' },
-  gift: { label: '礼物', symbol: '🎁' },
-  medical: { label: '医疗', symbol: '💊' },
-  other: { label: '其他', symbol: '📌' },
-}
-
-export function categoryIconLabel(icon: string | null) {
-  return icon ? (categoryIcons[icon]?.label ?? icon) : '无图标'
-}
+export { categoryIconLabel } from '@/shared/travel/categoryIconVisuals'
 
 export function useCategoryManager() {
   const metadata = useMetadataStore()
@@ -39,6 +24,7 @@ export function useCategoryManager() {
   const saving = ref(false)
   const uncertainCreate = ref(false)
   const deleting = ref<string | null>(null)
+  const reordering = ref(false)
   const items = shallowRef<ExpenseCategory[]>([])
   const loadError = ref<string | null>(null)
   const error = ref<string | null>(null)
@@ -52,12 +38,12 @@ export function useCategoryManager() {
   const draft = reactive({
     name: '',
     icon: '' as string | null,
-    sort_order: 0 as number | undefined,
   })
   const initial = ref('')
   const dirty = computed(() => active.value && JSON.stringify(draft) !== initial.value)
   const intent = createWriteIntent()
   const deleteIntents = new Map<string, ReturnType<typeof createWriteIntent>>()
+  const reorderIntents = new Map<string, ReturnType<typeof createWriteIntent>>()
   let createId = ''
   // 创建可能已提交：确认结果前保留原正文与操作号，不从可变草稿重新生成请求。
   let pendingCreate: { body: CategoryCreate; operationId: string } | null = null
@@ -78,13 +64,15 @@ export function useCategoryManager() {
     }
   }
 
+  const busy = () => saving.value || !!deleting.value || reordering.value || uncertainCreate.value
+
   async function load() {
-    if (saving.value || deleting.value || uncertainCreate.value) return
+    if (busy()) return
     await refreshList()
   }
 
   function start(category?: ExpenseCategory) {
-    if (saving.value || deleting.value || uncertainCreate.value) return
+    if (busy()) return
     editorGeneration++
     loadingLatest.value = false
     active.value = true
@@ -96,9 +84,6 @@ export function useCategoryManager() {
     Object.assign(draft, {
       name: category?.name ?? '',
       icon: category?.icon ?? '',
-      sort_order:
-        category?.sort_order ??
-        Math.min(2147483647, Math.max(-1, ...items.value.map((item) => item.sort_order)) + 1),
     })
     initial.value = JSON.stringify(draft)
     createId = randomId()
@@ -107,7 +92,7 @@ export function useCategoryManager() {
   }
 
   async function open() {
-    if (saving.value || deleting.value || uncertainCreate.value) return
+    if (busy()) return
     editorGeneration++
     loadingLatest.value = false
     opened.value = true
@@ -118,7 +103,13 @@ export function useCategoryManager() {
   }
 
   function close(discardUncertain = false) {
-    if (saving.value || deleting.value || (uncertainCreate.value && !discardUncertain)) return
+    if (
+      saving.value ||
+      deleting.value ||
+      reordering.value ||
+      (uncertainCreate.value && !discardUncertain)
+    )
+      return
     generation++
     editorGeneration++
     opened.value = false
@@ -151,6 +142,7 @@ export function useCategoryManager() {
       !opened.value ||
       saving.value ||
       deleting.value ||
+      reordering.value ||
       !active.value ||
       (conflict.value && !againstLatest)
     )
@@ -164,19 +156,12 @@ export function useCategoryManager() {
       const name = draft.name.trim()
       const icon = draft.icon || null
       if (!name || name.length > 40) errors.value.name = '请输入 1–40 个字符的分类名称'
-      if (
-        draft.sort_order === undefined ||
-        !Number.isSafeInteger(draft.sort_order) ||
-        draft.sort_order < 0 ||
-        draft.sort_order > 2147483647
-      )
-        errors.value.sort_order = '请输入 0–2147483647 的整数排序值'
       if (metadata.status !== 'ready' || !metadata.metadata)
         errors.value.icon = '请先加载分类图标信息'
       else if (icon && !metadata.metadata.expense_category_icons.includes(icon))
         errors.value.icon = '请选择支持的图标，或清空图标'
       if (Object.keys(errors.value).length) return false
-      const values = { name, icon, sort_order: draft.sort_order as number }
+      const values = { name, icon }
       if (baseline.value) {
         patch = Object.fromEntries(
           Object.entries(values).filter(
@@ -238,7 +223,7 @@ export function useCategoryManager() {
   }
 
   async function remove(category: ExpenseCategory, confirmed: boolean) {
-    if (!confirmed || saving.value || deleting.value || uncertainCreate.value) return false
+    if (!confirmed || busy()) return false
     deleting.value = category.id
     error.value = null
     const operation = deleteIntents.get(category.id) ?? createWriteIntent()
@@ -267,12 +252,57 @@ export function useCategoryManager() {
     }
   }
 
+  /**
+   * 按拖动后的顺序重排：排序值取列表位置，只对位置变化的分类逐个 PATCH。
+   * 任一请求失败即停止并刷新列表，已提交的部分保留在服务端。
+   */
+  async function reorder(orderedIds: string[]) {
+    if (!opened.value || busy()) return false
+    const byId = new Map(items.value.map((item) => [item.id, item]))
+    const ordered = orderedIds.map((id) => byId.get(id)).filter((item) => !!item)
+    if (ordered.length !== items.value.length || new Set(orderedIds).size !== orderedIds.length)
+      return false
+    const changes = ordered
+      .map((item, index) => ({ item, sortOrder: index }))
+      .filter(({ item, sortOrder }) => item.sort_order !== sortOrder)
+    if (!changes.length) return true
+    reordering.value = true
+    error.value = null
+    items.value = ordered.map((item, index) => ({ ...item, sort_order: index }))
+    try {
+      for (const { item, sortOrder } of changes) {
+        const patch: CategoryPatch = { sort_order: sortOrder }
+        const operation = reorderIntents.get(item.id) ?? createWriteIntent()
+        reorderIntents.set(item.id, operation)
+        await updateCategory(
+          item.id,
+          item.version,
+          patch,
+          operation.key({ id: item.id, version: item.version, patch }),
+        )
+        operation.reset()
+      }
+      feedback.value = '分类顺序已保存。'
+      return true
+    } catch (cause) {
+      error.value = actionError(cause, '网络连接中断，排序结果尚未确认。刷新分类列表后可重新拖动。')
+      return false
+    } finally {
+      await refreshList()
+      // 排序只改 sort_order 与版本号，编辑中的草稿不受影响，直接换用刷新后的基线避免保存时版本冲突。
+      const fresh = items.value.find((item) => item.id === baseline.value?.id)
+      if (fresh) baseline.value = fresh
+      reordering.value = false
+    }
+  }
+
   return {
     opened,
     loading,
     saving,
     uncertainCreate,
     deleting,
+    reordering,
     items,
     loadError,
     error,
@@ -293,5 +323,46 @@ export function useCategoryManager() {
     adoptLatest,
     save,
     remove,
+    reorder,
   }
+}
+
+/**
+ * 拖动组件需要可变数组：维护分类列表的镜像，拖动或键盘移动后提交新顺序，
+ * 无论成败都按服务端结果重建镜像。
+ */
+export function useCategoryCards(manager: ReturnType<typeof useCategoryManager>) {
+  const cards = shallowRef<ExpenseCategory[]>([])
+  const dragging = ref(false)
+  watch(manager.items, (next) => (cards.value = [...next]), { immediate: true, flush: 'sync' })
+
+  async function commit() {
+    await manager.reorder(cards.value.map((item) => item.id))
+    cards.value = [...manager.items.value]
+  }
+
+  function onStart() {
+    dragging.value = true
+  }
+
+  /** 鼠标拖动结束后浏览器仍会补发 click（触屏由 Sortable 吞掉），下一轮事件循环再解除拦截。 */
+  async function onEnd() {
+    setTimeout(() => (dragging.value = false))
+    await commit()
+  }
+
+  /** 键盘移动会让 Vue 搬动 DOM 节点，浏览器随之丢焦点；节点仍是同一个，移动后重新聚焦即可连续操作。 */
+  async function move(index: number, delta: number) {
+    const target = index + delta
+    if (target < 0 || target >= cards.value.length) return
+    const focused = typeof document === 'undefined' ? null : document.activeElement
+    const next = [...cards.value]
+    next.splice(target, 0, ...next.splice(index, 1))
+    cards.value = next
+    await nextTick()
+    if (focused instanceof HTMLElement && focused.isConnected) focused.focus()
+    await commit()
+  }
+
+  return { cards, dragging, onStart, onEnd, move }
 }

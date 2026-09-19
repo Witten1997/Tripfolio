@@ -82,6 +82,8 @@ type LedgerPosition struct {
 
 // LedgerListQuery 是已校验的列表查询。
 type LedgerListQuery struct {
+	HasRefunds      *bool
+	SplitMode       *SplitMode
 	DateFrom        *types.Date
 	DateTo          *types.Date
 	CategoryID      *uuid.UUID
@@ -93,6 +95,7 @@ type LedgerListQuery struct {
 
 // StatisticsQuery 是已校验的统计查询；DailyAfter 是每日明细的游标位置（日期降序，取更早的日期）。
 type StatisticsQuery struct {
+	SplitMode  *SplitMode
 	DateFrom   *types.Date
 	DateTo     *types.Date
 	CategoryID *uuid.UUID

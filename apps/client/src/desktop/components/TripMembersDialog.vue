@@ -1,16 +1,10 @@
 <script setup lang="ts">
-import {
-  ElAlert,
-  ElButton,
-  ElDialog,
-  ElEmpty,
-  ElInput,
-  ElMessageBox,
-  ElSkeleton,
-  ElTag,
-} from 'element-plus'
+import { ElAlert, ElButton, ElEmpty, ElInput, ElMessageBox, ElSkeleton, ElTag } from 'element-plus'
+import { computed } from 'vue'
+import { VueDraggable } from 'vue-draggable-plus'
 
 import IconAction from '@/desktop/components/IconAction.vue'
+import ResponsiveEditorShell from '@/desktop/components/ResponsiveEditorShell.vue'
 import { formatPercent, MAX_TRIP_MEMBERS, useTripMembers } from '@/shared/travel/useTripMembers'
 
 const props = defineProps<{ tripId: string }>()
@@ -30,6 +24,11 @@ const {
   invalidRows,
   canSave,
 } = manager
+
+const sortableRows = computed({
+  get: () => rows,
+  set: (value) => rows.splice(0, rows.length, ...value),
+})
 
 async function requestClose(done?: () => void) {
   if (saving.value) return
@@ -60,14 +59,13 @@ defineExpose({ open: manager.open })
 </script>
 
 <template>
-  <ElDialog
+  <ResponsiveEditorShell
     :model-value="opened"
     title="旅行成员"
-    width="min(640px, calc(100vw - 32px))"
+    desktop-width="min(680px, calc(100vw - 32px))"
     :close-on-click-modal="false"
     :close-on-press-escape="!saving"
     :before-close="requestClose"
-    destroy-on-close
   >
     <p class="members-intro">
       成员用于记账时选择付款人与分摊参与人。所有成员的分摊百分比之和必须等于
@@ -126,24 +124,28 @@ defineExpose({ open: manager.open })
         </div>
       </div>
       <ElEmpty v-if="!rows.length" description="暂无成员" />
-      <ol v-else class="members-list">
+      <VueDraggable
+        v-else
+        v-model="sortableRows"
+        tag="ol"
+        class="members-list"
+        handle=".member-drag-handle"
+        ghost-class="member-row--ghost"
+        :animation="150"
+        :force-fallback="true"
+        :disabled="saving || loading"
+      >
         <li v-for="(row, index) in rows" :key="row.id" class="member-row">
-          <div class="member-order tf-actions">
-            <IconAction
-              icon="arrow-up"
-              :label="`上移：${row.name || '未命名成员'}`"
-              text
-              :disabled="saving || index === 0"
-              @click="manager.move(index, -1)"
-            />
-            <IconAction
-              icon="arrow-down"
-              :label="`下移：${row.name || '未命名成员'}`"
-              text
-              :disabled="saving || index === rows.length - 1"
-              @click="manager.move(index, 1)"
-            />
-          </div>
+          <button
+            type="button"
+            class="member-drag-handle"
+            :aria-label="`拖动 ${row.name || '未命名成员'}，或按上下方向键调整顺序`"
+            :disabled="saving || loading"
+            @keydown.up.prevent="manager.move(index, -1)"
+            @keydown.down.prevent="manager.move(index, 1)"
+          >
+            ⋮⋮
+          </button>
           <div class="member-field">
             <ElInput
               v-model="row.name"
@@ -170,7 +172,7 @@ defineExpose({ open: manager.open })
               rowError(index, 'share_percent')
             }}</span>
           </div>
-          <ElTag v-if="row.is_self" size="small" type="info">我</ElTag>
+          <ElTag v-if="row.is_self" class="member-self" size="small" type="info">我</ElTag>
           <IconAction
             v-else
             icon="trash"
@@ -181,28 +183,27 @@ defineExpose({ open: manager.open })
             @click="manager.remove(index)"
           />
         </li>
-      </ol>
+      </VueDraggable>
     </template>
     <template #footer>
-      <ElButton :disabled="saving" @click="requestClose()">关闭</ElButton>
-      <ElButton type="primary" :loading="saving" :disabled="!canSave" @click="save"
-        >保存成员</ElButton
-      >
+      <ElButton type="primary" :loading="saving" :disabled="!canSave" @click="save">保存</ElButton>
     </template>
-  </ElDialog>
+  </ResponsiveEditorShell>
 </template>
 
 <style scoped>
 .members-intro {
   margin: 0 0 16px;
   color: var(--tf-text-3);
-  line-height: 1.7;
+  font-size: 12px;
+  line-height: 1.6;
 }
 .members-alert {
   margin-bottom: 16px;
 }
 .members-toolbar {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
   gap: 12px;
@@ -210,6 +211,7 @@ defineExpose({ open: manager.open })
 }
 .members-toolbar .tf-actions {
   display: flex;
+  margin-left: auto;
   gap: 8px;
 }
 .members-toolbar .el-button {
@@ -217,6 +219,7 @@ defineExpose({ open: manager.open })
 }
 .members-sum {
   font-size: 13px;
+  font-variant-numeric: tabular-nums;
   color: var(--tf-success);
 }
 .members-sum--bad {
@@ -232,13 +235,42 @@ defineExpose({ open: manager.open })
 }
 .member-row {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) 128px auto;
+  grid-template-columns: 24px minmax(0, 1fr) 128px 44px;
   align-items: start;
   gap: 10px;
 }
-.member-order {
-  display: flex;
-  flex-direction: column;
+.member-drag-handle {
+  height: 44px;
+  padding: 6px 2px;
+  border: 0;
+  border-radius: var(--tf-radius-control);
+  background: transparent;
+  color: var(--tf-text-3);
+  font-size: 14px;
+  line-height: 1;
+  letter-spacing: 0;
+  cursor: grab;
+  touch-action: none;
+}
+.member-drag-handle:hover:not(:disabled) {
+  background: var(--tf-accent-soft);
+  color: var(--tf-accent);
+}
+.member-drag-handle:active:not(:disabled) {
+  cursor: grabbing;
+}
+.member-drag-handle:focus-visible {
+  outline: 2px solid var(--tf-accent);
+  outline-offset: 2px;
+}
+.member-drag-handle:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+.member-row--ghost {
+  border-radius: var(--tf-radius-control);
+  background: var(--tf-accent-soft);
+  outline: 1px dashed var(--tf-accent);
 }
 .member-field {
   display: flex;
@@ -246,17 +278,28 @@ defineExpose({ open: manager.open })
   gap: 4px;
   min-width: 0;
 }
+.member-field :deep(.el-input__wrapper) {
+  min-height: 44px;
+  box-sizing: border-box;
+}
+.member-field--percent :deep(input) {
+  font-variant-numeric: tabular-nums;
+}
 .member-error {
   font-size: 12px;
   color: var(--tf-danger);
   line-height: 1.5;
 }
-.member-row .el-tag {
-  align-self: center;
+.member-self {
+  justify-self: center;
+  margin-top: 12px;
 }
-@media (max-width: 560px) {
+@media (max-width: 767px) {
+  .members-toolbar .el-button {
+    min-height: 36px;
+  }
   .member-row {
-    grid-template-columns: auto minmax(0, 1fr) 96px auto;
+    grid-template-columns: 24px minmax(0, 1fr) 84px 44px;
     gap: 6px;
   }
 }

@@ -97,8 +97,8 @@ LedgerEntry:
 
 SplitMode:
   type: string
-  description: 分摊模式；even 按参与人等分，ratio 按参与人的成员百分比归一化
-  enum: [even, ratio]
+  description: 分摊模式；even 按参与人等分，ratio 按参与人的成员百分比归一化，personal 由「我」支付并承担全额，不计入成员结算
+  enum: [even, ratio, personal]
 
 LedgerSplit:
   type: object
@@ -138,6 +138,7 @@ LedgerCreate:
     occurred_on 默认旅行时区的今天。退款可通过 refunded_entry_id 关联同旅行的有效支出，
     分类须与原支出一致，关联退款合计不得超过原支出金额（422 REFUND_AMOUNT_EXCEEDED）。
     payer_member_id 默认 is_self 成员，split_mode 默认 even，participant_member_ids 默认全部有效成员；
+    personal 模式固定由 is_self 成员支付并承担全额，无需指定付款人与参与人。
     退款关联原支出且三者均缺省时继承原支出。成员须为本旅行有效成员（422 INVALID_REFERENCE）。
   required: [id, kind, amount, category_id]
   properties:
@@ -190,6 +191,7 @@ LedgerPatch:
     局部更新：缺省字段保持原值；refunded_entry_id 显式 null 表示解除关联；attachment_asset_ids 出现时整体替换。
     kind 不可改。修改原支出的金额须仍能覆盖其关联退款；修改原支出的分类会同事务更新其关联退款。
     participant_member_ids 出现时整体替换；amount、split_mode 或参与人变化时重算 splits。
+    personal 模式固定由 is_self 成员支付并承担全额，忽略指定的付款人与参与人。
   properties:
     amount:
       $ref: ./common.yaml#/Money

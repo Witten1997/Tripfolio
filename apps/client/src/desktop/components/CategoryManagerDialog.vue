@@ -7,22 +7,17 @@ import {
   ElForm,
   ElFormItem,
   ElInput,
-  ElInputNumber,
   ElMessageBox,
-  ElOption,
-  ElSelect,
   ElSkeleton,
-  ElTag,
 } from 'element-plus'
+import { computed } from 'vue'
+import { VueDraggable } from 'vue-draggable-plus'
 
-import IconAction from '@/desktop/components/IconAction.vue'
+import CategoryIconPicker from '@/desktop/components/CategoryIconPicker.vue'
 import type { ExpenseCategory } from '@/shared/api/categories'
 import { useMetadataStore } from '@/shared/stores/metadata'
-import {
-  categoryIconLabel,
-  categoryIcons,
-  useCategoryManager,
-} from '@/shared/travel/useCategoryManager'
+import { categoryIconComponent, categoryIconLabel } from '@/shared/travel/categoryIconVisuals'
+import { useCategoryCards, useCategoryManager } from '@/shared/travel/useCategoryManager'
 
 const metadata = useMetadataStore()
 const manager = useCategoryManager()
@@ -32,6 +27,7 @@ const {
   saving,
   uncertainCreate,
   deleting,
+  reordering,
   items,
   loadError,
   error,
@@ -45,6 +41,11 @@ const {
   draft,
   dirty,
 } = manager
+const busy = computed(() => saving.value || !!deleting.value || reordering.value)
+const locked = computed(() => busy.value || uncertainCreate.value)
+const cardsDisabled = computed(() => saving.value || !!deleting.value || uncertainCreate.value)
+
+const { cards, dragging, onStart, onEnd, move } = useCategoryCards(manager)
 
 async function discardChanges(closing = false) {
   if (uncertainCreate.value && !closing) return false
@@ -68,21 +69,23 @@ async function discardChanges(closing = false) {
 }
 
 async function requestClose(done?: () => void) {
-  if (saving.value || deleting.value || !(await discardChanges(true))) return
+  if (busy.value || !(await discardChanges(true))) return
   manager.close(true)
   done?.()
 }
 
 async function start(category?: ExpenseCategory) {
-  if (saving.value || deleting.value || uncertainCreate.value) return
+  if (locked.value) return
+  if (category && active.value && baseline.value?.id === category.id) return
   if (await discardChanges()) manager.start(category)
 }
 
-async function remove(category: ExpenseCategory) {
-  if (saving.value || deleting.value || uncertainCreate.value) return
+async function remove() {
+  const category = baseline.value
+  if (!category || locked.value) return
   try {
     await ElMessageBox.confirm(
-      `删除账号共用的“${category.name}”分类？被账目使用的分类不能删除，预设分类也遵循此规则。`,
+      `删除账号共用的“${category.name}”分类？被账目使用的分类不能删除，预设分类也遵循此规则。${dirty.value ? '当前未保存的修改也将放弃。' : ''}`,
       '删除账单分类',
       {
         confirmButtonText: '确认删除分类',
@@ -109,12 +112,12 @@ defineExpose({ open: manager.open })
     title="账单分类管理"
     width="min(840px, calc(100vw - 32px))"
     :close-on-click-modal="false"
-    :close-on-press-escape="!saving && !deleting"
+    :close-on-press-escape="!busy"
     :before-close="requestClose"
     destroy-on-close
   >
     <p class="category-intro">
-      分类在本账号的所有旅行中共用。预设分类也可以改名、调整图标与排序，未被账目使用时可删除。
+      分类在本账号的所有旅行中共用。点击分类可改名、换图标或删除，按住卡片拖动可调整记账时的顺序。
     </p>
     <ElAlert
       v-if="feedback"
@@ -125,7 +128,7 @@ defineExpose({ open: manager.open })
       class="category-alert"
     />
     <ElAlert
-      v-if="error"
+      v-if="error && !active"
       :title="error"
       :type="uncertainCreate ? 'warning' : 'error'"
       :closable="false"
@@ -133,14 +136,9 @@ defineExpose({ open: manager.open })
       class="category-alert"
     />
     <div class="category-toolbar">
-      <span>{{ items.length }} 个分类</span>
+      <span>{{ reordering ? '正在保存顺序…' : `${items.length} 个分类` }}</span>
       <div class="tf-actions">
-        <ElButton
-          type="primary"
-          :disabled="saving || !!deleting || loading || uncertainCreate"
-          @click="start()"
-          >新增分类</ElButton
-        >
+        <ElButton type="primary" :disabled="locked || loading" @click="start()">新增分类</ElButton>
       </div>
     </div>
     <ElSkeleton v-if="loading && !items.length" :rows="5" animated />
@@ -158,42 +156,57 @@ defineExpose({ open: manager.open })
           v-if="!loading && !items.length && !loadError"
           description="暂无分类，添加一个常用分类吧"
         />
-        <div
-          v-for="category in items"
-          :key="category.id"
-          class="category-row"
-          :class="{ selected: active && baseline?.id === category.id }"
+        <VueDraggable
+          v-if="cards.length"
+          v-model="cards"
+          tag="ul"
+          class="category-grid"
+          :class="{ 'category-grid--busy': reordering }"
+          ghost-class="category-card--ghost"
+          chosen-class="category-card--chosen"
+          drag-class="category-card--drag"
+          :animation="150"
+          :force-fallback="true"
+          :delay="150"
+          :touch-start-threshold="3"
+          :disabled="locked || loading"
+          :aria-busy="reordering"
+          aria-label="账单分类，按住卡片拖动可调整顺序"
+          @start="onStart"
+          @end="onEnd"
         >
-          <span class="category-symbol" aria-hidden="true">{{
-            category.icon ? (categoryIcons[category.icon]?.symbol ?? '●') : '○'
-          }}</span>
-          <div class="category-copy">
-            <strong>{{ category.name }}</strong
-            ><span>排序 {{ category.sort_order }} · {{ categoryIconLabel(category.icon) }}</span>
-          </div>
-          <ElTag v-if="category.is_preset" size="small" type="info">预设</ElTag>
-          <div class="category-actions tf-actions">
-            <IconAction
-              icon="edit"
-              :label="`编辑分类：${category.name}`"
-              text
-              :disabled="saving || !!deleting || uncertainCreate"
-              @click="start(category)"
-            />
-            <IconAction
-              icon="trash"
-              :label="`删除分类：${category.name}`"
-              text
-              type="danger"
-              :loading="deleting === category.id"
-              :disabled="saving || (!!deleting && deleting !== category.id) || uncertainCreate"
-              @click="remove(category)"
-            />
-          </div>
-        </div>
+          <li v-for="(category, index) in cards" :key="category.id" class="category-card">
+            <button
+              type="button"
+              :class="{ selected: active && baseline?.id === category.id }"
+              :aria-label="`编辑分类：${category.name}${category.is_preset ? '（预设）' : ''}，按 Shift+方向键调整顺序`"
+              :aria-pressed="active && baseline?.id === category.id"
+              :disabled="cardsDisabled"
+              @click="!dragging && start(category)"
+              @keydown.shift.left.prevent="move(index, -1)"
+              @keydown.shift.right.prevent="move(index, 1)"
+            >
+              <span class="category-card__symbol">
+                <component :is="categoryIconComponent(category.icon)" aria-hidden="true" />
+              </span>
+              <span class="category-card__name">{{ category.name }}</span>
+            </button>
+          </li>
+        </VueDraggable>
       </div>
-      <section v-if="active" class="category-editor">
+      <section v-if="active" class="category-editor" aria-live="polite">
         <h3>{{ baseline ? '编辑分类' : '新增分类' }}</h3>
+        <p v-if="baseline?.is_preset" class="category-hint">
+          预设分类，改名、换图标与删除规则相同。
+        </p>
+        <ElAlert
+          v-if="error"
+          :title="error"
+          :type="uncertainCreate ? 'warning' : 'error'"
+          :closable="false"
+          show-icon
+          class="category-alert"
+        />
         <ElAlert
           v-if="metadata.status !== 'ready' && !uncertainCreate"
           type="warning"
@@ -207,38 +220,23 @@ defineExpose({ open: manager.open })
         <ElForm
           id="category-editor-form"
           label-position="top"
-          :disabled="saving || uncertainCreate"
+          :disabled="locked"
           @submit.prevent="manager.save()"
         >
           <ElFormItem label="分类名称" required :error="errors.name"
             ><ElInput v-model="draft.name" maxlength="40" placeholder="例如：咖啡"
           /></ElFormItem>
-          <ElFormItem label="分类图标" :error="errors.icon"
-            ><ElSelect v-model="draft.icon" clearable placeholder="无图标" aria-label="分类图标"
-              ><ElOption label="无图标" value="" /><ElOption
-                v-for="icon in metadata.metadata?.expense_category_icons ?? []"
-                :key="icon"
-                :value="icon"
-                :label="`${categoryIcons[icon]?.symbol ?? '●'} ${categoryIconLabel(icon)}`" /></ElSelect
-          ></ElFormItem>
-          <ElFormItem label="排序值" required :error="errors.sort_order"
-            ><ElInputNumber
-              v-model="draft.sort_order"
-              :min="0"
-              :max="2147483647"
-              :precision="0"
-              :step="1"
-              controls-position="right"
-              aria-label="排序值"
-          /></ElFormItem>
-          <p class="category-hint">数字越小越靠前，相同数值保持固定顺序。</p>
+          <ElFormItem label="分类图标" :error="errors.icon">
+            <CategoryIconPicker
+              v-model="draft.icon"
+              :icons="metadata.metadata?.expense_category_icons ?? []"
+              :disabled="locked"
+            />
+          </ElFormItem>
           <div v-if="conflict" class="category-conflict">
             <p>你的输入已保留。请检查最新分类后决定如何保存。</p>
             <ElSkeleton v-if="loadingLatest" :rows="2" animated />
-            <p v-if="latest">
-              最新内容：{{ latest.name }} · {{ categoryIconLabel(latest.icon) }} · 排序
-              {{ latest.sort_order }}
-            </p>
+            <p v-if="latest">最新内容：{{ latest.name }} · {{ categoryIconLabel(latest.icon) }}</p>
             <div class="tf-actions">
               <ElButton size="small" :disabled="!latest" @click="adoptLatest"
                 >放弃输入并载入</ElButton
@@ -246,32 +244,41 @@ defineExpose({ open: manager.open })
             </div>
           </div>
         </ElForm>
-        <ElButton
-          v-if="conflict"
-          type="primary"
-          :loading="saving"
-          :disabled="!latest || loadingLatest || metadata.status !== 'ready'"
-          @click="manager.save(true)"
-          >确认用我的改动更新</ElButton
-        >
-        <ElButton
-          v-else
-          type="primary"
-          native-type="submit"
-          form="category-editor-form"
-          :loading="saving"
-          :disabled="
-            saving ||
-            (!uncertainCreate && metadata.status !== 'ready') ||
-            (baseline !== null && !dirty)
-          "
-          >{{ uncertainCreate ? '重试创建' : '保存分类' }}</ElButton
-        >
+        <div class="category-editor-actions tf-actions">
+          <ElButton
+            v-if="baseline"
+            type="danger"
+            plain
+            :loading="deleting === baseline.id"
+            :disabled="saving || reordering || uncertainCreate"
+            @click="remove"
+            >删除分类</ElButton
+          >
+          <ElButton
+            v-if="conflict"
+            type="primary"
+            :loading="saving"
+            :disabled="!latest || loadingLatest || metadata.status !== 'ready'"
+            @click="manager.save(true)"
+            >确认用我的改动更新</ElButton
+          >
+          <ElButton
+            v-else
+            type="primary"
+            native-type="submit"
+            form="category-editor-form"
+            :loading="saving"
+            :disabled="
+              busy ||
+              (!uncertainCreate && metadata.status !== 'ready') ||
+              (baseline !== null && !dirty)
+            "
+            >{{ uncertainCreate ? '重试创建' : '保存分类' }}</ElButton
+          >
+        </div>
       </section>
     </div>
-    <template #footer
-      ><ElButton :disabled="saving || !!deleting" @click="requestClose()">关闭</ElButton></template
-    >
+    <template #footer><ElButton :disabled="busy" @click="requestClose()">关闭</ElButton></template>
   </ElDialog>
 </template>
 
@@ -305,45 +312,108 @@ defineExpose({ open: manager.open })
 }
 .category-layout.has-editor {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 280px;
+  grid-template-columns: minmax(0, 1fr) 320px;
   gap: 24px;
 }
 .category-list {
   min-width: 0;
 }
-.category-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 14px 8px;
-  border-bottom: 1px solid var(--tf-line-soft);
+.category-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+  gap: 10px 8px;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
 }
-.category-row.selected {
-  background: var(--tf-accent-soft);
+.category-grid--busy {
+  opacity: 0.7;
 }
-.category-symbol {
-  width: 28px;
-  font-size: 22px;
-  text-align: center;
-  flex-shrink: 0;
-}
-.category-copy {
-  display: flex;
-  flex: 1;
+.category-card {
   min-width: 0;
-  flex-direction: column;
-  gap: 5px;
+  border-radius: var(--tf-radius-control);
 }
-.category-copy strong {
-  overflow-wrap: anywhere;
-}
-.category-copy > span {
-  font-size: 12px;
-  color: var(--tf-text-3);
-}
-.category-actions {
+.category-card > button {
   display: flex;
-  flex-shrink: 0;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  padding: 12px 4px 10px;
+  border: 0;
+  border-radius: var(--tf-radius-control);
+  background: transparent;
+  color: var(--tf-text-2);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.4;
+  cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+.category-card__symbol {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+  border-radius: 18px;
+  background: var(--tf-surface-sunken);
+  color: var(--tf-text-1);
+  transition:
+    background-color var(--tf-duration-fast) var(--tf-ease),
+    box-shadow var(--tf-duration-fast) var(--tf-ease);
+}
+.category-card__symbol svg {
+  width: 23px;
+  height: 23px;
+  stroke-width: 1.6;
+}
+.category-card__name {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.category-card > button.selected {
+  color: var(--tf-accent);
+  font-weight: 600;
+}
+.category-card > button.selected .category-card__symbol {
+  background: var(--tf-accent-soft);
+  box-shadow: inset 0 0 0 1.5px var(--tf-accent);
+}
+.category-card > button:focus-visible {
+  outline: 2px solid var(--tf-accent);
+  outline-offset: 2px;
+}
+.category-card > button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+.category-card--chosen > button {
+  cursor: grabbing;
+}
+.category-card--chosen .category-card__symbol {
+  transform: scale(1.08);
+  box-shadow: var(--tf-shadow-2);
+}
+.category-card--ghost {
+  background: var(--tf-accent-soft);
+  outline: 1px dashed var(--tf-accent);
+  outline-offset: -1px;
+  opacity: 0.6;
+}
+.category-card--drag {
+  background: var(--tf-surface-raised);
+  box-shadow: var(--tf-shadow-2);
+}
+@media (hover: hover) {
+  .category-card > button:hover:not(:disabled) .category-card__symbol {
+    background: var(--tf-accent-soft);
+  }
 }
 .category-editor {
   background: var(--tf-surface-sunken);
@@ -353,14 +423,11 @@ defineExpose({ open: manager.open })
   align-self: start;
 }
 .category-editor h3 {
-  margin: 0 0 18px;
+  margin: 0 0 12px;
   font-size: 16px;
 }
-.category-editor :deep(.el-input-number),
-.category-editor :deep(.el-select) {
-  width: 100%;
-}
 .category-hint {
+  margin: 0 0 14px;
   font-size: 12px;
   line-height: 1.7;
   color: var(--tf-text-3);
@@ -372,6 +439,15 @@ defineExpose({ open: manager.open })
 }
 .category-conflict .tf-actions {
   margin-top: 8px;
+}
+.category-editor-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+.category-editor-actions .el-button {
+  margin-left: 0;
 }
 @media (max-width: 700px) {
   .category-layout.has-editor {

@@ -72,7 +72,7 @@ func Current() Metadata {
 		DefaultCurrencyCode:   DefaultCurrencyCode,
 		Currencies:            append([]Currency(nil), currencies...),
 		LedgerKinds:           []string{"expense", "refund"},
-		ExpenseCategoryIcons:  []string{"transport", "lodging", "food", "attraction", "shopping", "entertainment", "ticket", "gift", "medical", "other"},
+		ExpenseCategoryIcons:  expenseCategoryIcons(),
 		PackingCategories:     []string{"documents", "electronics", "clothing", "daily", "food", "medicine", "other"},
 		PackingStatuses:       []string{"pending", "ready", "packed"},
 		PackingLibraryVersion: PackingLibraryVersion,
@@ -93,4 +93,15 @@ func Current() Metadata {
 func MinorUnits(code string) (units int, ok bool) {
 	units, ok = minorUnitsByCode[code]
 	return units, ok
+}
+
+// expenseCategoryIcons 是账单分类可选图标键，顺序即客户端选择器的展示顺序，与 finance.CategoryIcons 保持一致。
+func expenseCategoryIcons() []string {
+	return []string{
+		"transport", "lodging", "food", "attraction", "shopping", "entertainment", "ticket", "gift", "medical", "other",
+		"flight", "train", "car", "fuel", "parking", "ship", "bike",
+		"coffee", "drink", "alcohol", "dessert",
+		"photo", "nature", "beach", "camping", "amusement", "art", "movie", "music", "game", "sport", "spa",
+		"clothing", "beauty", "phone", "baby", "pet", "pharmacy", "insurance", "tips",
+	}
 }

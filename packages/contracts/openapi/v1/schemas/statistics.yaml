@@ -15,6 +15,10 @@ StatisticsScope:
       type: string
       format: uuid
       nullable: true
+    split_mode:
+      type: string
+      enum: [personal, even, ratio]
+      nullable: true
 
 StatisticsTotals:
   type: object

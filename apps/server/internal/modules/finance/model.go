@@ -45,6 +45,12 @@ func PresetCategories() []Preset {
 var CategoryIcons = map[string]struct{}{
 	"transport": {}, "lodging": {}, "food": {}, "attraction": {}, "shopping": {},
 	"entertainment": {}, "ticket": {}, "gift": {}, "medical": {}, "other": {},
+	"flight": {}, "train": {}, "car": {}, "fuel": {}, "parking": {}, "ship": {}, "bike": {},
+	"coffee": {}, "drink": {}, "alcohol": {}, "dessert": {},
+	"photo": {}, "nature": {}, "beach": {}, "camping": {}, "amusement": {}, "art": {},
+	"movie": {}, "music": {}, "game": {}, "sport": {}, "spa": {},
+	"clothing": {}, "beauty": {}, "phone": {}, "baby": {}, "pet": {},
+	"pharmacy": {}, "insurance": {}, "tips": {},
 }
 
 // CategoryFields 是分类可局部更新的字段名，用于 changed_fields 与字段级合并。
@@ -98,6 +104,8 @@ const MaxLedgerAttachments = 10
 
 // LedgerFilters 是列表查询条件（接口设计 3.9 LedgerFilters）；原始字符串由服务校验。
 type LedgerFilters struct {
+	HasRefunds      *bool
+	SplitMode       string
 	DateFrom        string
 	DateTo          string
 	CategoryID      *uuid.UUID
@@ -109,6 +117,7 @@ type LedgerFilters struct {
 
 // StatisticsFilters 是统计查询条件（接口设计 3.9 StatisticsFilters）。
 type StatisticsFilters struct {
+	SplitMode   string
 	DateFrom    string
 	DateTo      string
 	CategoryID  *uuid.UUID
@@ -118,6 +127,7 @@ type StatisticsFilters struct {
 
 // StatisticsScope 是统计实际采用的筛选范围（接口设计 3.8）。
 type StatisticsScope struct {
+	SplitMode  *SplitMode  `json:"split_mode"`
 	DateFrom   *types.Date `json:"date_from"`
 	DateTo     *types.Date `json:"date_to"`
 	CategoryID *uuid.UUID  `json:"category_id"`

@@ -5,16 +5,21 @@ import {
   ElCheckbox,
   ElCheckboxGroup,
   ElDatePicker,
+  ElDrawer,
   ElForm,
   ElFormItem,
   ElInput,
+  ElMessage,
   ElMessageBox,
   ElOption,
   ElSelect,
   ElSkeleton,
 } from 'element-plus'
-import { computed, ref, watch } from 'vue'
+import { NotebookPen, Plus, Users, ChevronDown, X } from '@lucide/vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue'
 
+import LedgerAmountKeypad from '@/desktop/components/LedgerAmountKeypad.vue'
+import CategoryCreateDrawer from '@/desktop/components/CategoryCreateDrawer.vue'
 import ResponsiveEditorShell from '@/desktop/components/ResponsiveEditorShell.vue'
 import SlidingSegmented from '@/desktop/components/SlidingSegmented.vue'
 import type { ExpenseCategory } from '@/shared/api/categories'
@@ -41,7 +46,8 @@ import {
   type LedgerDraft,
   type SplitMode,
 } from '@/shared/travel/ledgerDraft'
-import { formatMoney } from '@/shared/travel/statisticsView'
+import { formatMoney, sumMoney } from '@/shared/travel/statisticsView'
+import { categoryIconComponent } from '@/shared/travel/categoryIconVisuals'
 import { useTripContext } from '@/shared/travel/tripContext'
 import { useItemEditor } from '@/shared/travel/useItemEditor'
 
@@ -49,10 +55,44 @@ const props = defineProps<{ categories: ExpenseCategory[] }>()
 const emit = defineEmits<{
   saved: [outcome: WriteOutcome<LedgerEntry>]
   'update:opened': [opened: boolean]
+  'update:categories': [categories: ExpenseCategory[]]
 }>()
+const categoryCreator = ref<InstanceType<typeof CategoryCreateDrawer>>()
+const categoryCreatorMounted = ref(false)
+async function openCategoryCreator() {
+  categoryCreatorMounted.value = true
+  await nextTick()
+  await categoryCreator.value?.open()
+}
+const availableCategories = shallowRef(props.categories)
+watch(
+  () => props.categories,
+  (categories) => {
+    availableCategories.value = categories
+  },
+)
+function categoriesCreated(categories: ExpenseCategory[], selectedId: string | undefined) {
+  availableCategories.value = categories
+  if (selectedId && !categoryLocked.value) draft.category_id = selectedId
+  emit('update:categories', categories)
+}
 const context = useTripContext()
 const currency = computed(() => context.trip.value?.currency_code ?? 'CNY')
-
+const isMobile = ref(false)
+const notesFocused = ref(false)
+const splitSettingsOpened = ref(false)
+const refundOrigin = shallowRef<LedgerEntry | null>(null)
+let mobileMediaQuery: MediaQueryList | undefined
+function syncMobile() {
+  isMobile.value = mobileMediaQuery?.matches ?? false
+}
+onMounted(() => {
+  if (!window.matchMedia) return
+  mobileMediaQuery = window.matchMedia('(max-width: 767px)')
+  syncMobile()
+  mobileMediaQuery.addEventListener('change', syncMobile)
+})
+onUnmounted(() => mobileMediaQuery?.removeEventListener('change', syncMobile))
 /** 旅行成员：打开表单时拉取一次；成员管理保存后由页面调用 refreshMembers。 */
 const members = ref<TripMember[]>([])
 const loadingMembers = ref(false)
@@ -73,7 +113,15 @@ const splitModeOptions = (Object.keys(splitModeLabels) as SplitMode[]).map((valu
   label: splitModeLabels[value],
 }))
 function setSplitMode(value: string) {
-  if (value === 'even' || value === 'ratio') draft.split_mode = value
+  if (value !== 'even' && value !== 'ratio' && value !== 'personal') return
+  if (value === draft.split_mode) return
+  if (value === 'personal') {
+    draft.payer_member_id = members.value.find((m) => m.is_self)?.id ?? ''
+    draft.participant_member_ids = draft.payer_member_id ? [draft.payer_member_id] : []
+  } else if (draft.split_mode === 'personal') {
+    draft.participant_member_ids = members.value.map((m) => m.id)
+  }
+  draft.split_mode = value
 }
 const participants = computed(() =>
   draft.participant_member_ids
@@ -112,7 +160,12 @@ const editor = useItemEditor<
   emptyDraft: () => emptyLedgerDraft(),
   draftFrom: ledgerDraftFrom,
   validate: (draft) =>
-    validateLedgerDraft(draft, { currency: currency.value, minorUnits: context.minorUnits.value }),
+    validateLedgerDraft(
+      draft.split_mode === 'personal'
+        ? { ...draft, payer_member_id: members.value.find((m) => m.is_self)?.id ?? '' }
+        : draft,
+      { currency: currency.value, minorUnits: context.minorUnits.value },
+    ),
   diff: changedLedgerFields,
   get: (id) => getLedgerEntry(context.tripId, id),
   create: (body, operationId) => createLedgerEntry(context.tripId, body, operationId),
@@ -136,61 +189,45 @@ const {
   isEditing,
 } = editor
 
-const kinds = Object.keys(ledgerKindLabels) as LedgerKind[]
-const kindOptions = kinds.map((value) => ({ value, label: ledgerKindLabels[value] }))
-watch(opened, (value) => emit('update:opened', value), { flush: 'sync' })
-
-/** 可关联的原支出：同旅行有效支出，退款时按需拉取一次。 */
-const expenses = ref<LedgerEntry[]>([])
-const loadingExpenses = ref(false)
-async function ensureExpenses() {
-  if (expenses.value.length || loadingExpenses.value) return
-  loadingExpenses.value = true
-  try {
-    expenses.value = await listAllLedgerEntries(context.tripId, { kind: 'expense' })
-  } catch {
-    /* 关联可选，加载失败不阻塞记账 */
-  } finally {
-    loadingExpenses.value = false
-  }
-}
 watch(
-  () => draft.kind,
-  (kind) => {
-    if (kind === 'refund') void ensureExpenses()
-    else draft.refunded_entry_id = ''
+  opened,
+  (value) => {
+    notesFocused.value = false
+    if (!value) splitSettingsOpened.value = false
+    emit('update:opened', value)
   },
+  { flush: 'sync' },
 )
 
 const categoryName = (id: string) =>
-  props.categories.find((c) => c.id === id)?.name ?? '（已删除分类）'
+  availableCategories.value.find((c) => c.id === id)?.name ?? '（已删除分类）'
 
-/** 编辑退款关联的原支出中，排除自己；分类须与原支出一致，选后自动带出并锁定分类。 */
-const linkableExpenses = computed(() => expenses.value.filter((e) => e.id !== baseline.value?.id))
 const categoryLocked = computed(() => draft.kind === 'refund' && !!draft.refunded_entry_id)
-watch(
-  () => draft.refunded_entry_id,
-  (id) => {
-    if (!id) return
-    const origin = expenses.value.find((e) => e.id === id)
-    if (origin) {
-      draft.category_id = origin.category_id
-      // 关联原支出时默认继承其付款人与参与人，与服务端缺省一致
-      if (!isEditing.value) {
-        draft.payer_member_id = origin.payer_member_id
-        draft.split_mode = origin.split_mode
-        draft.participant_member_ids = origin.splits.map((s) => s.member_id)
-      }
-    }
-  },
+const submitDisabled = computed(
+  () =>
+    loading.value ||
+    (isEditing.value && (!baseline.value || !dirty.value)) ||
+    (conflict.value && (!latest.value || loadingLatest.value)),
+)
+const submitLabel = computed(() =>
+  uncertainCreate.value ? '重试保存' : conflict.value ? '确认保存' : '保存',
+)
+const amountDisplay = computed(
+  () =>
+    draft.amount || (context.minorUnits.value ? `0.${'0'.repeat(context.minorUnits.value)}` : '0'),
 )
 
 /** 分类下拉：活跃分类 + 当前记录引用的已删除分类（避免编辑时丢失）。 */
 const categoryOptions = computed(() => {
-  const options = props.categories.map((c) => ({ id: c.id, name: c.name, disabled: false }))
+  const options = availableCategories.value.map((c) => ({
+    id: c.id,
+    name: c.name,
+    icon: c.icon,
+    disabled: false,
+  }))
   const current = draft.category_id
   if (current && !options.some((o) => o.id === current)) {
-    options.push({ id: current, name: `${categoryName(current)}`, disabled: true })
+    options.push({ id: current, name: `${categoryName(current)}`, icon: null, disabled: true })
   }
   return options
 })
@@ -268,8 +305,16 @@ async function adoptLatest() {
 }
 
 async function save(againstLatest = false) {
+  if (isMobile.value && !uncertainCreate.value && draft.amount.endsWith('.'))
+    draft.amount = draft.amount.slice(0, -1)
   const outcome = await editor.save(againstLatest)
   if (outcome) emit('saved', outcome)
+  else if (
+    errors.value.participant_member_ids ||
+    errors.value.payer_member_id ||
+    errors.value.split_mode
+  )
+    splitSettingsOpened.value = true
 }
 
 /** 地点入口可以预填日期与备注；编辑既有账目时不覆盖原值。新建时付款人默认「我」、参与人默认全员。 */
@@ -278,8 +323,11 @@ async function open(
   kind?: LedgerKind,
   presets: Partial<Pick<LedgerDraft, 'occurred_on' | 'notes'>> = {},
 ) {
+  if (!entry && kind === 'refund') return
+  refundOrigin.value = null
+  splitSettingsOpened.value = false
   if (!members.value.length) await refreshMembers()
-  return editor.open(
+  await editor.open(
     entry,
     entry
       ? {}
@@ -292,13 +340,52 @@ async function open(
   )
 }
 
-defineExpose({ open, refreshMembers })
+async function openRefund(origin: LedgerEntry) {
+  if (saving.value || uncertainCreate.value || origin.kind !== 'expense') return
+  try {
+    const [current, refunds] = await Promise.all([
+      getLedgerEntry(context.tripId, origin.id),
+      listAllLedgerEntries(context.tripId, { kind: 'refund', refunded_entry_id: origin.id }),
+    ])
+    const remaining = sumMoney([current.amount, ...refunds.map((r) => `-${r.amount}`)])
+    if (!/[1-9]/.test(remaining) || remaining.startsWith('-')) {
+      ElMessage.info('这笔账单已全额退款')
+      return
+    }
+    if (!members.value.length) await refreshMembers()
+    refundOrigin.value = current
+    splitSettingsOpened.value = false
+    await editor.open(undefined, {
+      kind: 'refund',
+      amount: remaining,
+      category_id: current.category_id,
+      occurred_on: context.today.value,
+      refunded_entry_id: current.id,
+      payer_member_id: current.payer_member_id,
+      split_mode: current.split_mode,
+      participant_member_ids: current.splits.map((s) => s.member_id),
+    })
+  } catch {
+    ElMessage.error('无法加载原账单及退款记录，请重试')
+  }
+}
+
+defineExpose({ open, openRefund, refreshMembers })
 </script>
 
 <template>
   <ResponsiveEditorShell
+    :class="{ 'ledger-mobile-shell': isMobile }"
     :model-value="opened"
-    :title="isEditing ? '编辑账目' : draft.kind === 'refund' ? '记录退款' : '记一笔'"
+    :title="
+      draft.kind === 'refund'
+        ? isEditing
+          ? '编辑退款'
+          : '记录退款'
+        : isEditing
+          ? '编辑账目'
+          : '记一笔'
+    "
     desktop-width="min(560px, calc(100vw - 32px))"
     :close-on-click-modal="false"
     :close-on-press-escape="!saving"
@@ -321,16 +408,43 @@ defineExpose({ open, refreshMembers })
         :disabled="saving || uncertainCreate"
         @submit.prevent="save()"
       >
-        <ElFormItem label="类型" :error="errors.kind">
-          <SlidingSegmented
-            v-model="draft.kind"
-            :options="kindOptions"
-            :disabled="isEditing"
-            label="类型"
-          />
-          <span v-if="isEditing" class="editor-hint">账目类型保存后不可更改。</span>
-        </ElFormItem>
-        <div class="amount-row">
+        <div v-if="isMobile" class="ledger-categories" role="group" aria-label="账单分类">
+          <button
+            v-for="category in categoryOptions"
+            :key="category.id"
+            type="button"
+            :aria-pressed="draft.category_id === category.id"
+            :disabled="saving || uncertainCreate || category.disabled || categoryLocked"
+            @click="draft.category_id = category.id"
+          >
+            <span class="ledger-category-icon"
+              ><component :is="categoryIconComponent(category.icon)" aria-hidden="true"
+            /></span>
+            <span>{{ category.name }}</span>
+          </button>
+          <button
+            type="button"
+            :disabled="saving || uncertainCreate || categoryLocked"
+            @click="openCategoryCreator"
+          >
+            <span class="ledger-category-icon"><Plus aria-hidden="true" /></span>
+            <span>新增分类</span>
+          </button>
+        </div>
+        <p v-if="isMobile && errors.category_id" class="mobile-field-error">
+          {{ errors.category_id }}
+        </p>
+        <p v-if="draft.kind === 'refund'" class="refund-origin">
+          退款计入原账单<span v-if="refundOrigin">
+            · {{ categoryName(refundOrigin.category_id) }} {{ formatMoney(refundOrigin.amount) }}
+            {{ currency }}</span
+          >
+        </p>
+        <div
+          v-if="!isMobile"
+          class="amount-row"
+          :class="{ 'amount-row--personal': draft.split_mode === 'personal' }"
+        >
           <ElFormItem label="金额" required :error="errors.amount">
             <ElInput
               v-model="draft.amount"
@@ -343,11 +457,15 @@ defineExpose({ open, refreshMembers })
                 ><span class="amount-currency">{{ currency }}</span></template
               >
             </ElInput>
-            <span v-if="draft.participant_member_ids.length > 1" class="editor-hint">
+            <span
+              v-if="draft.split_mode !== 'personal' && draft.participant_member_ids.length > 1"
+              class="editor-hint"
+            >
               此处填写整笔总金额。
             </span>
           </ElFormItem>
           <ElFormItem
+            v-if="draft.split_mode !== 'personal'"
             :label="draft.kind === 'refund' ? '收款人' : '付款人'"
             required
             :error="errors.payer_member_id"
@@ -372,52 +490,104 @@ defineExpose({ open, refreshMembers })
         >
           <ElButton size="small" :loading="loadingMembers" @click="refreshMembers">重试</ElButton>
         </ElAlert>
-        <ElFormItem label="分摊模式" :error="errors.split_mode">
-          <SlidingSegmented
-            :model-value="draft.split_mode"
-            :options="splitModeOptions"
-            label="分摊模式"
-            @update:model-value="setSplitMode"
-          />
-          <span v-if="ratioUnavailable" class="editor-hint editor-hint--warn">
-            所选参与人的百分比之和为 0，无法按比例分摊；请在成员管理中设置比例或改用均摊。
-          </span>
-        </ElFormItem>
-        <ElFormItem :error="errors.participant_member_ids">
-          <template #label>
-            <span class="participants-label">
-              参与人
-              <ElButton
-                link
-                size="small"
-                :disabled="!members.length"
-                @click="toggleAllParticipants"
-                >{{
-                  draft.participant_member_ids.length === members.length ? '清空' : '全选'
-                }}</ElButton
-              >
-            </span>
+        <component
+          :is="isMobile ? ElDrawer : 'div'"
+          v-bind="
+            isMobile
+              ? {
+                  modelValue: splitSettingsOpened,
+                  direction: 'btt',
+                  size: 'auto',
+                  appendToBody: true,
+                  showClose: false,
+                  destroyOnClose: true,
+                  class: 'tf-editor-shell ledger-split-drawer',
+                }
+              : {}
+          "
+          @update:model-value="splitSettingsOpened = $event"
+        >
+          <template v-if="isMobile" #header="{ titleId, titleClass }">
+            <div class="tf-editor-shell__header">
+              <h2 :id="titleId" :class="titleClass"><Users aria-hidden="true" />分摊模式</h2>
+              <button type="button" aria-label="关闭分摊模式" @click="splitSettingsOpened = false">
+                <X aria-hidden="true" />
+              </button>
+            </div>
           </template>
-          <ElCheckboxGroup
-            v-model="draft.participant_member_ids"
-            class="participants"
-            aria-label="参与人"
+          <ElFormItem label="分摊模式" :error="errors.split_mode">
+            <SlidingSegmented
+              :model-value="draft.split_mode"
+              :options="splitModeOptions"
+              :disabled="saving || uncertainCreate"
+              label="分摊模式"
+              @update:model-value="setSplitMode"
+            />
+            <span v-if="ratioUnavailable" class="editor-hint editor-hint--warn">
+              所选参与人的百分比之和为 0，无法按比例分摊；请在成员管理中设置比例或改用均摊。
+            </span>
+            <span v-if="draft.split_mode === 'personal'" class="editor-hint">
+              {{
+                draft.kind === 'refund' ? '退款由「我」收取' : '由「我」支付并承担全额'
+              }}，不参与分摊和成员结算。
+            </span>
+          </ElFormItem>
+          <ElFormItem
+            v-if="isMobile && draft.split_mode !== 'personal'"
+            :label="draft.kind === 'refund' ? '收款人' : '付款人'"
+            :error="errors.payer_member_id"
           >
-            <ElCheckbox v-for="m in members" :key="m.id" :value="m.id" :label="m.id">
-              {{ m.name }}
-              <span v-if="draft.split_mode === 'ratio'" class="participant-percent"
-                >{{ m.share_percent }}%</span
-              >
-            </ElCheckbox>
-          </ElCheckboxGroup>
-          <ul v-if="preview && previewRows.length > 1" class="split-preview" aria-label="分摊预览">
-            <li v-for="row in previewRows" :key="row.id">
-              <span>{{ row.name }}</span
-              ><strong v-if="row.amount">{{ formatMoney(row.amount) }} {{ currency }}</strong>
-            </li>
-          </ul>
-        </ElFormItem>
-        <div class="editor-columns editor-columns--single">
+            <ElSelect
+              v-model="draft.payer_member_id"
+              :loading="loadingMembers"
+              :aria-label="draft.kind === 'refund' ? '收款人' : '付款人'"
+            >
+              <ElOption v-for="m in members" :key="m.id" :value="m.id" :label="m.name" />
+            </ElSelect>
+          </ElFormItem>
+          <ElFormItem v-if="draft.split_mode !== 'personal'" :error="errors.participant_member_ids">
+            <template #label>
+              <span class="participants-label">
+                参与人
+                <ElButton
+                  link
+                  size="small"
+                  :disabled="!members.length"
+                  @click="toggleAllParticipants"
+                  >{{
+                    draft.participant_member_ids.length === members.length ? '清空' : '全选'
+                  }}</ElButton
+                >
+              </span>
+            </template>
+            <ElCheckboxGroup
+              v-model="draft.participant_member_ids"
+              class="participants"
+              aria-label="参与人"
+            >
+              <ElCheckbox v-for="m in members" :key="m.id" :value="m.id" :label="m.id">
+                {{ m.name }}
+                <span v-if="draft.split_mode === 'ratio'" class="participant-percent"
+                  >{{ m.share_percent }}%</span
+                >
+              </ElCheckbox>
+            </ElCheckboxGroup>
+            <ul
+              v-if="preview && previewRows.length > 1"
+              class="split-preview"
+              aria-label="分摊预览"
+            >
+              <li v-for="row in previewRows" :key="row.id">
+                <span>{{ row.name }}</span
+                ><strong v-if="row.amount">{{ formatMoney(row.amount) }} {{ currency }}</strong>
+              </li>
+            </ul>
+          </ElFormItem>
+          <template v-if="isMobile" #footer>
+            <ElButton type="primary" @click="splitSettingsOpened = false">完成</ElButton>
+          </template>
+        </component>
+        <div v-if="!isMobile" class="editor-columns editor-columns--single">
           <ElFormItem label="实际日期" required :error="errors.occurred_on">
             <ElDatePicker
               :model-value="draft.occurred_on"
@@ -430,29 +600,7 @@ defineExpose({ open, refreshMembers })
             />
           </ElFormItem>
         </div>
-        <ElFormItem
-          v-if="draft.kind === 'refund'"
-          label="关联原支出（可选）"
-          :error="errors.refunded_entry_id"
-        >
-          <ElSelect
-            v-model="draft.refunded_entry_id"
-            clearable
-            filterable
-            :loading="loadingExpenses"
-            placeholder="独立退款可不关联"
-            aria-label="关联原支出"
-          >
-            <ElOption
-              v-for="expense in linkableExpenses"
-              :key="expense.id"
-              :value="expense.id"
-              :label="`${expense.occurred_on} · ${formatMoney(expense.amount)} ${currency} · ${categoryName(expense.category_id)}${expense.notes ? ' · ' + expense.notes : ''}`"
-            />
-          </ElSelect>
-          <span class="editor-hint">关联后分类与原支出一致，退款冲减该分类的净支出。</span>
-        </ElFormItem>
-        <ElFormItem label="账单分类" required :error="errors.category_id">
+        <ElFormItem v-if="!isMobile" label="账单分类" required :error="errors.category_id">
           <ElSelect
             v-model="draft.category_id"
             filterable
@@ -470,7 +618,7 @@ defineExpose({ open, refreshMembers })
           </ElSelect>
           <span v-if="categoryLocked" class="editor-hint">已按关联的原支出锁定分类。</span>
         </ElFormItem>
-        <ElFormItem label="备注" :error="errors.notes">
+        <ElFormItem v-if="!isMobile" label="备注" :error="errors.notes">
           <ElInput
             v-model="draft.notes"
             type="textarea"
@@ -511,27 +659,255 @@ defineExpose({ open, refreshMembers })
       </section>
     </template>
     <template #footer>
-      <ElButton
-        v-if="conflict"
-        type="primary"
-        :loading="saving"
-        :disabled="!latest || loadingLatest"
-        @click="save(true)"
-        >确认用我的改动更新最新版本</ElButton
-      >
-      <ElButton
-        v-else
-        type="primary"
-        :loading="saving"
-        :disabled="loading || (isEditing && (!baseline || !dirty))"
-        @click="save()"
-        >{{ uncertainCreate ? '重试保存' : isEditing ? '保存修改' : '保存' }}</ElButton
-      >
+      <div v-if="isMobile" class="ledger-mobile-dock">
+        <div class="ledger-amount-line">
+          <label class="ledger-notes-field">
+            <NotebookPen aria-hidden="true" />
+            <input
+              v-model="draft.notes"
+              aria-label="备注"
+              placeholder="添加备注"
+              maxlength="4000"
+              enterkeyhint="done"
+              :disabled="saving || uncertainCreate || loading"
+              :aria-invalid="!!errors.notes"
+              @focus="notesFocused = true"
+              @blur="notesFocused = false"
+              @keydown.enter.prevent="($event.target as HTMLInputElement).blur()"
+            />
+          </label>
+          <div class="ledger-amount-display">
+            <span>{{ currency }}</span
+            ><output aria-label="金额" aria-live="polite">{{ amountDisplay }}</output>
+          </div>
+        </div>
+        <p v-if="errors.notes" class="mobile-field-error">{{ errors.notes }}</p>
+        <p v-if="errors.amount" class="mobile-field-error">{{ errors.amount }}</p>
+        <div class="ledger-quick-actions">
+          <ElDatePicker
+            :model-value="draft.occurred_on"
+            type="date"
+            :editable="false"
+            :clearable="false"
+            :disabled="saving || uncertainCreate"
+            value-format="YYYY-MM-DD"
+            :format="draft.occurred_on === context.today.value ? '[今天]' : 'M月D日'"
+            aria-label="选择账单日期"
+            placeholder="选择日期"
+            class="ledger-date-button"
+            popper-class="ledger-mobile-calendar"
+            @update:model-value="setText('occurred_on', $event)"
+          />
+          <button
+            type="button"
+            :disabled="saving || uncertainCreate"
+            :aria-expanded="splitSettingsOpened"
+            aria-label="选择分摊模式"
+            @click="splitSettingsOpened = true"
+          >
+            <Users aria-hidden="true" />{{ splitModeLabels[draft.split_mode]
+            }}<ChevronDown aria-hidden="true" />
+          </button>
+        </div>
+        <p v-if="errors.occurred_on" class="mobile-field-error">{{ errors.occurred_on }}</p>
+        <LedgerAmountKeypad
+          v-if="!notesFocused"
+          v-model="draft.amount"
+          :minor-units="context.minorUnits.value"
+          :disabled="saving || uncertainCreate || loading"
+          :saving="saving"
+          :submit-disabled="submitDisabled"
+          :submit-label="submitLabel"
+          @submit="save(conflict)"
+        />
+      </div>
+      <template v-else>
+        <ElButton
+          v-if="conflict"
+          type="primary"
+          :loading="saving"
+          :disabled="!latest || loadingLatest"
+          @click="save(true)"
+          >确认用我的改动更新最新版本</ElButton
+        >
+        <ElButton
+          v-else
+          type="primary"
+          :loading="saving"
+          :disabled="loading || (isEditing && (!baseline || !dirty))"
+          @click="save()"
+          >{{ uncertainCreate ? '重试保存' : isEditing ? '保存修改' : '保存' }}</ElButton
+        >
+      </template>
     </template>
   </ResponsiveEditorShell>
+  <CategoryCreateDrawer
+    v-if="categoryCreatorMounted"
+    ref="categoryCreator"
+    @saved="categoriesCreated"
+  />
 </template>
 
 <style scoped>
+.ledger-categories {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 18px 8px;
+  margin: 8px 0 24px;
+}
+.ledger-categories button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--tf-text-2);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.ledger-category-icon {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+  border-radius: 18px;
+  background: var(--tf-surface-sunken);
+}
+.ledger-category-icon svg {
+  width: 23px;
+  height: 23px;
+  stroke-width: 1.6;
+}
+.ledger-categories button[aria-pressed='true'] {
+  color: var(--tf-accent);
+  font-weight: 600;
+}
+.ledger-categories button[aria-pressed='true'] .ledger-category-icon {
+  background: var(--tf-accent-soft);
+  box-shadow: inset 0 0 0 1.5px var(--tf-accent);
+}
+.ledger-categories button:focus-visible {
+  outline: 2px solid var(--tf-accent);
+  outline-offset: 4px;
+  border-radius: 8px;
+}
+.ledger-categories button:disabled:not([aria-pressed='true']) {
+  opacity: 0.45;
+}
+.ledger-mobile-dock {
+  text-align: left;
+}
+.ledger-amount-line {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 2px;
+}
+.ledger-notes-field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+  max-width: 42%;
+  padding: 8px 0;
+  border: 0;
+  background: transparent;
+  color: var(--tf-text-3);
+  font: inherit;
+  font-size: 13px;
+}
+.ledger-notes-field input {
+  min-width: 0;
+  width: 100%;
+  min-height: 28px;
+  padding: 0;
+  border: 0;
+  outline: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--tf-text-1);
+  font: inherit;
+  font-size: 16px;
+}
+.ledger-notes-field input::placeholder {
+  color: var(--tf-text-3);
+  font-size: 13px;
+}
+.ledger-notes-field:focus-within {
+  box-shadow: 0 1px 0 var(--tf-accent);
+}
+.ledger-notes-field svg {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+.ledger-amount-display {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  font-variant-numeric: tabular-nums;
+}
+.ledger-amount-display > span {
+  font-size: 11px;
+  color: var(--tf-text-3);
+}
+.ledger-amount-display output {
+  font-size: clamp(20px, 7vw, 30px);
+  font-weight: 600;
+  color: var(--tf-accent);
+  overflow-wrap: anywhere;
+}
+.ledger-quick-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 0 12px;
+}
+.ledger-quick-actions :deep(.ledger-date-button) {
+  width: 132px;
+}
+.ledger-quick-actions :deep(.el-input__wrapper) {
+  padding-inline: 8px;
+  min-height: 36px;
+  cursor: pointer;
+}
+.ledger-quick-actions > button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--tf-radius-control);
+  color: var(--tf-text-2);
+  background: var(--tf-surface-sunken);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.ledger-quick-actions > button svg {
+  width: 16px;
+  height: 16px;
+}
+.mobile-field-error {
+  color: var(--tf-danger);
+  font-size: 12px;
+  margin: 0 0 8px;
+}
+.refund-origin {
+  color: var(--tf-text-3);
+  font-size: 12px;
+  line-height: 1.6;
+  margin: 0 0 16px;
+}
 .editor-alert {
   margin-bottom: 16px;
 }
@@ -551,6 +927,9 @@ defineExpose({ open, refreshMembers })
   display: grid;
   grid-template-columns: minmax(0, 1fr) 148px;
   gap: 20px;
+}
+.amount-row.amount-row--personal {
+  grid-template-columns: minmax(0, 1fr);
 }
 .amount-currency {
   color: var(--tf-text-3);
@@ -660,5 +1039,39 @@ defineExpose({ open, refreshMembers })
     grid-template-columns: minmax(0, 1fr) 116px;
     gap: 12px;
   }
+}
+</style>
+
+<style>
+.tf-editor-shell.ledger-split-drawer {
+  max-height: min(80dvh, 640px);
+}
+.ledger-mobile-calendar.el-popper {
+  position: fixed !important;
+  top: 50% !important;
+  left: 50% !important;
+  transform: translate(-50%, -50%) !important;
+  max-width: calc(100vw - 24px);
+}
+.ledger-mobile-calendar .el-picker-panel {
+  width: min(322px, calc(100vw - 24px));
+}
+.ledger-mobile-calendar .el-picker-panel__content {
+  width: auto;
+  margin: 12px;
+}
+.ledger-mobile-calendar .el-popper__arrow {
+  display: none;
+}
+.tf-editor-shell.ledger-mobile-shell .el-drawer__footer {
+  padding: 0 12px max(12px, env(safe-area-inset-bottom));
+  background: var(--tf-surface-sunken);
+  border-top: 1px solid var(--tf-line-soft);
+}
+.tf-editor-shell.ledger-mobile-shell .el-drawer__footer > .ledger-mobile-dock {
+  display: block;
+}
+.tf-editor-shell.ledger-mobile-shell .el-drawer__body {
+  padding-bottom: 12px;
 }
 </style>

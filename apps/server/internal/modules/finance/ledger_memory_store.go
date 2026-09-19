@@ -121,7 +121,7 @@ func (m *LedgerMemoryStore) Settlement(_ context.Context, accountID, tripID uuid
 	paid := map[uuid.UUID]money.Decimal{}
 	owed := map[uuid.UUID]money.Decimal{}
 	for id, r := range m.entries {
-		if m.owners[id] != accountID || r.TripID != tripID || r.DeletedAt != nil {
+		if m.owners[id] != accountID || r.TripID != tripID || r.DeletedAt != nil || r.SplitMode == SplitPersonal {
 			continue
 		}
 		sign := func(d money.Decimal) money.Decimal {
@@ -413,6 +413,21 @@ func (m *LedgerMemoryStore) List(_ context.Context, accountID, tripID uuid.UUID,
 		if q.Kind != nil && r.Kind != *q.Kind {
 			continue
 		}
+		if q.SplitMode != nil && r.SplitMode != *q.SplitMode {
+			continue
+		}
+		if q.HasRefunds != nil {
+			hasRefunds := false
+			for refundID, refund := range m.entries {
+				if m.owners[refundID] == accountID && refund.TripID == tripID && refund.DeletedAt == nil && refund.Kind == KindRefund && refund.RefundedEntryID != nil && *refund.RefundedEntryID == r.ID {
+					hasRefunds = true
+					break
+				}
+			}
+			if hasRefunds != *q.HasRefunds {
+				continue
+			}
+		}
 		if q.RefundedEntryID != nil && (r.RefundedEntryID == nil || *r.RefundedEntryID != *q.RefundedEntryID) {
 			continue
 		}
@@ -476,6 +491,9 @@ func (m *LedgerMemoryStore) Statistics(_ context.Context, accountID, tripID uuid
 			tripByCat[r.CategoryID] = &agg{}
 		}
 		add(tripByCat[r.CategoryID], r)
+		if q.SplitMode != nil && r.SplitMode != *q.SplitMode {
+			continue
+		}
 		if !inDateRange(r.OccurredOn, q.DateFrom, q.DateTo) || (q.CategoryID != nil && r.CategoryID != *q.CategoryID) {
 			continue
 		}
