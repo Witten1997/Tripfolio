@@ -1,0 +1,68 @@
+LedgerImportPreview:
+  type: object
+  x-go-type: finance.LedgerImportPreview
+  x-go-type-import:
+    path: tripfolio/server/internal/modules/finance
+  required: [rows, errors, warnings, count, valid_count, total_amount, currency_code, digest]
+  properties:
+    rows:
+      type: array
+      items:
+        type: object
+        required:
+          [row, amount, category, split_mode, participants, occurred_on, notes, payer, splits]
+        properties:
+          row:
+            type: integer
+          amount:
+            type: string
+          category:
+            type: string
+          split_mode:
+            type: string
+          participants:
+            type: array
+            items:
+              type: string
+          occurred_on:
+            type: string
+          notes:
+            type: string
+          payer:
+            type: string
+          splits:
+            type: array
+            items:
+              type: object
+              required: [member, amount]
+              properties:
+                member:
+                  type: string
+                amount:
+                  type: string
+    errors:
+      type: array
+      items:
+        type: object
+        required: [row, column, message]
+        properties:
+          row:
+            type: integer
+          column:
+            type: string
+          message:
+            type: string
+    warnings:
+      type: array
+      items:
+        type: string
+    count:
+      type: integer
+    valid_count:
+      type: integer
+    total_amount:
+      type: string
+    currency_code:
+      type: string
+    digest:
+      type: string

@@ -781,6 +781,63 @@ export type paths = {
         patch: operations["updateLedgerEntry"];
         trace?: never;
     };
+    "/trips/{trip_id}/ledger-import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 确认已预览的 Excel，整批事务导入支出；同一批次重试不重复入账 */
+        post: operations["commitLedgerImport"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/trips/{trip_id}/ledger-import-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 上传 .xlsx 并预览账单、分摊结果和逐行错误，不写入账单 */
+        post: operations["previewLedgerImport"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/trips/{trip_id}/ledger-import-template": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        /** 下载包含当前账号分类及行程成员下拉列表的 Excel 账单模板 */
+        get: operations["downloadLedgerImportTemplate"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/trips/{trip_id}/members": {
         parameters: {
             query?: never;
@@ -1653,6 +1710,33 @@ export type components = {
         };
         LedgerEntryResponse: {
             data: components["schemas"]["LedgerEntry"];
+        };
+        LedgerImportPreview: {
+            count: number;
+            currency_code: string;
+            digest: string;
+            errors: {
+                column: string;
+                message: string;
+                row: number;
+            }[];
+            rows: {
+                amount: string;
+                category: string;
+                notes: string;
+                occurred_on: string;
+                participants: string[];
+                payer: string;
+                row: number;
+                split_mode: string;
+                splits: {
+                    amount: string;
+                    member: string;
+                }[];
+            }[];
+            total_amount: string;
+            valid_count: number;
+            warnings: string[];
         };
         /**
          * @description 账目类型；金额一律为正数，方向由类型决定。创建后不可改
@@ -4232,6 +4316,103 @@ export interface operations {
                 };
             };
             428: components["responses"]["VersionRequired"];
+        };
+    };
+    commitLedgerImport: {
+        parameters: {
+            query: {
+                /** @description 预览返回的摘要；文件、分类或成员设置变化后必须重新预览 */
+                preview_digest: string;
+            };
+            header: {
+                /** @description 写请求的操作编号（UUID）；相同成功操作重试复用同一键 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/octet-stream": string;
+            };
+        };
+        responses: {
+            /** @description 全部导入成功，affected 包含所有账单；结果不明时沿用同一 Idempotency-Key 重试 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WriteResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            410: components["responses"]["Gone"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    previewLedgerImport: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/octet-stream": string;
+            };
+        };
+        responses: {
+            /** @description 预览结果；有错误时不能确认导入，金额合计仅包含有效行 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["LedgerImportPreview"];
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            410: components["responses"]["Gone"];
+            422: components["responses"]["ValidationFailed"];
+        };
+    };
+    downloadLedgerImportTemplate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 当前账号和行程专用的 .xlsx 模板 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": string;
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            410: components["responses"]["Gone"];
+            422: components["responses"]["ValidationFailed"];
         };
     };
     listTripMembers: {

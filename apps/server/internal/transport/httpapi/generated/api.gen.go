@@ -1214,6 +1214,9 @@ type LedgerEntryResponse struct {
 	Data LedgerEntry `json:"data"`
 }
 
+// LedgerImportPreview defines model for LedgerImportPreview.
+type LedgerImportPreview = finance.LedgerImportPreview
+
 // LedgerKind 账目类型；金额一律为正数，方向由类型决定。创建后不可改
 type LedgerKind string
 
@@ -2300,6 +2303,15 @@ type UpdateLedgerEntryParams struct {
 	IfMatch *IfMatch `json:"If-Match,omitempty"`
 }
 
+// CommitLedgerImportParams defines parameters for CommitLedgerImport.
+type CommitLedgerImportParams struct {
+	// PreviewDigest 预览返回的摘要；文件、分类或成员设置变化后必须重新预览
+	PreviewDigest string `form:"preview_digest" json:"preview_digest"`
+
+	// IdempotencyKey 写请求的操作编号（UUID）；相同成功操作重试复用同一键
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
 // SaveTripMembersParams defines parameters for SaveTripMembers.
 type SaveTripMembersParams struct {
 	// IdempotencyKey 写请求的操作编号（UUID）；相同成功操作重试复用同一键
@@ -2656,6 +2668,15 @@ type ServerInterface interface {
 	// UpdateLedgerEntry 局部更新；类型不可改，修改金额与分类须与关联退款保持一致
 	// (PATCH /trips/{trip_id}/ledger-entries/{entry_id})
 	UpdateLedgerEntry(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, entryId openapi_types.UUID, params UpdateLedgerEntryParams)
+	// CommitLedgerImport 确认已预览的 Excel，整批事务导入支出；同一批次重试不重复入账
+	// (POST /trips/{trip_id}/ledger-import)
+	CommitLedgerImport(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, params CommitLedgerImportParams)
+	// PreviewLedgerImport 上传 .xlsx 并预览账单、分摊结果和逐行错误，不写入账单
+	// (POST /trips/{trip_id}/ledger-import-preview)
+	PreviewLedgerImport(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID)
+	// DownloadLedgerImportTemplate 下载包含当前账号分类及行程成员下拉列表的 Excel 账单模板
+	// (GET /trips/{trip_id}/ledger-import-template)
+	DownloadLedgerImportTemplate(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID)
 	// ListTripMembers 旅行的有效成员，按 sort_order、id 排序
 	// (GET /trips/{trip_id}/members)
 	ListTripMembers(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID)
@@ -3049,6 +3070,24 @@ func (_ Unimplemented) GetLedgerEntry(w http.ResponseWriter, r *http.Request, tr
 // UpdateLedgerEntry 局部更新；类型不可改，修改金额与分类须与关联退款保持一致
 // (PATCH /trips/{trip_id}/ledger-entries/{entry_id})
 func (_ Unimplemented) UpdateLedgerEntry(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, entryId openapi_types.UUID, params UpdateLedgerEntryParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// CommitLedgerImport 确认已预览的 Excel，整批事务导入支出；同一批次重试不重复入账
+// (POST /trips/{trip_id}/ledger-import)
+func (_ Unimplemented) CommitLedgerImport(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, params CommitLedgerImportParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// PreviewLedgerImport 上传 .xlsx 并预览账单、分摊结果和逐行错误，不写入账单
+// (POST /trips/{trip_id}/ledger-import-preview)
+func (_ Unimplemented) PreviewLedgerImport(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// DownloadLedgerImportTemplate 下载包含当前账号分类及行程成员下拉列表的 Excel 账单模板
+// (GET /trips/{trip_id}/ledger-import-template)
+func (_ Unimplemented) DownloadLedgerImportTemplate(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -5759,6 +5798,125 @@ func (siw *ServerInterfaceWrapper) UpdateLedgerEntry(w http.ResponseWriter, r *h
 	handler.ServeHTTP(w, r)
 }
 
+// CommitLedgerImport operation middleware
+func (siw *ServerInterfaceWrapper) CommitLedgerImport(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "trip_id" -------------
+	var tripId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "trip_id", chi.URLParam(r, "trip_id"), &tripId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "trip_id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CommitLedgerImportParams
+
+	// ------------- Required query parameter "preview_digest" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "preview_digest", r.URL.Query(), &params.PreviewDigest, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "preview_digest"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "preview_digest", Err: err})
+		}
+		return
+	}
+
+	headers := r.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CommitLedgerImport(w, r, tripId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PreviewLedgerImport operation middleware
+func (siw *ServerInterfaceWrapper) PreviewLedgerImport(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "trip_id" -------------
+	var tripId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "trip_id", chi.URLParam(r, "trip_id"), &tripId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "trip_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PreviewLedgerImport(w, r, tripId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DownloadLedgerImportTemplate operation middleware
+func (siw *ServerInterfaceWrapper) DownloadLedgerImportTemplate(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "trip_id" -------------
+	var tripId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "trip_id", chi.URLParam(r, "trip_id"), &tripId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "trip_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DownloadLedgerImportTemplate(w, r, tripId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListTripMembers operation middleware
 func (siw *ServerInterfaceWrapper) ListTripMembers(w http.ResponseWriter, r *http.Request) {
 
@@ -7245,6 +7403,15 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/trips/{trip_id}/ledger-entries", wrapper.CreateLedgerEntry)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/trips/{trip_id}/ledger-import-template", wrapper.DownloadLedgerImportTemplate)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/trips/{trip_id}/ledger-import-preview", wrapper.PreviewLedgerImport)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/trips/{trip_id}/ledger-import", wrapper.CommitLedgerImport)
 	})
 	r.Group(func(r chi.Router) {
 		r.Delete(options.BaseURL+"/trips/{trip_id}/ledger-entries/{entry_id}", wrapper.DeleteLedgerEntry)
@@ -12150,6 +12317,323 @@ func (response UpdateLedgerEntry428ApplicationProblemPlusJSONResponse) VisitUpda
 	return err
 }
 
+type CommitLedgerImportRequestObject struct {
+	TripId openapi_types.UUID `json:"trip_id"`
+	Params CommitLedgerImportParams
+	Body   io.Reader
+}
+
+type CommitLedgerImportResponseObject interface {
+	VisitCommitLedgerImportResponse(w http.ResponseWriter) error
+}
+
+type CommitLedgerImport201JSONResponse WriteResponse
+
+func (response CommitLedgerImport201JSONResponse) VisitCommitLedgerImportResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CommitLedgerImport400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response CommitLedgerImport400ApplicationProblemPlusJSONResponse) VisitCommitLedgerImportResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CommitLedgerImport401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response CommitLedgerImport401ApplicationProblemPlusJSONResponse) VisitCommitLedgerImportResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CommitLedgerImport404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response CommitLedgerImport404ApplicationProblemPlusJSONResponse) VisitCommitLedgerImportResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CommitLedgerImport409ApplicationProblemPlusJSONResponse struct {
+	ConflictApplicationProblemPlusJSONResponse
+}
+
+func (response CommitLedgerImport409ApplicationProblemPlusJSONResponse) VisitCommitLedgerImportResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CommitLedgerImport410ApplicationProblemPlusJSONResponse struct {
+	GoneApplicationProblemPlusJSONResponse
+}
+
+func (response CommitLedgerImport410ApplicationProblemPlusJSONResponse) VisitCommitLedgerImportResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(410)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CommitLedgerImport422ApplicationProblemPlusJSONResponse struct {
+	ValidationFailedApplicationProblemPlusJSONResponse
+}
+
+func (response CommitLedgerImport422ApplicationProblemPlusJSONResponse) VisitCommitLedgerImportResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PreviewLedgerImportRequestObject struct {
+	TripId openapi_types.UUID `json:"trip_id"`
+	Body   io.Reader
+}
+
+type PreviewLedgerImportResponseObject interface {
+	VisitPreviewLedgerImportResponse(w http.ResponseWriter) error
+}
+
+type PreviewLedgerImport200JSONResponse struct {
+	Data LedgerImportPreview `json:"data"`
+}
+
+func (response PreviewLedgerImport200JSONResponse) VisitPreviewLedgerImportResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PreviewLedgerImport400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response PreviewLedgerImport400ApplicationProblemPlusJSONResponse) VisitPreviewLedgerImportResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PreviewLedgerImport401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response PreviewLedgerImport401ApplicationProblemPlusJSONResponse) VisitPreviewLedgerImportResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PreviewLedgerImport404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response PreviewLedgerImport404ApplicationProblemPlusJSONResponse) VisitPreviewLedgerImportResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PreviewLedgerImport410ApplicationProblemPlusJSONResponse struct {
+	GoneApplicationProblemPlusJSONResponse
+}
+
+func (response PreviewLedgerImport410ApplicationProblemPlusJSONResponse) VisitPreviewLedgerImportResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(410)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PreviewLedgerImport422ApplicationProblemPlusJSONResponse struct {
+	ValidationFailedApplicationProblemPlusJSONResponse
+}
+
+func (response PreviewLedgerImport422ApplicationProblemPlusJSONResponse) VisitPreviewLedgerImportResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DownloadLedgerImportTemplateRequestObject struct {
+	TripId openapi_types.UUID `json:"trip_id"`
+}
+
+type DownloadLedgerImportTemplateResponseObject interface {
+	VisitDownloadLedgerImportTemplateResponse(w http.ResponseWriter) error
+}
+
+type DownloadLedgerImportTemplate200ApplicationvndOpenxmlformatsOfficedocumentSpreadsheetmlSheetResponse struct {
+	Body          io.Reader
+	ContentLength int64
+}
+
+func (response DownloadLedgerImportTemplate200ApplicationvndOpenxmlformatsOfficedocumentSpreadsheetmlSheetResponse) VisitDownloadLedgerImportTemplateResponse(w http.ResponseWriter) error {
+
+	w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+	if response.ContentLength != 0 {
+		w.Header().Set("Content-Length", fmt.Sprint(response.ContentLength))
+	}
+	w.WriteHeader(200)
+
+	if closer, ok := response.Body.(io.ReadCloser); ok {
+		defer closer.Close()
+	}
+	_, err := io.Copy(w, response.Body)
+	return err
+}
+
+type DownloadLedgerImportTemplate401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response DownloadLedgerImportTemplate401ApplicationProblemPlusJSONResponse) VisitDownloadLedgerImportTemplateResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DownloadLedgerImportTemplate404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response DownloadLedgerImportTemplate404ApplicationProblemPlusJSONResponse) VisitDownloadLedgerImportTemplateResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DownloadLedgerImportTemplate410ApplicationProblemPlusJSONResponse struct {
+	GoneApplicationProblemPlusJSONResponse
+}
+
+func (response DownloadLedgerImportTemplate410ApplicationProblemPlusJSONResponse) VisitDownloadLedgerImportTemplateResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(410)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DownloadLedgerImportTemplate422ApplicationProblemPlusJSONResponse struct {
+	ValidationFailedApplicationProblemPlusJSONResponse
+}
+
+func (response DownloadLedgerImportTemplate422ApplicationProblemPlusJSONResponse) VisitDownloadLedgerImportTemplateResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListTripMembersRequestObject struct {
 	TripId openapi_types.UUID `json:"trip_id"`
 }
@@ -14279,6 +14763,15 @@ type StrictServerInterface interface {
 	// UpdateLedgerEntry 局部更新；类型不可改，修改金额与分类须与关联退款保持一致
 	// (PATCH /trips/{trip_id}/ledger-entries/{entry_id})
 	UpdateLedgerEntry(ctx context.Context, request UpdateLedgerEntryRequestObject) (UpdateLedgerEntryResponseObject, error)
+	// CommitLedgerImport 确认已预览的 Excel，整批事务导入支出；同一批次重试不重复入账
+	// (POST /trips/{trip_id}/ledger-import)
+	CommitLedgerImport(ctx context.Context, request CommitLedgerImportRequestObject) (CommitLedgerImportResponseObject, error)
+	// PreviewLedgerImport 上传 .xlsx 并预览账单、分摊结果和逐行错误，不写入账单
+	// (POST /trips/{trip_id}/ledger-import-preview)
+	PreviewLedgerImport(ctx context.Context, request PreviewLedgerImportRequestObject) (PreviewLedgerImportResponseObject, error)
+	// DownloadLedgerImportTemplate 下载包含当前账号分类及行程成员下拉列表的 Excel 账单模板
+	// (GET /trips/{trip_id}/ledger-import-template)
+	DownloadLedgerImportTemplate(ctx context.Context, request DownloadLedgerImportTemplateRequestObject) (DownloadLedgerImportTemplateResponseObject, error)
 	// ListTripMembers 旅行的有效成员，按 sort_order、id 排序
 	// (GET /trips/{trip_id}/members)
 	ListTripMembers(ctx context.Context, request ListTripMembersRequestObject) (ListTripMembersResponseObject, error)
@@ -15936,6 +16429,89 @@ func (sh *strictHandler) UpdateLedgerEntry(w http.ResponseWriter, r *http.Reques
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(UpdateLedgerEntryResponseObject); ok {
 		if err := validResponse.VisitUpdateLedgerEntryResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CommitLedgerImport operation middleware
+func (sh *strictHandler) CommitLedgerImport(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, params CommitLedgerImportParams) {
+	var request CommitLedgerImportRequestObject
+
+	request.TripId = tripId
+	request.Params = params
+
+	request.Body = r.Body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CommitLedgerImport(ctx, request.(CommitLedgerImportRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CommitLedgerImport")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CommitLedgerImportResponseObject); ok {
+		if err := validResponse.VisitCommitLedgerImportResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// PreviewLedgerImport operation middleware
+func (sh *strictHandler) PreviewLedgerImport(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID) {
+	var request PreviewLedgerImportRequestObject
+
+	request.TripId = tripId
+
+	request.Body = r.Body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.PreviewLedgerImport(ctx, request.(PreviewLedgerImportRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "PreviewLedgerImport")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(PreviewLedgerImportResponseObject); ok {
+		if err := validResponse.VisitPreviewLedgerImportResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DownloadLedgerImportTemplate operation middleware
+func (sh *strictHandler) DownloadLedgerImportTemplate(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID) {
+	var request DownloadLedgerImportTemplateRequestObject
+
+	request.TripId = tripId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DownloadLedgerImportTemplate(ctx, request.(DownloadLedgerImportTemplateRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DownloadLedgerImportTemplate")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DownloadLedgerImportTemplateResponseObject); ok {
+		if err := validResponse.VisitDownloadLedgerImportTemplateResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

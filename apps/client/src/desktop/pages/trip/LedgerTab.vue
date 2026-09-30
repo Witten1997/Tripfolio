@@ -19,6 +19,7 @@ import DailyNetBar from '@/desktop/components/DailyNetBar.vue'
 import ActionIcon from '@/desktop/components/ActionIcon.vue'
 import IconAction from '@/desktop/components/IconAction.vue'
 import LedgerEntryDialog from '@/desktop/components/LedgerEntryDialog.vue'
+import LedgerImportDialog from '@/desktop/components/LedgerImportDialog.vue'
 import SettlementCard from '@/desktop/components/SettlementCard.vue'
 import SlidingSegmented from '@/desktop/components/SlidingSegmented.vue'
 import { ApiError } from '@/shared/api/auth'
@@ -40,6 +41,7 @@ import {
   createWriteIntent,
   writeWarnings,
   type WriteOutcome,
+  type WriteResult,
 } from '@/shared/api/writes'
 import { canonicalizeAmount } from '@/shared/money'
 import { splitModeLabels, type SplitMode } from '@/shared/travel/ledgerDraft'
@@ -139,6 +141,7 @@ function payerLabel(entry: LedgerEntry) {
 const categoryName = (id: string) => categories.value.find((c) => c.id === id)?.name ?? '已删除分类'
 
 const dialog = ref<InstanceType<typeof LedgerEntryDialog>>()
+const importDialog = ref<InstanceType<typeof LedgerImportDialog>>()
 const notice = ref<string[]>([])
 const noticeType = ref<'success' | 'warning'>('success')
 const actionFailure = ref<string | null>(null)
@@ -191,6 +194,15 @@ async function reloadStatistics() {
 async function reloadAll() {
   settlementKey.value++
   await Promise.all([reloadStatistics(), page.reload(), loadRefunds()])
+}
+
+async function imported(result: WriteResult, count: number) {
+  noticeType.value = 'success'
+  notice.value = [
+    result.replayed ? '该批次已导入，未重复新增账单。' : `已导入 ${count} 笔支出账单。`,
+  ]
+  actionFailure.value = null
+  await Promise.all([reloadAll(), context.reload(), loadCategories(), loadMembers()])
 }
 
 const totals = computed(() => statistics.value?.filtered_totals ?? null)
@@ -452,6 +464,7 @@ onMounted(async () => {
           @update:model-value="setKind"
         />
         <div class="tab-actions tf-actions">
+          <IconAction icon="upload" label="导入账单" @click="importDialog?.open()" />
           <IconAction
             icon="filter"
             label="筛选"
@@ -755,6 +768,7 @@ onMounted(async () => {
     </template>
 
     <LedgerEntryDialog ref="dialog" v-model:categories="categories" @saved="saved" />
+    <LedgerImportDialog ref="importDialog" @saved="imported" />
   </div>
 </template>
 

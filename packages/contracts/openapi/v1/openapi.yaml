@@ -128,6 +128,12 @@ paths:
     $ref: ./paths/todos.yaml#/item
   /trips/{trip_id}/ledger-entries:
     $ref: ./paths/ledger-entries.yaml#/collection
+  /trips/{trip_id}/ledger-import-template:
+    $ref: ./paths/ledger-import.yaml#/template
+  /trips/{trip_id}/ledger-import-preview:
+    $ref: ./paths/ledger-import.yaml#/preview
+  /trips/{trip_id}/ledger-import:
+    $ref: ./paths/ledger-import.yaml#/commit
   /trips/{trip_id}/ledger-entries/{entry_id}:
     $ref: ./paths/ledger-entries.yaml#/item
   /trips/{trip_id}/statistics:
@@ -366,6 +372,8 @@ components:
       $ref: ./schemas/todo.yaml#/TodoPatch
     LedgerKind:
       $ref: ./schemas/ledger.yaml#/LedgerKind
+    LedgerImportPreview:
+      $ref: ./schemas/ledger-import.yaml#/LedgerImportPreview
     LedgerEntry:
       $ref: ./schemas/ledger.yaml#/LedgerEntry
     LedgerEntryResponse:

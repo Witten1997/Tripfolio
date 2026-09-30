@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"tripfolio/server/internal/foundation/apperr"
 
 	"tripfolio/server/internal/foundation/money"
 	"tripfolio/server/internal/foundation/types"
@@ -81,6 +82,40 @@ func (m *LedgerMemoryStore) PutCategory(accountID uuid.UUID, c CategoryResource)
 	defer m.mu.Unlock()
 	m.categories[c.ID] = c
 	m.catOwners[c.ID] = accountID
+}
+
+func (m *LedgerMemoryStore) ImportCategories(_ context.Context, accountID uuid.UUID) ([]CategoryResource, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := []CategoryResource{}
+	for id, category := range m.categories {
+		if m.catOwners[id] == accountID && category.DeletedAt == nil {
+			out = append(out, category)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].SortOrder != out[j].SortOrder {
+			return out[i].SortOrder < out[j].SortOrder
+		}
+		return compareLedgerIDs(out[i].ID, out[j].ID) < 0
+	})
+	return out, nil
+}
+
+func (m *LedgerMemoryStore) InsertImported(ctx context.Context, accountID, tripID uuid.UUID, entries []LedgerResource) error {
+	for _, entry := range entries {
+		exists, err := m.IDExists(ctx, entry.ID)
+		if err != nil {
+			return err
+		}
+		if exists {
+			return apperr.Conflicted(codeIDAlreadyUsed, "该批次已导入")
+		}
+		if _, err := m.Insert(ctx, accountID, entry); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // PutMember 登记一位旅行成员。

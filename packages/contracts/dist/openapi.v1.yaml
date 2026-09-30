@@ -2048,6 +2048,127 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
+  /trips/{trip_id}/ledger-import-template:
+    parameters:
+      - name: trip_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags:
+        - finance
+      operationId: downloadLedgerImportTemplate
+      summary: 下载包含当前账号分类及行程成员下拉列表的 Excel 账单模板
+      responses:
+        '200':
+          description: 当前账号和行程专用的 .xlsx 模板
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '410':
+          $ref: '#/components/responses/Gone'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /trips/{trip_id}/ledger-import-preview:
+    parameters:
+      - name: trip_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      tags:
+        - finance
+      operationId: previewLedgerImport
+      summary: 上传 .xlsx 并预览账单、分摊结果和逐行错误，不写入账单
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+              description: 最大 5 MB，账单填写在第 5–1004 行，最多 1000 笔
+      responses:
+        '200':
+          description: 预览结果；有错误时不能确认导入，金额合计仅包含有效行
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/LedgerImportPreview'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '410':
+          $ref: '#/components/responses/Gone'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /trips/{trip_id}/ledger-import:
+    parameters:
+      - name: trip_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      tags:
+        - finance
+      operationId: commitLedgerImport
+      summary: 确认已预览的 Excel，整批事务导入支出；同一批次重试不重复入账
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - name: preview_digest
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: ^[a-f0-9]{64}$
+          description: 预览返回的摘要；文件、分类或成员设置变化后必须重新预览
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+              description: 与预览相同的 .xlsx 文件，最大 5 MB
+      responses:
+        '201':
+          description: 全部导入成功，affected 包含所有账单；结果不明时沿用同一 Idempotency-Key 重试
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WriteResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '410':
+          $ref: '#/components/responses/Gone'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
   /trips/{trip_id}/ledger-entries/{entry_id}:
     parameters:
       - name: trip_id
@@ -4661,6 +4782,95 @@ components:
       enum:
         - expense
         - refund
+    LedgerImportPreview:
+      type: object
+      x-go-type: finance.LedgerImportPreview
+      x-go-type-import:
+        path: tripfolio/server/internal/modules/finance
+      required:
+        - rows
+        - errors
+        - warnings
+        - count
+        - valid_count
+        - total_amount
+        - currency_code
+        - digest
+      properties:
+        rows:
+          type: array
+          items:
+            type: object
+            required:
+              - row
+              - amount
+              - category
+              - split_mode
+              - participants
+              - occurred_on
+              - notes
+              - payer
+              - splits
+            properties:
+              row:
+                type: integer
+              amount:
+                type: string
+              category:
+                type: string
+              split_mode:
+                type: string
+              participants:
+                type: array
+                items:
+                  type: string
+              occurred_on:
+                type: string
+              notes:
+                type: string
+              payer:
+                type: string
+              splits:
+                type: array
+                items:
+                  type: object
+                  required:
+                    - member
+                    - amount
+                  properties:
+                    member:
+                      type: string
+                    amount:
+                      type: string
+        errors:
+          type: array
+          items:
+            type: object
+            required:
+              - row
+              - column
+              - message
+            properties:
+              row:
+                type: integer
+              column:
+                type: string
+              message:
+                type: string
+        warnings:
+          type: array
+          items:
+            type: string
+        count:
+          type: integer
+        valid_count:
+          type: integer
+        total_amount:
+          type: string
+        currency_code:
+          type: string
+        digest:
+          type: string
     LedgerEntry:
       type: object
       description: |

@@ -27,6 +27,7 @@ import {
   Trash2,
   User,
   Users,
+  Upload,
 } from '@lucide/vue'
 
 /** 按需导入 Lucide，尺寸、描边与颜色由 ActionIcon 统一提供。 */
@@ -57,6 +58,7 @@ export const actionIcons = {
   'chevron-up': ChevronUp,
   user: User,
   users: Users,
+  upload: Upload,
   'arrow-up': ArrowUp,
   'arrow-down': ArrowDown,
 } as const

@@ -49,6 +49,8 @@ func (r LedgerResource) Values() LedgerValues {
 
 // LedgerRepo 是账目在写事务内的仓储；由 PostgreSQL 适配器绑定到当前事务。
 type LedgerRepo interface {
+	ImportCategories(ctx context.Context, accountID uuid.UUID) ([]CategoryResource, error)
+	InsertImported(ctx context.Context, accountID, tripID uuid.UUID, entries []LedgerResource) error
 	// Trip 读取所属旅行的窄视图；不存在或非本人返回 found=false。
 	Trip(ctx context.Context, accountID, tripID uuid.UUID) (LedgerTripInfo, bool, error)
 	// SetTripCurrencyLock 写入或清空旅行的 currency_locked_at，递增旅行版本并返回其规范资源作为同步快照。
@@ -141,6 +143,8 @@ type StatisticsData struct {
 
 // LedgerReader 是事务外的只读仓储。
 type LedgerReader interface {
+	ImportCategories(ctx context.Context, accountID uuid.UUID) ([]CategoryResource, error)
+	ActiveMembers(ctx context.Context, accountID, tripID uuid.UUID) ([]member.Resource, error)
 	Trip(ctx context.Context, accountID, tripID uuid.UUID) (LedgerTripInfo, bool, error)
 	Get(ctx context.Context, accountID, tripID, id uuid.UUID) (LedgerResource, bool, error)
 	// List 按 occurred_on、id 均降序返回最多 Limit 条有效账目。
