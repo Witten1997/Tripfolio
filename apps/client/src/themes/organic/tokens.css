@@ -11,6 +11,13 @@
   --tf-info: #8a8574;
   --tf-info-soft: #ece8dd;
 
+  --tf-itinerary-attraction: #0f766e;
+  --tf-itinerary-transport: #8a6500;
+  --tf-itinerary-lodging: #9c3f5e;
+  --tf-itinerary-dining: #c2410c;
+  --tf-itinerary-other: #525252;
+  --tf-itinerary-icon: #ffffff;
+
   --tf-canvas: #f4efe6;
   --tf-surface: #fffdf8;
   --tf-surface-raised: #ffffff;

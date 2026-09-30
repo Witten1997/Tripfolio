@@ -104,9 +104,7 @@ watch(
               <RouterLink :to="{ name: 'personal-settings' }" role="menuitem">
                 个人设置
               </RouterLink>
-              <RouterLink :to="{ name: 'change-password' }" role="menuitem">
-                修改密码
-              </RouterLink>
+              <RouterLink :to="{ name: 'change-password' }" role="menuitem"> 修改密码 </RouterLink>
               <RouterLink :to="{ name: 'login-devices' }" role="menuitem">
                 登录设备管理
               </RouterLink>

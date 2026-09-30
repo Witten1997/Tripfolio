@@ -11,6 +11,13 @@
   --tf-info: #4c9189;
   --tf-info-soft: rgb(76 145 137 / 0.14);
 
+  --tf-itinerary-attraction: #0f766e;
+  --tf-itinerary-transport: #8a6500;
+  --tf-itinerary-lodging: #9c3f5e;
+  --tf-itinerary-dining: #c2410c;
+  --tf-itinerary-other: #525252;
+  --tf-itinerary-icon: #ffffff;
+
   --tf-canvas: #cfe9e5;
   --tf-surface: rgb(255 255 255 / 0.48);
   /* 现有小浮层没有模糊层，保留更实的阅读底；对话框由装饰层独立透色。 */

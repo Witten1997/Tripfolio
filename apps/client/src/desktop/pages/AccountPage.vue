@@ -473,7 +473,6 @@ onMounted(async () => {
           <p v-else class="session-empty" role="status">暂无登录设备</p>
         </div>
       </ElCard>
-
     </template>
   </div>
 </template>

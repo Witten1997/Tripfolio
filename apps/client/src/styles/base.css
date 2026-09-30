@@ -14,12 +14,6 @@
   --tf-font-display:
     'STKaiti', 'KaiTi', 'FZKai-Z03', 'Segoe Script', 'Songti SC', 'Noto Serif CJK SC', serif;
   --tf-control-size: 40px;
-  --tf-itinerary-attraction: #0f766e;
-  --tf-itinerary-transport: #4d8edb;
-  --tf-itinerary-lodging: #6d4cb3;
-  --tf-itinerary-dining: #c2410c;
-  --tf-itinerary-other: #4b5563;
-  --tf-itinerary-icon: #ffffff;
   font-family: var(--tf-font-body);
 }
 
