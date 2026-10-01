@@ -343,6 +343,12 @@ func (s *Service) Update(ctx context.Context, a actor.Actor, operationID, tripID
 		AccountID: a.AccountID, OperationID: operationID, OperationType: "packing.update",
 		Fingerprint: write.Fingerprint("packing.update", id.String(), &base, patch),
 	}
+	if result, handled, err := write.TryPatch[Resource](ctx, s.uow, req, write.PatchCommand{
+		EntityType: EntityType, TripID: tripID, EntityID: id, BaseVersion: baseVersion,
+		Values: patch, Fields: submitted,
+	}); handled || err != nil {
+		return result, err
+	}
 	var saved *Resource
 	return s.uow.Run(ctx, req, func(ctx context.Context, scope write.Scope, repo Repo) error {
 		if len(submitted) == 1 && patch.Status != nil {
