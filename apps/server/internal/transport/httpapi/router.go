@@ -16,6 +16,7 @@ import (
 	"tripfolio/server/internal/modules/finance"
 	"tripfolio/server/internal/modules/geo"
 	"tripfolio/server/internal/modules/metadata"
+	"tripfolio/server/internal/modules/travel/dashboard"
 	"tripfolio/server/internal/modules/travel/itinerary"
 	"tripfolio/server/internal/modules/travel/member"
 	"tripfolio/server/internal/modules/travel/packing"
@@ -28,6 +29,7 @@ import (
 
 // Deps 是路由需要的全部依赖，由 bootstrap 显式装配。
 type Deps struct {
+	Dashboard   *dashboard.Service
 	Logger      *slog.Logger
 	Metadata    metadata.Metadata
 	Readiness   Readiness
@@ -109,7 +111,8 @@ func NewRouter(d Deps) http.Handler {
 	r.Get("/health/ready", ready(d.Readiness))
 
 	handler := &Handler{
-		logger: d.Logger, metadata: d.Metadata, identity: d.Identity, sessions: d.Sessions, profile: d.Profile,
+		dashboard: d.Dashboard,
+		logger:    d.Logger, metadata: d.Metadata, identity: d.Identity, sessions: d.Sessions, profile: d.Profile,
 		categories: d.Categories, trips: d.Trips, itinerary: d.Itinerary, routePlans: d.RoutePlans, packing: d.Packing, todos: d.Todos,
 		ledger: d.Ledger, statistics: d.Statistics, settlement: d.Settlement, members: d.Members, assets: d.Assets, geo: d.Geo,
 		cookies: d.Cookies, corsOrigins: d.CORSOrigins, shares: d.Shares,

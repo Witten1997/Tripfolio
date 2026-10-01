@@ -18,6 +18,7 @@ import (
 	"tripfolio/server/internal/modules/assets"
 	"tripfolio/server/internal/modules/finance"
 	"tripfolio/server/internal/modules/geo"
+	"tripfolio/server/internal/modules/travel/dashboard"
 	"tripfolio/server/internal/modules/travel/itinerary"
 	"tripfolio/server/internal/modules/travel/member"
 	"tripfolio/server/internal/modules/travel/packing"
@@ -874,6 +875,81 @@ type DailyTotalsPage struct {
 	NextCursor nullable.Nullable[string] `json:"next_cursor"`
 }
 
+// DashboardAmounts defines model for DashboardAmounts.
+type DashboardAmounts struct {
+	Expense string `json:"expense"`
+	Net     string `json:"net"`
+	Refund  string `json:"refund"`
+}
+
+// DashboardCategory defines model for DashboardCategory.
+type DashboardCategory struct {
+	Id       openapi_types.UUID `json:"id"`
+	Name     string             `json:"name"`
+	Personal DashboardAmounts   `json:"personal"`
+	Whole    DashboardAmounts   `json:"whole"`
+}
+
+// DashboardPlace defines model for DashboardPlace.
+type DashboardPlace struct {
+	Address  string             `json:"address"`
+	Excluded bool               `json:"excluded"`
+	Id       openapi_types.UUID `json:"id"`
+
+	// Kind 项目类型；取值清单见 Metadata.itinerary_kinds
+	Kind      ItineraryKind                      `json:"kind"`
+	Latitude  nullable.Nullable[float32]         `json:"latitude"`
+	Longitude nullable.Nullable[float32]         `json:"longitude"`
+	Name      string                             `json:"name"`
+	PoiId     string                             `json:"poi_id"`
+	Region    nullable.Nullable[DashboardRegion] `json:"region"`
+
+	// ScheduledOn YYYY-MM-DD，不带时区
+	//
+	// Example: 2026-10-01
+	ScheduledOn Date               `json:"scheduled_on"`
+	TripId      openapi_types.UUID `json:"trip_id"`
+
+	// Version 资源版本，正整数十进制字符串
+	//
+	// Example: 7
+	Version Version `json:"version"`
+}
+
+// DashboardRegion defines model for DashboardRegion.
+type DashboardRegion struct {
+	CityCode     string `json:"city_code"`
+	CityName     string `json:"city_name"`
+	ProvinceCode string `json:"province_code"`
+	ProvinceName string `json:"province_name"`
+}
+
+// DashboardSnapshot defines model for DashboardSnapshot.
+type DashboardSnapshot = dashboard.Snapshot
+
+// DashboardTrip defines model for DashboardTrip.
+type DashboardTrip struct {
+	Categories []DashboardCategory `json:"categories"`
+
+	// CurrencyCode 支持清单内的 ISO 4217 三字母大写代码；清单见 Metadata.currencies
+	//
+	// Example: CNY
+	CurrencyCode CurrencyCode `json:"currency_code"`
+	Days         int          `json:"days"`
+
+	// EndDate YYYY-MM-DD，不带时区
+	//
+	// Example: 2026-10-01
+	EndDate Date               `json:"end_date"`
+	Id      openapi_types.UUID `json:"id"`
+	Name    string             `json:"name"`
+
+	// StartDate YYYY-MM-DD，不带时区
+	//
+	// Example: 2026-10-01
+	StartDate Date `json:"start_date"`
+}
+
 // Date YYYY-MM-DD，不带时区
 //
 // Example: 2026-10-01
@@ -1067,6 +1143,9 @@ type ItineraryCreate struct {
 	PlannedEndLocal        nullable.Nullable[string]  `json:"planned_end_local,omitempty"`
 	PlannedStartLocal      nullable.Nullable[string]  `json:"planned_start_local,omitempty"`
 
+	// PoiId 高德 POI 标识；地图手动选点或历史地点为空字符串
+	PoiId *string `json:"poi_id,omitempty"`
+
 	// ScheduledOn YYYY-MM-DD，不带时区
 	//
 	// Example: 2026-10-01
@@ -1112,6 +1191,9 @@ type ItineraryPatch struct {
 	CurrencyCode    *CurrencyCode             `json:"currency_code,omitempty"`
 	EstimatedAmount nullable.Nullable[string] `json:"estimated_amount,omitempty"`
 
+	// FootprintExcluded 是否手动排除旅行足迹，不影响原行程、天数和账目
+	FootprintExcluded *bool `json:"footprint_excluded,omitempty"`
+
 	// Kind 项目类型；取值清单见 Metadata.itinerary_kinds
 	Kind                   *ItineraryKind             `json:"kind,omitempty"`
 	Latitude               nullable.Nullable[float64] `json:"latitude,omitempty"`
@@ -1121,6 +1203,9 @@ type ItineraryPatch struct {
 	PlannedDurationMinutes nullable.Nullable[int32]   `json:"planned_duration_minutes,omitempty"`
 	PlannedEndLocal        nullable.Nullable[string]  `json:"planned_end_local,omitempty"`
 	PlannedStartLocal      nullable.Nullable[string]  `json:"planned_start_local,omitempty"`
+
+	// PoiId 高德 POI 标识；地图手动选点或历史地点为空字符串
+	PoiId *string `json:"poi_id,omitempty"`
 
 	// Status 项目状态；取值清单见 Metadata.itinerary_statuses
 	Status *ItineraryStatus `json:"status,omitempty"`
@@ -2053,6 +2138,14 @@ type AuthorizeAssetUploadParams struct {
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
 }
 
+// GetDashboardParams defines parameters for GetDashboard.
+type GetDashboardParams struct {
+	// LocationAfter 使用上次返回的 next_location_after 继续识别坐标，不影响旅行与费用筛选
+	LocationAfter *string `form:"location_after,omitempty" json:"location_after,omitempty"`
+	DateFrom      *string `form:"date_from,omitempty" json:"date_from,omitempty"`
+	DateTo        *string `form:"date_to,omitempty" json:"date_to,omitempty"`
+}
+
 // CreateExpenseCategoryParams defines parameters for CreateExpenseCategory.
 type CreateExpenseCategoryParams struct {
 	// IdempotencyKey 写请求的操作编号（UUID）；相同成功操作重试复用同一键
@@ -2560,6 +2653,9 @@ type ServerInterface interface {
 	// RegisterAccount 验证邮箱后创建账号并登录
 	// (POST /auth/register)
 	RegisterAccount(w http.ResponseWriter, r *http.Request)
+	// GetDashboard 个人旅行看板，汇总已结束旅行的足迹、天数与分类花销
+	// (GET /dashboard)
+	GetDashboard(w http.ResponseWriter, r *http.Request, params GetDashboardParams)
 	// ListExpenseCategories 本账号全部有效账单分类
 	// (GET /expense-categories)
 	ListExpenseCategories(w http.ResponseWriter, r *http.Request)
@@ -2854,6 +2950,12 @@ func (_ Unimplemented) RefreshSession(w http.ResponseWriter, r *http.Request) {
 // RegisterAccount 验证邮箱后创建账号并登录
 // (POST /auth/register)
 func (_ Unimplemented) RegisterAccount(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetDashboard 个人旅行看板，汇总已结束旅行的足迹、天数与分类花销
+// (GET /dashboard)
+func (_ Unimplemented) GetDashboard(w http.ResponseWriter, r *http.Request, params GetDashboardParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -3701,6 +3803,65 @@ func (siw *ServerInterfaceWrapper) RegisterAccount(w http.ResponseWriter, r *htt
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.RegisterAccount(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetDashboard operation middleware
+func (siw *ServerInterfaceWrapper) GetDashboard(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetDashboardParams
+
+	// ------------- Optional query parameter "location_after" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "location_after", r.URL.Query(), &params.LocationAfter, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "location_after"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "location_after", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "date_from" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "date_from", r.URL.Query(), &params.DateFrom, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "date_from"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "date_from", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "date_to" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "date_to", r.URL.Query(), &params.DateTo, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "date_to"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "date_to", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetDashboard(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -7219,6 +7380,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	}
 
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/dashboard", wrapper.GetDashboard)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/geo/reverse-geocode", wrapper.ReverseGeocode)
 	})
 	r.Group(func(r chi.Router) {
@@ -8743,6 +8907,97 @@ func (response RegisterAccount422ApplicationProblemPlusJSONResponse) VisitRegist
 	}
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetDashboardRequestObject struct {
+	Params GetDashboardParams
+}
+
+type GetDashboardResponseObject interface {
+	VisitGetDashboardResponse(w http.ResponseWriter) error
+}
+
+type GetDashboard200JSONResponse struct {
+	Data DashboardSnapshot `json:"data"`
+}
+
+func (response GetDashboard200JSONResponse) VisitGetDashboardResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetDashboard400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response GetDashboard400ApplicationProblemPlusJSONResponse) VisitGetDashboardResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetDashboard401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response GetDashboard401ApplicationProblemPlusJSONResponse) VisitGetDashboardResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetDashboard422ApplicationProblemPlusJSONResponse struct {
+	ValidationFailedApplicationProblemPlusJSONResponse
+}
+
+func (response GetDashboard422ApplicationProblemPlusJSONResponse) VisitGetDashboardResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetDashboard503ApplicationProblemPlusJSONResponse struct {
+	DependencyUnavailableApplicationProblemPlusJSONResponse
+}
+
+func (response GetDashboard503ApplicationProblemPlusJSONResponse) VisitGetDashboardResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(503)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -14655,6 +14910,9 @@ type StrictServerInterface interface {
 	// RegisterAccount 验证邮箱后创建账号并登录
 	// (POST /auth/register)
 	RegisterAccount(ctx context.Context, request RegisterAccountRequestObject) (RegisterAccountResponseObject, error)
+	// GetDashboard 个人旅行看板，汇总已结束旅行的足迹、天数与分类花销
+	// (GET /dashboard)
+	GetDashboard(ctx context.Context, request GetDashboardRequestObject) (GetDashboardResponseObject, error)
 	// ListExpenseCategories 本账号全部有效账单分类
 	// (GET /expense-categories)
 	ListExpenseCategories(ctx context.Context, request ListExpenseCategoriesRequestObject) (ListExpenseCategoriesResponseObject, error)
@@ -15401,6 +15659,32 @@ func (sh *strictHandler) RegisterAccount(w http.ResponseWriter, r *http.Request)
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(RegisterAccountResponseObject); ok {
 		if err := validResponse.VisitRegisterAccountResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetDashboard operation middleware
+func (sh *strictHandler) GetDashboard(w http.ResponseWriter, r *http.Request, params GetDashboardParams) {
+	var request GetDashboardRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetDashboard(ctx, request.(GetDashboardRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetDashboard")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetDashboardResponseObject); ok {
+		if err := validResponse.VisitGetDashboardResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

@@ -199,6 +199,7 @@ func (m *MemoryStore) mutate(accountID, tripID, id uuid.UUID, fn func(r *Resourc
 func (m *MemoryStore) Update(_ context.Context, accountID, tripID, id uuid.UUID, v Values, now time.Time) (Resource, error) {
 	return m.mutate(accountID, tripID, id, func(r *Resource) {
 		r.Title, r.Kind = v.Title, v.Kind
+		r.FootprintExcluded, r.POIID = v.FootprintExcluded, v.POIID
 		r.PlannedStartLocal, r.PlannedEndLocal, r.PlannedDurationMinutes = v.PlannedStartLocal, v.PlannedEndLocal, v.PlannedDurationMinutes
 		r.PlaceName, r.Address, r.Latitude, r.Longitude = v.PlaceName, v.Address, v.Latitude, v.Longitude
 		r.EstimatedAmount, r.Notes, r.Status = v.EstimatedAmount, v.Notes, v.Status

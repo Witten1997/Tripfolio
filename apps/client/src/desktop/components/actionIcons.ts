@@ -16,6 +16,7 @@ import {
   ListFilter,
   LoaderCircle,
   Luggage,
+  LayoutDashboard,
   Map as MapIcon,
   Eye,
   Palette,
@@ -24,6 +25,7 @@ import {
   ReceiptText,
   RotateCw,
   Search,
+  Settings2,
   Trash2,
   User,
   Users,
@@ -32,6 +34,7 @@ import {
 
 /** 按需导入 Lucide，尺寸、描边与颜色由 ActionIcon 统一提供。 */
 export const actionIcons = {
+  dashboard: LayoutDashboard,
   archive: Archive,
   'archive-restore': ArchiveRestore,
   'sort-desc': ArrowDownWideNarrow,
@@ -45,6 +48,7 @@ export const actionIcons = {
   theme: Palette,
   refresh: RotateCw,
   search: Search,
+  settings: Settings2,
   globe: Globe,
   receipt: ReceiptText,
   plus: Plus,

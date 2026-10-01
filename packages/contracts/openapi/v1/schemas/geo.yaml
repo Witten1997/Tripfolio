@@ -33,6 +33,12 @@ GeoPlace:
     longitude:
       type: number
       format: double
+    province:
+      type: string
+    city:
+      type: string
+    district:
+      type: string
     adcode:
       type: string
       nullable: true

@@ -42,6 +42,50 @@ tags:
   - name: public
     description: 访客凭分享令牌读取的只读接口
 paths:
+  /dashboard:
+    get:
+      tags:
+        - travel
+      operationId: getDashboard
+      summary: 个人旅行看板，汇总已结束旅行的足迹、天数与分类花销
+      description: 按旅行时区判断结束，按出发日期筛选。包含归档旅行，排除回收站。金额按旅行币种分别返回。
+      parameters:
+        - name: location_after
+          in: query
+          description: 使用上次返回的 next_location_after 继续识别坐标，不影响旅行与费用筛选
+          schema:
+            type: string
+            maxLength: 64
+        - name: date_from
+          in: query
+          schema:
+            type: string
+            pattern: ^\d{4}-\d{2}-\d{2}$
+        - name: date_to
+          in: query
+          schema:
+            type: string
+            pattern: ^\d{4}-\d{2}-\d{2}$
+      responses:
+        '200':
+          description: 同一数据库快照下的旅行统计；省市识别失败时明确返回待识别数量
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/DashboardSnapshot'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '503':
+          $ref: '#/components/responses/DependencyUnavailable'
   /geo/reverse-geocode:
     get:
       tags:
@@ -2758,6 +2802,177 @@ components:
         type: string
         pattern: ^"[1-9][0-9]*"$
   schemas:
+    DashboardSnapshot:
+      type: object
+      x-go-type: dashboard.Snapshot
+      x-go-type-import:
+        path: tripfolio/server/internal/modules/travel/dashboard
+      required:
+        - generated_at
+        - years
+        - trips
+        - places
+        - days
+        - monthly_days
+        - unresolved_places
+        - missing_coordinates
+        - resolved_locations
+        - location_warning
+        - next_location_after
+      properties:
+        generated_at:
+          type: string
+          format: date-time
+        years:
+          type: array
+          items:
+            type: integer
+        trips:
+          type: array
+          items:
+            $ref: '#/components/schemas/DashboardTrip'
+        places:
+          type: array
+          items:
+            $ref: '#/components/schemas/DashboardPlace'
+        days:
+          type: integer
+        monthly_days:
+          type: array
+          minItems: 12
+          maxItems: 12
+          items:
+            type: integer
+        unresolved_places:
+          type: integer
+        missing_coordinates:
+          type: integer
+        resolved_locations:
+          type: integer
+        location_warning:
+          type: string
+        next_location_after:
+          type: string
+          description: 仍有未处理坐标时用于继续识别，空字符串表示本轮已遍历完
+    DashboardTrip:
+      type: object
+      required:
+        - id
+        - name
+        - start_date
+        - end_date
+        - currency_code
+        - days
+        - categories
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        start_date:
+          $ref: '#/components/schemas/Date'
+        end_date:
+          $ref: '#/components/schemas/Date'
+        currency_code:
+          $ref: '#/components/schemas/CurrencyCode'
+        days:
+          type: integer
+        categories:
+          type: array
+          items:
+            $ref: '#/components/schemas/DashboardCategory'
+    DashboardPlace:
+      type: object
+      required:
+        - id
+        - trip_id
+        - version
+        - name
+        - kind
+        - scheduled_on
+        - address
+        - latitude
+        - longitude
+        - excluded
+        - poi_id
+        - region
+      properties:
+        id:
+          type: string
+          format: uuid
+        trip_id:
+          type: string
+          format: uuid
+        version:
+          $ref: '#/components/schemas/Version'
+        name:
+          type: string
+        kind:
+          $ref: '#/components/schemas/ItineraryKind'
+        scheduled_on:
+          $ref: '#/components/schemas/Date'
+        address:
+          type: string
+        latitude:
+          type: number
+          nullable: true
+        longitude:
+          type: number
+          nullable: true
+        excluded:
+          type: boolean
+        poi_id:
+          type: string
+        region:
+          $ref: '#/components/schemas/DashboardRegion'
+    DashboardRegion:
+      type: object
+      nullable: true
+      required:
+        - province_code
+        - province_name
+        - city_code
+        - city_name
+      properties:
+        province_code:
+          type: string
+        province_name:
+          type: string
+        city_code:
+          type: string
+        city_name:
+          type: string
+    DashboardCategory:
+      type: object
+      required:
+        - id
+        - name
+        - personal
+        - whole
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        personal:
+          $ref: '#/components/schemas/DashboardAmounts'
+        whole:
+          $ref: '#/components/schemas/DashboardAmounts'
+    DashboardAmounts:
+      type: object
+      required:
+        - expense
+        - refund
+        - net
+      properties:
+        expense:
+          type: string
+        refund:
+          type: string
+        net:
+          type: string
     GeoCoordinate:
       type: object
       x-go-type: geo.Coordinate
@@ -2801,6 +3016,12 @@ components:
         longitude:
           type: number
           format: double
+        province:
+          type: string
+        city:
+          type: string
+        district:
+          type: string
         adcode:
           type: string
           nullable: true
@@ -3909,6 +4130,13 @@ components:
         - updated_at
         - deleted_at
       properties:
+        poi_id:
+          type: string
+          maxLength: 128
+          description: 高德 POI 标识；地图手动选点或历史地点为空字符串
+        footprint_excluded:
+          type: boolean
+          description: 是否手动排除旅行足迹，不影响原行程、天数和账目
         id:
           type: string
           format: uuid
@@ -4033,6 +4261,10 @@ components:
         - kind
         - scheduled_on
       properties:
+        poi_id:
+          type: string
+          maxLength: 128
+          description: 高德 POI 标识；地图手动选点或历史地点为空字符串
         id:
           type: string
           format: uuid
@@ -4104,6 +4336,13 @@ components:
         id、scheduled_on、sort_order 不可在此修改，跨日移动与排序走重排接口；
         estimated_amount 改为非空值时须同时携带 currency_code。
       properties:
+        poi_id:
+          type: string
+          maxLength: 128
+          description: 高德 POI 标识；地图手动选点或历史地点为空字符串
+        footprint_excluded:
+          type: boolean
+          description: 是否手动排除旅行足迹，不影响原行程、天数和账目
         title:
           type: string
           minLength: 1

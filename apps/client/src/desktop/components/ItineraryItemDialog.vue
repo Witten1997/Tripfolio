@@ -29,11 +29,9 @@ import {
   createItineraryItem,
   getItineraryItem,
   itineraryKindLabels,
-  itineraryStatusLabels,
   updateItineraryItem,
   type ItineraryItem,
   type ItineraryKind,
-  type ItineraryStatus,
 } from '@/shared/api/itinerary'
 import { actionError, writeWarnings, type WriteOutcome } from '@/shared/api/writes'
 import {
@@ -110,16 +108,11 @@ const {
 } = editor
 
 const kinds = Object.keys(itineraryKindLabels) as ItineraryKind[]
-const statuses = Object.keys(itineraryStatusLabels) as ItineraryStatus[]
 const plannedModeOptions = [
   { value: 'none', label: '不设置' },
   { value: 'end', label: '结束时间' },
   { value: 'duration', label: '停留时长' },
 ]
-const statusOptions = statuses.map((value) => ({
-  value,
-  label: itineraryStatusLabels[value],
-}))
 const plannedStartTime = computed({
   get: () => draft.planned_start.slice(-5),
   set: (value: string) => {
@@ -134,7 +127,7 @@ const locationError = computed(
     errors.value.longitude ||
     (errors.value.title ? '请重新选择地点，行程名称将自动填写' : ''),
 )
-const detailFields = ['notes', 'status', 'actual_start_local', 'actual_end_local', 'actual_notes']
+const detailFields = ['notes', 'actual_start_local', 'actual_end_local', 'actual_notes']
 watch(errors, (value) => {
   if (detailFields.some((field) => value[field])) detailsOpened.value = true
 })
@@ -488,9 +481,6 @@ defineExpose({ open })
           </ElFormItem>
           <fieldset class="editor-group">
             <legend>实际情况</legend>
-            <ElFormItem label="状态" :error="errors.status">
-              <SlidingSegmented v-model="draft.status" :options="statusOptions" label="状态" />
-            </ElFormItem>
             <div class="editor-columns">
               <ElFormItem label="实际开始" :error="errors.actual_start_local">
                 <ElDatePicker

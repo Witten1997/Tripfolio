@@ -14,6 +14,7 @@ async function shell(path: string) {
     history: createMemoryHistory(),
     routes: [
       { path: '/trips', name: 'trips', component: { template: '<div data-page="trips" />' } },
+      { path: '/dashboard', name: 'dashboard', component: { template: '<div />' } },
       {
         path: '/trips/:tripId/itinerary',
         name: 'trip-itinerary',

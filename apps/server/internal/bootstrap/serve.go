@@ -166,7 +166,7 @@ func RunServe(ctx context.Context, cfg config.Config, logger *slog.Logger) error
 		Cookies:  httpapi.CookieSettings{Secure: cfg.CookieSecure},
 		Identity: services.Identity, Sessions: services.Sessions, Profile: services.Profile, Categories: services.Categories,
 		Trips: services.Trips, Itinerary: services.Itinerary, RoutePlans: services.RoutePlans, Packing: services.Packing, Todos: services.Todos, Members: services.Members,
-		Ledger: services.Ledger, Statistics: services.Statistics, Settlement: services.Settlement, Assets: services.Assets, Geo: services.Geo, Shares: services.Shares,
+		Dashboard: services.Dashboard, Ledger: services.Ledger, Statistics: services.Statistics, Settlement: services.Settlement, Assets: services.Assets, Geo: services.Geo, Shares: services.Shares,
 		Web: webHandler,
 	})
 	logger.Info("HTTP 服务准备就绪",

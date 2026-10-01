@@ -10,7 +10,7 @@ import {
   ElSkeleton,
   ElTag,
 } from 'element-plus'
-import { computed, onMounted, ref, shallowRef, watch } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, shallowRef, watch } from 'vue'
 
 import IconAction from '@/desktop/components/IconAction.vue'
 import SlidingSegmented from '@/desktop/components/SlidingSegmented.vue'
@@ -38,7 +38,7 @@ const context = useTripContext()
 const items = shallowRef<TodoListItem[]>([])
 const loading = ref(false)
 const error = ref<string | null>(null)
-const busy = ref<string | null>(null)
+const busy = reactive(new Map<string, 'status' | 'delete'>())
 const actionFailure = ref<string | null>(null)
 const notice = ref<string[]>([])
 const noticeType = ref<'success' | 'warning'>('success')
@@ -46,6 +46,7 @@ const state = ref<TodoState>('all')
 const dialog = ref<InstanceType<typeof TodoDialog>>()
 const intents = new Map<string, ReturnType<typeof createWriteIntent>>()
 let generation = 0
+let itemsRevision = 0
 
 const states = Object.keys(todoStateLabels) as TodoState[]
 const stateOptions = states.map((value) => ({ value, label: todoStateLabels[value] }))
@@ -56,13 +57,17 @@ const progress = computed(() => {
   return { total, done, overdue, percent: total ? Math.round((done / total) * 100) : 0 }
 })
 
-async function reload() {
+async function reload(): Promise<void> {
   const request = ++generation
+  const revision = itemsRevision
   loading.value = true
   error.value = null
   try {
     const loaded = await listAllTodos(context.tripId, state.value)
-    if (request === generation) items.value = loaded
+    if (request !== generation) return
+    // 读取期间有单条写入完成时，重新读取，避免旧列表覆盖已确认的状态。
+    if (revision !== itemsRevision) return await reload()
+    items.value = loaded
   } catch (cause) {
     if (request === generation) error.value = actionError(cause, '无法加载待办，请检查网络后重试')
   } finally {
@@ -77,8 +82,8 @@ function intentFor(slot: string) {
 }
 
 async function toggle(item: TodoListItem, completed: boolean) {
-  if (busy.value || item.completed === completed) return
-  busy.value = item.id
+  if (busy.has(item.id) || item.completed === completed) return
+  busy.set(item.id, 'status')
   actionFailure.value = null
   const intent = intentFor(`complete:${item.id}`)
   try {
@@ -89,6 +94,7 @@ async function toggle(item: TodoListItem, completed: boolean) {
       { completed },
       intent.key({ id: item.id, version: item.version, completed }),
     )
+    itemsRevision++
     intent.reset()
     const warnings = writeWarnings(outcome.result)
     if (warnings.length) {
@@ -98,15 +104,18 @@ async function toggle(item: TodoListItem, completed: boolean) {
     // 逾期标识由列表上下文计算，本地按同一规则更新，避免整表刷新
     if (outcome.resource) {
       const next = outcome.resource
-      items.value = items.value.map((i) =>
-        i.id === item.id
-          ? {
-              ...next,
-              is_overdue: !next.completed && !!next.due_on && next.due_on < context.today.value,
-            }
-          : i,
+      const updated = {
+        ...next,
+        is_overdue: !next.completed && !!next.due_on && next.due_on < context.today.value,
+      }
+      const matches =
+        state.value === 'all' ||
+        (state.value === 'pending' && !updated.completed) ||
+        (state.value === 'completed' && updated.completed) ||
+        (state.value === 'overdue' && updated.is_overdue)
+      items.value = items.value.flatMap((i) =>
+        i.id === item.id ? (matches ? [updated] : []) : [i],
       )
-      if (state.value !== 'all') await reload()
     } else await reload()
   } catch (cause) {
     actionFailure.value = actionError(cause, '网络连接中断，结果尚未确认。可重试或刷新后确认。')
@@ -116,12 +125,33 @@ async function toggle(item: TodoListItem, completed: boolean) {
     )
       await reload()
   } finally {
-    busy.value = null
+    busy.delete(item.id)
+  }
+}
+
+async function toggleCompleted(item: TodoListItem, checked: boolean, event?: Event) {
+  const input = event?.target instanceof HTMLInputElement ? event.target : null
+  const restoreFocus = input === document.activeElement
+  const scope = input?.closest('.todos-tab')
+  // 等待服务端确认后再改变勾选，失败时保留原状态。
+  if (input) input.checked = item.completed
+  await toggle(item, checked)
+  await nextTick()
+  if (
+    restoreFocus &&
+    scope?.isConnected &&
+    (document.activeElement === document.body || document.activeElement === input)
+  ) {
+    const target = input?.isConnected
+      ? input
+      : (scope.querySelector<HTMLInputElement>('.todo-check input:not(:disabled)') ??
+        scope.querySelector<HTMLButtonElement>('.sliding-segmented__option.is-active'))
+    if (target && !target.disabled) target.focus({ preventScroll: true })
   }
 }
 
 async function remove(item: TodoListItem) {
-  if (busy.value) return
+  if (busy.has(item.id)) return
   try {
     await ElMessageBox.confirm(`删除“${item.title}”？`, '删除这条待办', {
       type: 'warning',
@@ -131,7 +161,8 @@ async function remove(item: TodoListItem) {
   } catch {
     return
   }
-  busy.value = item.id
+  if (busy.has(item.id)) return
+  busy.set(item.id, 'delete')
   actionFailure.value = null
   const intent = intentFor(`delete:${item.id}`)
   try {
@@ -141,6 +172,7 @@ async function remove(item: TodoListItem) {
       item.version,
       intent.key({ delete: item.id, version: item.version }),
     )
+    itemsRevision++
     intent.reset()
     noticeType.value = 'success'
     notice.value = ['待办已删除。']
@@ -153,11 +185,12 @@ async function remove(item: TodoListItem) {
     )
       await reload()
   } finally {
-    busy.value = null
+    busy.delete(item.id)
   }
 }
 
 async function saved(outcome: WriteOutcome<Todo>) {
+  itemsRevision++
   const warnings = writeWarnings(outcome.result)
   noticeType.value = warnings.length ? 'warning' : 'success'
   notice.value = ['待办已保存。', ...warnings]
@@ -233,13 +266,14 @@ onMounted(reload)
         :key="item.id"
         class="todo"
         :class="{ 'todo--done': item.completed, 'todo--overdue': item.is_overdue }"
+        :aria-busy="busy.has(item.id)"
       >
         <ElCheckbox
           :model-value="item.completed"
-          :disabled="!!busy && busy !== item.id"
+          :disabled="busy.has(item.id)"
           :aria-label="`${item.completed ? '恢复未完成' : '标记完成'}：${item.title}`"
           class="todo-check"
-          @change="toggle(item, $event as boolean)"
+          @change="(checked: unknown, event?: Event) => toggleCompleted(item, !!checked, event)"
         />
         <div class="todo-main">
           <div class="todo-title">
@@ -259,7 +293,7 @@ onMounted(reload)
             icon="edit"
             :label="`编辑待办：${item.title}`"
             text
-            :disabled="!!busy"
+            :disabled="busy.has(item.id)"
             @click="dialog?.open(item)"
           />
           <IconAction
@@ -267,8 +301,8 @@ onMounted(reload)
             :label="`删除待办：${item.title}`"
             text
             type="danger"
-            :disabled="!!busy"
-            :loading="busy === item.id"
+            :disabled="busy.has(item.id)"
+            :loading="busy.get(item.id) === 'delete'"
             @click="remove(item)"
           />
         </div>

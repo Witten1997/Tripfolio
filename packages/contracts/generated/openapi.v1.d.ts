@@ -321,6 +321,26 @@ export type paths = {
         patch?: never;
         trace?: never;
     };
+    "/dashboard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 个人旅行看板，汇总已结束旅行的足迹、天数与分类花销
+         * @description 按旅行时区判断结束，按出发日期筛选。包含归档旅行，排除回收站。金额按旅行币种分别返回。
+         */
+        get: operations["getDashboard"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/expense-categories": {
         parameters: {
             query?: never;
@@ -1323,6 +1343,65 @@ export type components = {
             items: components["schemas"]["DailyTotals"][];
             next_cursor: string | null;
         };
+        DashboardAmounts: {
+            expense: string;
+            net: string;
+            refund: string;
+        };
+        DashboardCategory: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            personal: components["schemas"]["DashboardAmounts"];
+            whole: components["schemas"]["DashboardAmounts"];
+        };
+        DashboardPlace: {
+            address: string;
+            excluded: boolean;
+            /** Format: uuid */
+            id: string;
+            kind: components["schemas"]["ItineraryKind"];
+            latitude: number | null;
+            longitude: number | null;
+            name: string;
+            poi_id: string;
+            region: components["schemas"]["DashboardRegion"];
+            scheduled_on: components["schemas"]["Date"];
+            /** Format: uuid */
+            trip_id: string;
+            version: components["schemas"]["Version"];
+        };
+        DashboardRegion: {
+            city_code: string;
+            city_name: string;
+            province_code: string;
+            province_name: string;
+        } | null;
+        DashboardSnapshot: {
+            days: number;
+            /** Format: date-time */
+            generated_at: string;
+            location_warning: string;
+            missing_coordinates: number;
+            monthly_days: number[];
+            /** @description 仍有未处理坐标时用于继续识别，空字符串表示本轮已遍历完 */
+            next_location_after: string;
+            places: components["schemas"]["DashboardPlace"][];
+            resolved_locations: number;
+            trips: components["schemas"]["DashboardTrip"][];
+            unresolved_places: number;
+            years: number[];
+        };
+        DashboardTrip: {
+            categories: components["schemas"]["DashboardCategory"][];
+            currency_code: components["schemas"]["CurrencyCode"];
+            days: number;
+            end_date: components["schemas"]["Date"];
+            /** Format: uuid */
+            id: string;
+            name: string;
+            start_date: components["schemas"]["Date"];
+        };
         /**
          * @description YYYY-MM-DD，不带时区
          * @example 2026-10-01
@@ -1447,6 +1526,8 @@ export type components = {
         GeoPlace: {
             adcode: string | null;
             address: string;
+            city?: string;
+            district?: string;
             /** Format: double */
             latitude: number;
             /** Format: double */
@@ -1455,6 +1536,7 @@ export type components = {
             poi_id: string | null;
             /** @enum {string} */
             provider: "amap";
+            province?: string;
         };
         GeoPlaceResponse: {
             data: components["schemas"]["GeoPlace"];
@@ -1517,6 +1599,8 @@ export type components = {
             planned_duration_minutes?: number | null;
             planned_end_local?: string | null;
             planned_start_local?: string | null;
+            /** @description 高德 POI 标识；地图手动选点或历史地点为空字符串 */
+            poi_id?: string;
             scheduled_on: components["schemas"]["Date"];
             status?: components["schemas"]["ItineraryStatus"];
             title: string;
@@ -1537,6 +1621,8 @@ export type components = {
             deleted_at: string | null;
             /** @description 预计费用，格式同 Money；不进入实际开支统计 */
             estimated_amount: string | null;
+            /** @description 是否手动排除旅行足迹，不影响原行程、天数和账目 */
+            footprint_excluded?: boolean;
             /** Format: uuid */
             id: string;
             kind: components["schemas"]["ItineraryKind"];
@@ -1561,6 +1647,8 @@ export type components = {
             planned_end_local: string | null;
             /** @description 计划开始的当地日期时间，按旅行 timezone 解释 */
             planned_start_local: string | null;
+            /** @description 高德 POI 标识；地图手动选点或历史地点为空字符串 */
+            poi_id?: string;
             scheduled_on: components["schemas"]["Date"];
             /**
              * Format: int32
@@ -1599,6 +1687,8 @@ export type components = {
             address?: string;
             currency_code?: components["schemas"]["CurrencyCode"];
             estimated_amount?: string | null;
+            /** @description 是否手动排除旅行足迹，不影响原行程、天数和账目 */
+            footprint_excluded?: boolean;
             kind?: components["schemas"]["ItineraryKind"];
             /** Format: double */
             latitude?: number | null;
@@ -1610,6 +1700,8 @@ export type components = {
             planned_duration_minutes?: number | null;
             planned_end_local?: string | null;
             planned_start_local?: string | null;
+            /** @description 高德 POI 标识；地图手动选点或历史地点为空字符串 */
+            poi_id?: string;
             status?: components["schemas"]["ItineraryStatus"];
             title?: string;
         };
@@ -3175,6 +3267,37 @@ export interface operations {
             };
             409: components["responses"]["Conflict"];
             422: components["responses"]["ValidationFailed"];
+        };
+    };
+    getDashboard: {
+        parameters: {
+            query?: {
+                date_from?: string;
+                date_to?: string;
+                /** @description 使用上次返回的 next_location_after 继续识别坐标，不影响旅行与费用筛选 */
+                location_after?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 同一数据库快照下的旅行统计；省市识别失败时明确返回待识别数量 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["DashboardSnapshot"];
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            422: components["responses"]["ValidationFailed"];
+            503: components["responses"]["DependencyUnavailable"];
         };
     };
     listExpenseCategories: {

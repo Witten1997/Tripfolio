@@ -9,16 +9,9 @@ export type ItineraryCreate = components['schemas']['ItineraryCreate']
 export type ItineraryPatch = components['schemas']['ItineraryPatch']
 export type ItineraryReorder = components['schemas']['ItineraryReorder']
 export type ItineraryKind = components['schemas']['ItineraryKind']
-export type ItineraryStatus = components['schemas']['ItineraryStatus']
 export type ItineraryQuery = NonNullable<operations['listItineraryItems']['parameters']['query']>
 
 export { itineraryKindLabels } from '@/shared/travel/itineraryKinds'
-
-export const itineraryStatusLabels: Record<ItineraryStatus, string> = {
-  pending: '未完成',
-  completed: '已完成',
-  skipped: '已跳过',
-}
 
 function isItem(value: Record<string, unknown>) {
   return (

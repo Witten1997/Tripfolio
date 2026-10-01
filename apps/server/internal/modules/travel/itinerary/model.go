@@ -50,6 +50,8 @@ func (s Status) Valid() bool {
 // Resource 是行程项目的规范资源，也是同步日志与快照中的表示（接口设计 3.3 ItineraryItem）。
 // CurrencyCode 由旅行派生、只读，与 EstimatedAmount 成对出现。
 type Resource struct {
+	FootprintExcluded      bool                 `json:"footprint_excluded"`
+	POIID                  string               `json:"poi_id"`
 	ID                     uuid.UUID            `json:"id"`
 	TripID                 uuid.UUID            `json:"trip_id"`
 	Title                  string               `json:"title"`
@@ -79,6 +81,7 @@ type Resource struct {
 // Fields 是可通过局部更新修改的业务字段名，用于 changed_fields 与字段级合并。
 // scheduled_on 与 sort_order 只能由重排接口修改，因此不在此列：编辑与重排并发时不相互冲突。
 var Fields = []string{
+	"footprint_excluded", "poi_id",
 	"title", "kind", "planned_start_local", "planned_end_local", "planned_duration_minutes",
 	"place_name", "address", "latitude", "longitude", "estimated_amount",
 	"notes", "status", "actual_start_local", "actual_end_local", "actual_notes",

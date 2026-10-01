@@ -45,7 +45,7 @@ const context = useTripContext()
 const items = shallowRef<PackingItem[]>([])
 const loading = ref(false)
 const error = ref<string | null>(null)
-const busy = ref<string | null>(null)
+const busy = reactive(new Map<string, 'status' | 'delete'>())
 const actionFailure = ref<string | null>(null)
 const notice = ref<string[]>([])
 const noticeType = ref<'success' | 'warning'>('success')
@@ -57,18 +57,23 @@ const dialog = ref<InstanceType<typeof PackingItemDialog>>()
 const library = ref<InstanceType<typeof PackingLibraryDialog>>()
 const intents = new Map<string, ReturnType<typeof createWriteIntent>>()
 let generation = 0
+let itemsRevision = 0
 
 const progress = computed(() => packingProgress(items.value))
 
 const groups = computed(() => packingGroups(items.value, filters))
 
-async function reload() {
+async function reload(): Promise<void> {
   const request = ++generation
+  const revision = itemsRevision
   loading.value = true
   error.value = null
   try {
     const loaded = await listAllPackingItems(context.tripId)
-    if (request === generation) items.value = loaded
+    if (request !== generation) return
+    // 读取期间有单条写入完成时，重新读取，避免旧列表覆盖已确认的状态。
+    if (revision !== itemsRevision) return await reload()
+    items.value = loaded
   } catch (cause) {
     if (request === generation)
       error.value = actionError(cause, '无法加载行李清单，请检查网络后重试')
@@ -84,8 +89,8 @@ function intentFor(slot: string) {
 }
 
 async function setStatus(item: PackingItem, status: PreparedPackingStatus) {
-  if (busy.value || loading.value || normalizePackingStatus(item.status) === status) return
-  busy.value = item.id
+  if (busy.has(item.id) || normalizePackingStatus(item.status) === status) return
+  busy.set(item.id, 'status')
   actionFailure.value = null
   const intent = intentFor(`status:${item.id}`)
   try {
@@ -96,6 +101,7 @@ async function setStatus(item: PackingItem, status: PreparedPackingStatus) {
       { status },
       intent.key({ id: item.id, version: item.version, status }),
     )
+    itemsRevision++
     intent.reset()
     const warnings = writeWarnings(outcome.result)
     if (warnings.length) {
@@ -113,7 +119,7 @@ async function setStatus(item: PackingItem, status: PreparedPackingStatus) {
     )
       await reload()
   } finally {
-    busy.value = null
+    busy.delete(item.id)
   }
 }
 
@@ -141,7 +147,7 @@ async function togglePrepared(item: PackingItem, checked: boolean, event?: Event
 }
 
 async function remove(item: PackingItem) {
-  if (busy.value) return
+  if (busy.has(item.id)) return
   try {
     await ElMessageBox.confirm(`删除“${item.name}”后可重新添加同名物品。`, '删除这件物品？', {
       type: 'warning',
@@ -151,7 +157,8 @@ async function remove(item: PackingItem) {
   } catch {
     return
   }
-  busy.value = item.id
+  if (busy.has(item.id)) return
+  busy.set(item.id, 'delete')
   actionFailure.value = null
   const intent = intentFor(`delete:${item.id}`)
   try {
@@ -161,6 +168,7 @@ async function remove(item: PackingItem) {
       item.version,
       intent.key({ delete: item.id, version: item.version }),
     )
+    itemsRevision++
     intent.reset()
     noticeType.value = 'success'
     notice.value = ['物品已删除。']
@@ -173,11 +181,12 @@ async function remove(item: PackingItem) {
     )
       await reload()
   } finally {
-    busy.value = null
+    busy.delete(item.id)
   }
 }
 
 async function saved(outcome: WriteOutcome<PackingItem>) {
+  itemsRevision++
   const warnings = writeWarnings(outcome.result)
   noticeType.value = warnings.length ? 'warning' : 'success'
   notice.value = ['物品已保存。', ...warnings]
@@ -186,6 +195,7 @@ async function saved(outcome: WriteOutcome<PackingItem>) {
 }
 
 async function added(result: PackingBatchResult) {
+  itemsRevision++
   const created = result.created_ids.length
   const skipped = result.skipped.length
   noticeType.value = skipped ? 'warning' : 'success'
@@ -273,7 +283,6 @@ onMounted(reload)
             icon="plus"
             :label="`向${group.label}添加物品`"
             text
-            :disabled="!!busy"
             @click="dialog?.open(undefined, group.category)"
           />
         </header>
@@ -283,12 +292,12 @@ onMounted(reload)
             :key="item.id"
             class="item"
             :class="{ 'item--prepared': normalizePackingStatus(item.status) === 'ready' }"
-            :aria-busy="busy === item.id"
+            :aria-busy="busy.has(item.id)"
           >
             <ElCheckbox
               class="tf-round-check"
               :model-value="normalizePackingStatus(item.status) === 'ready'"
-              :disabled="!!busy || loading"
+              :disabled="busy.has(item.id)"
               :aria-label="`已准备：${item.name}`"
               :label="`已准备：${item.name}`"
               @change="(checked: unknown, event?: Event) => togglePrepared(item, !!checked, event)"
@@ -309,7 +318,7 @@ onMounted(reload)
                 icon="edit"
                 :label="`编辑物品：${item.name}`"
                 text
-                :disabled="!!busy"
+                :disabled="busy.has(item.id)"
                 @click="dialog?.open(item)"
               />
               <IconAction
@@ -317,7 +326,7 @@ onMounted(reload)
                 :label="`删除物品：${item.name}`"
                 text
                 type="danger"
-                :disabled="!!busy"
+                :disabled="busy.has(item.id)"
                 @click="remove(item)"
               />
             </div>

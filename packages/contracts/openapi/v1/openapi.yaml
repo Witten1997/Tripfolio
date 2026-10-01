@@ -42,6 +42,8 @@ tags:
 security:
   - bearerAuth: []
 paths:
+  /dashboard:
+    $ref: ./paths/dashboard.yaml
   /geo/reverse-geocode:
     $ref: ./paths/geo.yaml#/reverse-geocode
   /geo/places:
@@ -174,6 +176,18 @@ components:
     IfMatch:
       $ref: ./schemas/write.yaml#/IfMatch
   schemas:
+    DashboardSnapshot:
+      $ref: ./schemas/dashboard.yaml#/DashboardSnapshot
+    DashboardTrip:
+      $ref: ./schemas/dashboard.yaml#/DashboardTrip
+    DashboardPlace:
+      $ref: ./schemas/dashboard.yaml#/DashboardPlace
+    DashboardRegion:
+      $ref: ./schemas/dashboard.yaml#/DashboardRegion
+    DashboardCategory:
+      $ref: ./schemas/dashboard.yaml#/DashboardCategory
+    DashboardAmounts:
+      $ref: ./schemas/dashboard.yaml#/DashboardAmounts
     GeoCoordinate:
       $ref: ./schemas/geo.yaml#/GeoCoordinate
     GeoPlace:

@@ -3,7 +3,10 @@ import {
   ElAlert,
   ElButton,
   ElCard,
+  ElCheckbox,
+  ElCheckboxGroup,
   ElDatePicker,
+  ElDialog,
   ElEmpty,
   ElInput,
   ElMessageBox,
@@ -56,9 +59,22 @@ import {
 } from '@/shared/travel/statisticsView'
 import { useTripContext } from '@/shared/travel/tripContext'
 import { useCursorPage } from '@/shared/travel/useCursorPage'
+import { ledgerCardOptions, useLedgerCardVisibility } from '@/shared/travel/useLedgerCardVisibility'
 
 const context = useTripContext()
 const currency = computed(() => context.trip.value?.currency_code ?? 'CNY')
+const {
+  visibleCards,
+  ready: cardsReady,
+  opened: cardSettingsOpened,
+  draft: selectedCards,
+  saving: cardSettingsSaving,
+  error: cardSettingsError,
+  isVisible: showCard,
+  open: openCardSettings,
+  close: closeCardSettings,
+  save: saveCardSettings,
+} = useLedgerCardVisibility(context.tripId)
 
 const filters = reactive<{
   dateFrom: string
@@ -381,8 +397,9 @@ onMounted(async () => {
 
 <template>
   <div class="ledger-tab">
+    <ElSkeleton v-if="!cardsReady" :rows="3" animated />
     <!-- 统计框：净支出、预算对比，总预算可直接编辑 -->
-    <ElCard shadow="never" class="stats-card">
+    <ElCard v-if="showCard('statistics')" shadow="never" class="stats-card">
       <template #header>
         <div class="chart-header">
           <h2>支出统计</h2>
@@ -464,6 +481,13 @@ onMounted(async () => {
           @update:model-value="setKind"
         />
         <div class="tab-actions tf-actions">
+          <IconAction
+            icon="settings"
+            label="配置账单卡片"
+            :disabled="!cardsReady"
+            aria-haspopup="dialog"
+            @click="openCardSettings"
+          />
           <IconAction icon="upload" label="导入账单" @click="importDialog?.open()" />
           <IconAction
             icon="filter"
@@ -547,8 +571,12 @@ onMounted(async () => {
     >
 
     <!-- 图表：分类占比与每日净支出 -->
-    <div class="charts">
-      <ElCard shadow="never" class="chart-card">
+    <div
+      v-if="showCard('category-share') || showCard('daily-net')"
+      class="charts"
+      :class="{ 'charts--single': !showCard('category-share') || !showCard('daily-net') }"
+    >
+      <ElCard v-if="showCard('category-share')" shadow="never" class="chart-card">
         <template #header>
           <div class="chart-header">
             <h2>分类占比</h2>
@@ -564,7 +592,7 @@ onMounted(async () => {
           @select="toggleCategory"
         />
       </ElCard>
-      <ElCard shadow="never" class="chart-card">
+      <ElCard v-if="showCard('daily-net')" shadow="never" class="chart-card">
         <template #header>
           <div class="chart-header">
             <h2>每日净支出</h2>
@@ -583,10 +611,14 @@ onMounted(async () => {
     </div>
 
     <!-- 成员结算：不受筛选影响 -->
-    <SettlementCard :refresh-key="settlementKey" />
+    <SettlementCard v-if="showCard('settlement')" :refresh-key="settlementKey" />
 
     <!-- 分类金额明细：图表的表格视图，也是进入分类明细的入口 -->
-    <ElCard v-if="categoryRows.length" shadow="never" class="category-card">
+    <ElCard
+      v-if="showCard('category-amounts') && categoryRows.length"
+      shadow="never"
+      class="category-card"
+    >
       <template #header>
         <div class="chart-header">
           <h2>分类金额</h2>
@@ -629,143 +661,186 @@ onMounted(async () => {
     </ElCard>
 
     <!-- 账目明细 -->
-    <ElSkeleton
-      v-if="page.loading.value && !page.items.value.length"
-      :rows="6"
-      animated
-      class="tab-skeleton"
-    />
-    <ElCard v-else-if="page.error.value" shadow="never">
-      <ElAlert :title="page.error.value" type="error" :closable="false" show-icon />
-      <ElButton class="retry-button" @click="page.reload">重新加载</ElButton>
-    </ElCard>
-    <ElCard v-else-if="!page.items.value.length" shadow="never">
-      <ElEmpty :description="hasFilter ? '筛选范围内没有账目' : '还没有账目，记下第一笔花费'">
-        <ElButton v-if="hasFilter" @click="clearFilters">清除筛选</ElButton>
-        <IconAction
-          v-else
-          icon="receipt"
-          label="记一笔"
-          type="primary"
-          @click="dialog?.open(undefined, 'expense')"
-        />
-      </ElEmpty>
-    </ElCard>
-    <template v-else>
-      <ul class="entry-list tf-surface">
-        <li
-          v-for="entry in page.items.value"
-          :key="entry.id"
-          class="entry"
-          :class="{ 'entry--refund': entry.kind === 'refund' }"
-        >
-          <div class="entry-main">
-            <div class="entry-title">
-              <ElTag
-                :type="entry.kind === 'refund' ? 'success' : 'info'"
-                size="small"
-                effect="plain"
-                >{{ ledgerKindLabels[entry.kind] }}</ElTag
-              >
-              <strong>{{ categoryName(entry.category_id) }}</strong>
-              <span v-if="entry.refunded_entry_id" class="entry-linked">已关联原支出</span>
-            </div>
-            <p class="entry-meta">
-              <span>{{ entry.occurred_on }}</span>
-              <span>{{ payerLabel(entry) }}</span>
-              <span v-if="entry.notes" class="entry-notes">{{ entry.notes }}</span>
-            </p>
-            <button
-              v-if="entryRefunds(entry).length"
-              type="button"
-              class="entry-refund-summary"
-              :aria-expanded="expandedRefunds.has(entry.id)"
-              @click="toggleRefunds(entry.id)"
-            >
-              已退款 {{ formatMoney(refundedAmount(entry)) }} {{ entry.currency_code }} ·
-              {{ expandedRefunds.has(entry.id) ? '收起' : '查看 / 编辑' }}
-            </button>
-          </div>
-          <div class="entry-amount" :class="{ 'entry-amount--refund': entry.kind === 'refund' }">
-            {{ entry.kind === 'refund' ? '−' : '' }}{{ formatMoney(entry.personal_amount) }}
-            <span class="entry-currency">{{ entry.currency_code }}</span>
-            <span
-              v-if="entry.split_count > 1 || entry.personal_amount !== entry.amount"
-              class="entry-share"
-            >
-              总额 {{ formatMoney(entry.amount) }} · {{ entry.split_count }} 人{{
-                entry.split_mode === 'ratio' ? '按比例' : '均摊'
-              }}
-            </span>
-          </div>
-          <div class="entry-actions tf-actions">
-            <ElButton
-              text
-              :disabled="!!busy || refundsLoading || !!refundsError || fullyRefunded(entry)"
-              @click="dialog?.openRefund(entry)"
-              >{{ fullyRefunded(entry) ? '已全退' : '退款' }}</ElButton
-            >
-            <IconAction
-              icon="edit"
-              :label="`编辑${categoryName(entry.category_id)}账目（${formatMoney(entry.personal_amount)} ${entry.currency_code}）`"
-              text
-              :disabled="!!busy"
-              @click="dialog?.open(entry)"
-            />
-            <IconAction
-              icon="trash"
-              :label="`删除${categoryName(entry.category_id)}账目（${formatMoney(entry.personal_amount)} ${entry.currency_code}）`"
-              text
-              type="danger"
-              :disabled="!!busy"
-              :loading="busy === entry.id"
-              @click="remove(entry)"
-            />
-          </div>
-          <ul
-            v-if="expandedRefunds.has(entry.id) && entryRefunds(entry).length"
-            class="entry-refunds"
-            aria-label="退款记录"
+    <template v-if="showCard('entries')">
+      <ElSkeleton
+        v-if="page.loading.value && !page.items.value.length"
+        :rows="6"
+        animated
+        class="tab-skeleton"
+      />
+      <ElCard v-else-if="page.error.value" shadow="never">
+        <ElAlert :title="page.error.value" type="error" :closable="false" show-icon />
+        <ElButton class="retry-button" @click="page.reload">重新加载</ElButton>
+      </ElCard>
+      <ElCard v-else-if="!page.items.value.length" shadow="never">
+        <ElEmpty :description="hasFilter ? '筛选范围内没有账目' : '还没有账目，记下第一笔花费'">
+          <ElButton v-if="hasFilter" @click="clearFilters">清除筛选</ElButton>
+          <IconAction
+            v-else
+            icon="receipt"
+            label="记一笔"
+            type="primary"
+            @click="dialog?.open(undefined, 'expense')"
+          />
+        </ElEmpty>
+      </ElCard>
+      <template v-else>
+        <ul class="entry-list tf-surface">
+          <li
+            v-for="entry in page.items.value"
+            :key="entry.id"
+            class="entry"
+            :class="{ 'entry--refund': entry.kind === 'refund' }"
           >
-            <li v-for="refund in entryRefunds(entry)" :key="refund.id">
-              <div>
-                <strong>退款 {{ formatMoney(refund.amount) }} {{ refund.currency_code }}</strong
-                ><span
-                  >{{ refund.occurred_on
-                  }}<template v-if="refund.notes"> · {{ refund.notes }}</template></span
+            <div class="entry-main">
+              <div class="entry-title">
+                <ElTag
+                  :type="entry.kind === 'refund' ? 'success' : 'info'"
+                  size="small"
+                  effect="plain"
+                  >{{ ledgerKindLabels[entry.kind] }}</ElTag
                 >
+                <strong>{{ categoryName(entry.category_id) }}</strong>
+                <span v-if="entry.refunded_entry_id" class="entry-linked">已关联原支出</span>
               </div>
-              <div class="tf-actions">
-                <IconAction
-                  icon="edit"
-                  :label="`编辑退款 ${formatMoney(refund.amount)} ${refund.currency_code}`"
-                  text
-                  :disabled="!!busy"
-                  @click="dialog?.open(refund)"
-                /><IconAction
-                  icon="trash"
-                  :label="`删除退款 ${formatMoney(refund.amount)} ${refund.currency_code}`"
-                  text
-                  type="danger"
-                  :disabled="!!busy"
-                  @click="remove(refund)"
-                />
-              </div>
-            </li>
-          </ul>
-        </li>
-      </ul>
-      <div v-if="page.cursor.value" class="load-more">
-        <ElAlert
-          v-if="page.moreError.value"
-          :title="page.moreError.value"
-          type="error"
-          :closable="false"
-          show-icon
-        />
-        <ElButton :loading="page.loadingMore.value" @click="page.loadMore">加载更多</ElButton>
-      </div>
+              <p class="entry-meta">
+                <span>{{ entry.occurred_on }}</span>
+                <span>{{ payerLabel(entry) }}</span>
+                <span v-if="entry.notes" class="entry-notes">{{ entry.notes }}</span>
+              </p>
+              <button
+                v-if="entryRefunds(entry).length"
+                type="button"
+                class="entry-refund-summary"
+                :aria-expanded="expandedRefunds.has(entry.id)"
+                @click="toggleRefunds(entry.id)"
+              >
+                已退款 {{ formatMoney(refundedAmount(entry)) }} {{ entry.currency_code }} ·
+                {{ expandedRefunds.has(entry.id) ? '收起' : '查看 / 编辑' }}
+              </button>
+            </div>
+            <div class="entry-amount" :class="{ 'entry-amount--refund': entry.kind === 'refund' }">
+              {{ entry.kind === 'refund' ? '−' : '' }}{{ formatMoney(entry.personal_amount) }}
+              <span class="entry-currency">{{ entry.currency_code }}</span>
+              <span
+                v-if="entry.split_count > 1 || entry.personal_amount !== entry.amount"
+                class="entry-share"
+              >
+                总额 {{ formatMoney(entry.amount) }} · {{ entry.split_count }} 人{{
+                  entry.split_mode === 'ratio' ? '按比例' : '均摊'
+                }}
+              </span>
+            </div>
+            <div class="entry-actions tf-actions">
+              <ElButton
+                text
+                :disabled="!!busy || refundsLoading || !!refundsError || fullyRefunded(entry)"
+                @click="dialog?.openRefund(entry)"
+                >{{ fullyRefunded(entry) ? '已全退' : '退款' }}</ElButton
+              >
+              <IconAction
+                icon="edit"
+                :label="`编辑${categoryName(entry.category_id)}账目（${formatMoney(entry.personal_amount)} ${entry.currency_code}）`"
+                text
+                :disabled="!!busy"
+                @click="dialog?.open(entry)"
+              />
+              <IconAction
+                icon="trash"
+                :label="`删除${categoryName(entry.category_id)}账目（${formatMoney(entry.personal_amount)} ${entry.currency_code}）`"
+                text
+                type="danger"
+                :disabled="!!busy"
+                :loading="busy === entry.id"
+                @click="remove(entry)"
+              />
+            </div>
+            <ul
+              v-if="expandedRefunds.has(entry.id) && entryRefunds(entry).length"
+              class="entry-refunds"
+              aria-label="退款记录"
+            >
+              <li v-for="refund in entryRefunds(entry)" :key="refund.id">
+                <div>
+                  <strong>退款 {{ formatMoney(refund.amount) }} {{ refund.currency_code }}</strong
+                  ><span
+                    >{{ refund.occurred_on
+                    }}<template v-if="refund.notes"> · {{ refund.notes }}</template></span
+                  >
+                </div>
+                <div class="tf-actions">
+                  <IconAction
+                    icon="edit"
+                    :label="`编辑退款 ${formatMoney(refund.amount)} ${refund.currency_code}`"
+                    text
+                    :disabled="!!busy"
+                    @click="dialog?.open(refund)"
+                  /><IconAction
+                    icon="trash"
+                    :label="`删除退款 ${formatMoney(refund.amount)} ${refund.currency_code}`"
+                    text
+                    type="danger"
+                    :disabled="!!busy"
+                    @click="remove(refund)"
+                  />
+                </div>
+              </li>
+            </ul>
+          </li>
+        </ul>
+        <div v-if="page.cursor.value" class="load-more">
+          <ElAlert
+            v-if="page.moreError.value"
+            :title="page.moreError.value"
+            type="error"
+            :closable="false"
+            show-icon
+          />
+          <ElButton :loading="page.loadingMore.value" @click="page.loadMore">加载更多</ElButton>
+        </div>
+      </template>
     </template>
+
+    <ElEmpty v-if="cardsReady && !visibleCards.length" description="当前旅行的账单卡片已全部隐藏">
+      <ElButton @click="openCardSettings">配置账单卡片</ElButton>
+    </ElEmpty>
+
+    <ElDialog
+      v-model="cardSettingsOpened"
+      title="配置账单卡片"
+      width="min(440px, calc(100vw - 32px))"
+      align-center
+      append-to-body
+      destroy-on-close
+      :close-on-click-modal="!cardSettingsSaving"
+      :close-on-press-escape="!cardSettingsSaving"
+      :show-close="!cardSettingsSaving"
+    >
+      <p class="card-settings-hint">选择需要展示的卡片。仅对当前旅行生效，并保存在当前设备。</p>
+      <ElCheckboxGroup
+        v-model="selectedCards"
+        class="card-settings-options"
+        aria-label="需要展示的账单卡片"
+        :disabled="cardSettingsSaving"
+      >
+        <ElCheckbox v-for="card in ledgerCardOptions" :key="card.id" :value="card.id">
+          {{ card.label }}
+        </ElCheckbox>
+      </ElCheckboxGroup>
+      <ElAlert
+        v-if="cardSettingsError"
+        :title="cardSettingsError"
+        type="error"
+        :closable="false"
+        show-icon
+      />
+      <template #footer>
+        <ElButton :disabled="cardSettingsSaving" @click="closeCardSettings">取消</ElButton>
+        <ElButton type="primary" :loading="cardSettingsSaving" @click="saveCardSettings">
+          保存
+        </ElButton>
+      </template>
+    </ElDialog>
 
     <LedgerEntryDialog ref="dialog" v-model:categories="categories" @saved="saved" />
     <LedgerImportDialog ref="importDialog" @saved="imported" />
@@ -959,6 +1034,25 @@ onMounted(async () => {
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
   gap: 16px;
 }
+.charts--single {
+  grid-template-columns: minmax(0, 1fr);
+}
+.card-settings-hint {
+  margin: 0 0 16px;
+  color: var(--tf-text-2);
+  line-height: 1.6;
+}
+.card-settings-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 16px;
+  margin-bottom: 16px;
+}
+.card-settings-options :deep(.el-checkbox) {
+  min-height: 40px;
+  height: auto;
+  margin: 0;
+}
 .chart-header {
   display: flex;
   align-items: center;
@@ -1103,6 +1197,7 @@ onMounted(async () => {
 @media (max-width: 600px) {
   .tab-toolbar {
     gap: 10px;
+    flex-wrap: wrap;
   }
   .filters {
     display: grid;

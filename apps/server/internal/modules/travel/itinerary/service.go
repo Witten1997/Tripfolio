@@ -140,6 +140,7 @@ func (s *Service) List(ctx context.Context, a actor.Actor, tripID uuid.UUID, f F
 
 // CreateCommand 是创建命令（接口设计 3.3 ItineraryCreate）；指针字段区分缺省与显式值。
 type CreateCommand struct {
+	POIID                  *string   `json:"poi_id,omitempty"`
 	ID                     uuid.UUID `json:"id"`
 	Title                  string    `json:"title"`
 	Kind                   Kind      `json:"kind"`
@@ -183,6 +184,7 @@ func (s *Service) Create(ctx context.Context, a actor.Actor, operationID, tripID
 	validateTimeOrder("planned_end_local", plannedStart, plannedEnd, &fields)
 	validateTimeOrder("actual_end_local", actualStart, actualEnd, &fields)
 	cmd.Latitude, cmd.Longitude = validateCoordinates(cmd.Latitude, cmd.Longitude, &fields)
+	poiID := optionalText("poi_id", cmd.POIID, 128, &fields)
 	placeName := optionalText("place_name", cmd.PlaceName, maxPlaceNameChars, &fields)
 	address := optionalText("address", cmd.Address, maxAddressChars, &fields)
 	notes := optionalText("notes", cmd.Notes, maxNotesChars, &fields)
@@ -226,7 +228,7 @@ func (s *Service) Create(ctx context.Context, a actor.Actor, operationID, tripID
 		created, err := repo.Insert(ctx, a.AccountID, Resource{
 			ID: cmd.ID, TripID: tripID, Title: cmd.Title, Kind: cmd.Kind, ScheduledOn: scheduledOn, SortOrder: sortOrder,
 			PlannedStartLocal: plannedStart, PlannedEndLocal: plannedEnd, PlannedDurationMinutes: duration,
-			PlaceName: placeName, Address: address, Latitude: cmd.Latitude, Longitude: cmd.Longitude,
+			PlaceName: placeName, Address: address, Latitude: cmd.Latitude, Longitude: cmd.Longitude, POIID: poiID,
 			EstimatedAmount: amount, Notes: notes, Status: status,
 			ActualStartLocal: actualStart, ActualEndLocal: actualEnd, ActualNotes: actualNotes,
 			Version: 1, CreatedAt: now, UpdatedAt: now,
@@ -245,6 +247,8 @@ func (s *Service) Create(ctx context.Context, a actor.Actor, operationID, tripID
 
 // Patch 是局部更新（接口设计 3.3 ItineraryPatch）；*Set 字段区分“显式清空”与缺省。
 type Patch struct {
+	FootprintExcluded      *bool    `json:"footprint_excluded,omitempty"`
+	POIID                  *string  `json:"poi_id,omitempty"`
 	Title                  *string  `json:"title"`
 	Kind                   *Kind    `json:"kind"`
 	PlannedStartSet        bool     `json:"planned_start_set"`
@@ -278,6 +282,8 @@ func (p Patch) submittedFields() []string {
 			f = append(f, name)
 		}
 	}
+	add(p.FootprintExcluded != nil, "footprint_excluded")
+	add(p.POIID != nil || p.LatitudeSet || p.LongitudeSet, "poi_id")
 	add(p.Title != nil, "title")
 	add(p.Kind != nil, "kind")
 	add(p.PlannedStartSet, "planned_start_local")
@@ -314,6 +320,9 @@ func (s *Service) Update(ctx context.Context, a actor.Actor, operationID, tripID
 	var duration *int32
 	if patch.PlannedDurationSet {
 		duration = validateDuration(patch.PlannedDurationMinutes, false, &fields)
+	}
+	if patch.POIID != nil {
+		addField(&fields, validateText("poi_id", *patch.POIID, 128))
 	}
 	if patch.PlaceName != nil {
 		addField(&fields, validateText("place_name", *patch.PlaceName, maxPlaceNameChars))
@@ -376,6 +385,14 @@ func (s *Service) Update(ctx context.Context, a actor.Actor, operationID, tripID
 			scope.Warn(write.WarnMergedWithNewerVersion)
 		}
 		v := current.Values()
+		if patch.FootprintExcluded != nil {
+			v.FootprintExcluded = *patch.FootprintExcluded
+		}
+		if patch.POIID != nil {
+			v.POIID = *patch.POIID
+		} else if patch.LatitudeSet || patch.LongitudeSet {
+			v.POIID = ""
+		}
 		if patch.Title != nil {
 			v.Title = *patch.Title
 		}

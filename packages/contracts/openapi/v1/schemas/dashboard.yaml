@@ -1,0 +1,157 @@
+DashboardAmounts:
+  type: object
+  required: [expense, refund, net]
+  properties:
+    expense:
+      type: string
+    refund:
+      type: string
+    net:
+      type: string
+DashboardCategory:
+  type: object
+  required: [id, name, personal, whole]
+  properties:
+    id:
+      type: string
+      format: uuid
+    name:
+      type: string
+    personal:
+      $ref: '#/DashboardAmounts'
+    whole:
+      $ref: '#/DashboardAmounts'
+DashboardTrip:
+  type: object
+  required: [id, name, start_date, end_date, currency_code, days, categories]
+  properties:
+    id:
+      type: string
+      format: uuid
+    name:
+      type: string
+    start_date:
+      $ref: ./write.yaml#/Date
+    end_date:
+      $ref: ./write.yaml#/Date
+    currency_code:
+      $ref: ./common.yaml#/CurrencyCode
+    days:
+      type: integer
+    categories:
+      type: array
+      items:
+        $ref: '#/DashboardCategory'
+DashboardRegion:
+  type: object
+  nullable: true
+  required: [province_code, province_name, city_code, city_name]
+  properties:
+    province_code:
+      type: string
+    province_name:
+      type: string
+    city_code:
+      type: string
+    city_name:
+      type: string
+DashboardPlace:
+  type: object
+  required:
+    [
+      id,
+      trip_id,
+      version,
+      name,
+      kind,
+      scheduled_on,
+      address,
+      latitude,
+      longitude,
+      excluded,
+      poi_id,
+      region,
+    ]
+  properties:
+    id:
+      type: string
+      format: uuid
+    trip_id:
+      type: string
+      format: uuid
+    version:
+      $ref: ./write.yaml#/Version
+    name:
+      type: string
+    kind:
+      $ref: ./itinerary.yaml#/ItineraryKind
+    scheduled_on:
+      $ref: ./write.yaml#/Date
+    address:
+      type: string
+    latitude:
+      type: number
+      nullable: true
+    longitude:
+      type: number
+      nullable: true
+    excluded:
+      type: boolean
+    poi_id:
+      type: string
+    region:
+      $ref: '#/DashboardRegion'
+DashboardSnapshot:
+  type: object
+  x-go-type: dashboard.Snapshot
+  x-go-type-import:
+    path: tripfolio/server/internal/modules/travel/dashboard
+  required:
+    [
+      generated_at,
+      years,
+      trips,
+      places,
+      days,
+      monthly_days,
+      unresolved_places,
+      missing_coordinates,
+      resolved_locations,
+      location_warning,
+      next_location_after,
+    ]
+  properties:
+    generated_at:
+      type: string
+      format: date-time
+    years:
+      type: array
+      items:
+        type: integer
+    trips:
+      type: array
+      items:
+        $ref: '#/DashboardTrip'
+    places:
+      type: array
+      items:
+        $ref: '#/DashboardPlace'
+    days:
+      type: integer
+    monthly_days:
+      type: array
+      minItems: 12
+      maxItems: 12
+      items:
+        type: integer
+    unresolved_places:
+      type: integer
+    missing_coordinates:
+      type: integer
+    resolved_locations:
+      type: integer
+    location_warning:
+      type: string
+    next_location_after:
+      type: string
+      description: 仍有未处理坐标时用于继续识别，空字符串表示本轮已遍历完

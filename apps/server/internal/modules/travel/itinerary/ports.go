@@ -20,6 +20,8 @@ type TripInfo struct {
 
 // Values 是行程项目可编辑字段的集合；Update 整体写回，归属日期与顺序不在其中。
 type Values struct {
+	FootprintExcluded      bool
+	POIID                  string
 	Title                  string
 	Kind                   Kind
 	PlannedStartLocal      *types.LocalDateTime
@@ -40,6 +42,7 @@ type Values struct {
 // Values 取出资源的可编辑字段。
 func (r Resource) Values() Values {
 	return Values{
+		FootprintExcluded: r.FootprintExcluded, POIID: r.POIID,
 		Title: r.Title, Kind: r.Kind,
 		PlannedStartLocal: r.PlannedStartLocal, PlannedEndLocal: r.PlannedEndLocal, PlannedDurationMinutes: r.PlannedDurationMinutes,
 		PlaceName: r.PlaceName, Address: r.Address, Latitude: r.Latitude, Longitude: r.Longitude,

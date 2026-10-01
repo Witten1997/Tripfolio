@@ -24,10 +24,10 @@ WHERE account_id = sqlc.arg(account_id) AND trip_id = sqlc.arg(trip_id) AND sche
 -- name: InsertItineraryItem :one
 INSERT INTO itinerary_items (id, account_id, trip_id, title, kind, scheduled_on, sort_order,
     planned_start_local, planned_end_local, planned_duration_minutes, place_name, address, latitude, longitude,
-    estimated_amount, notes, status, actual_start_local, actual_end_local, actual_notes, created_at, updated_at)
+    poi_id, estimated_amount, notes, status, actual_start_local, actual_end_local, actual_notes, created_at, updated_at)
 VALUES (sqlc.arg(id), sqlc.arg(account_id), sqlc.arg(trip_id), sqlc.arg(title), sqlc.arg(kind), sqlc.arg(scheduled_on), sqlc.arg(sort_order),
     sqlc.narg(planned_start_local), sqlc.narg(planned_end_local), sqlc.narg(planned_duration_minutes), sqlc.arg(place_name), sqlc.arg(address),
-    sqlc.narg(latitude), sqlc.narg(longitude), sqlc.narg(estimated_amount), sqlc.arg(notes), sqlc.arg(status),
+    sqlc.narg(latitude), sqlc.narg(longitude), sqlc.arg(poi_id), sqlc.narg(estimated_amount), sqlc.arg(notes), sqlc.arg(status),
     sqlc.narg(actual_start_local), sqlc.narg(actual_end_local), sqlc.arg(actual_notes), sqlc.arg(created_at), sqlc.arg(created_at))
 RETURNING *;
 
@@ -44,7 +44,7 @@ WITH invalidated_routes AS (
         OR item.longitude IS DISTINCT FROM sqlc.narg(longitude)::numeric)
 )
 UPDATE itinerary_items
-SET title = sqlc.arg(title), kind = sqlc.arg(kind),
+SET footprint_excluded = sqlc.arg(footprint_excluded), poi_id = sqlc.arg(poi_id), title = sqlc.arg(title), kind = sqlc.arg(kind),
     planned_start_local = sqlc.narg(planned_start_local), planned_end_local = sqlc.narg(planned_end_local), planned_duration_minutes = sqlc.narg(planned_duration_minutes),
     place_name = sqlc.arg(place_name), address = sqlc.arg(address), latitude = sqlc.narg(latitude), longitude = sqlc.narg(longitude),
     estimated_amount = sqlc.narg(estimated_amount), notes = sqlc.arg(notes), status = sqlc.arg(status),

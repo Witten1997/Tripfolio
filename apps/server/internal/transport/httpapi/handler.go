@@ -11,6 +11,7 @@ import (
 	"tripfolio/server/internal/modules/finance"
 	"tripfolio/server/internal/modules/geo"
 	"tripfolio/server/internal/modules/metadata"
+	"tripfolio/server/internal/modules/travel/dashboard"
 	"tripfolio/server/internal/modules/travel/itinerary"
 	"tripfolio/server/internal/modules/travel/member"
 	"tripfolio/server/internal/modules/travel/packing"
@@ -25,6 +26,7 @@ import (
 // Handler 实现生成的 StrictServerInterface。它只做分发与模型转换，业务状态与规则留在模块服务中；
 // 各业务的方法分散在对应文件（metadata.go、account.go、finance.go、travel_*.go 等）。
 type Handler struct {
+	dashboard   *dashboard.Service
 	logger      *slog.Logger
 	metadata    metadata.Metadata
 	identity    *account.IdentityService

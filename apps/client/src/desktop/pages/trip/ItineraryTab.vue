@@ -19,11 +19,16 @@ import IconAction from '@/desktop/components/IconAction.vue'
 import ItineraryItemDialog from '@/desktop/components/ItineraryItemDialog.vue'
 import SlidingSegmented from '@/desktop/components/SlidingSegmented.vue'
 import { ApiError } from '@/shared/api/auth'
-import { formatDistance, formatDuration } from '@/shared/geo/itineraryRoute'
+import {
+  directDistanceMeters,
+  formatDistance,
+  formatDuration,
+  itineraryLegs,
+  itineraryWaypoints,
+} from '@/shared/geo/itineraryRoute'
 import {
   deleteItineraryItem,
   itineraryKindLabels,
-  itineraryStatusLabels,
   type ItineraryItem,
 } from '@/shared/api/itinerary'
 import {
@@ -77,6 +82,7 @@ let mediaQuery: MediaQueryList | undefined
 let mediaQueryListener: (() => void) | undefined
 let routePollAttempts = 0
 let recalculationRequested = false
+let routeRequest = 0
 let scrollFrame: number | undefined
 let scrollListener: (() => void) | undefined
 const dragging = ref(false)
@@ -88,10 +94,6 @@ const modeMeta = {
   cycling: { label: '骑行', icon: Bike },
 } as const
 const routeModes = Object.keys(modeMeta) as RouteLegMode[]
-const byOrigin = computed(
-  () => new Map((routePlan.value?.legs ?? []).map((leg) => [leg.from_item_id, leg])),
-)
-const itemById = computed(() => new Map(board.items.value.map((item) => [item.id, item])))
 const selectedLeg = computed(
   () => routePlan.value?.legs.find((leg) => leg.id === selectedLegId.value) ?? null,
 )
@@ -117,6 +119,57 @@ watch(
   },
   { immediate: true, flush: 'sync' },
 )
+// 使用拖动后的镜像顺序，保存排序期间也不显示旧连接的距离。
+const displayedItems = computed(() =>
+  days.value.flatMap((day) =>
+    (lists.value[day.date] ?? []).map((item, index) => ({
+      ...item,
+      scheduled_on: day.date,
+      sort_order: index,
+    })),
+  ),
+)
+const itemById = computed(() => new Map(displayedItems.value.map((item) => [item.id, item])))
+type DisplayRouteLeg = RouteLeg & { pending?: boolean }
+const byOrigin = computed(() => {
+  const saved = new Map(
+    (routePlan.value?.legs ?? []).map((leg) => [`${leg.from_item_id}>${leg.to_item_id}`, leg]),
+  )
+  const preference = routePlan.value?.preference
+  const result = new Map<string, DisplayRouteLeg>()
+  for (const edge of itineraryLegs(itineraryWaypoints(displayedItems.value))) {
+    const existing = saved.get(edge.id)
+    if (existing) {
+      result.set(edge.from.id, existing)
+      continue
+    }
+    const direct = directDistanceMeters(edge.from, edge.to)
+    result.set(edge.from.id, {
+      id: edge.id,
+      from_item_id: edge.from.id,
+      to_item_id: edge.to.id,
+      version: '0',
+      mode:
+        direct <=
+        (preference?.short_distance_meters ?? trip.value?.route_short_distance_meters ?? 1500)
+          ? (preference?.short_mode ?? trip.value?.route_short_mode ?? 'walking')
+          : 'driving',
+      mode_source: 'preference',
+      direct_distance_meters: direct,
+      route_distance_meters: null,
+      route_duration_seconds: null,
+      status: 'stale',
+      error_code: null,
+      calculated_at: null,
+      pending: true,
+    })
+  }
+  return result
+})
+const hasCalculatingLegs = computed(() =>
+  [...byOrigin.value.values()].some((leg) => leg.status === 'stale'),
+)
+
 function syncActiveDay() {
   if (!days.value.length) return
   const navBottom = document
@@ -190,8 +243,10 @@ function scheduleRoutePoll() {
 }
 
 async function loadRoutePlan(requestRecalculation = true) {
+  const request = ++routeRequest
   try {
     const plan = await getRoutePlan(context.tripId)
+    if (request !== routeRequest) return
     if (plan.summary.revision !== routePlan.value?.summary.revision) routePollAttempts = 0
     routePlan.value = plan
     routeFailure.value = null
@@ -203,6 +258,7 @@ async function loadRoutePlan(requestRecalculation = true) {
       recalculationRequested = true
       routePollAttempts = 0
       await recalculateRoutePlan(context.tripId, randomId())
+      if (request !== routeRequest) return
     }
     if (!['stale', 'calculating'].includes(routePlan.value.summary.status)) {
       recalculationRequested = false
@@ -210,7 +266,7 @@ async function loadRoutePlan(requestRecalculation = true) {
     }
     if (['stale', 'calculating'].includes(routePlan.value.summary.status)) scheduleRoutePoll()
   } catch (cause) {
-    routeFailure.value = actionError(cause, '路线信息暂时无法加载。')
+    if (request === routeRequest) routeFailure.value = actionError(cause, '路线信息暂时无法加载。')
   }
 }
 
@@ -222,7 +278,7 @@ function legDescription(leg: RouteLeg) {
   )
     return `${formatDistance(leg.route_distance_meters)} · ${formatDuration(leg.route_duration_seconds)}`
   if (leg.status === 'failed') return '路线暂未算出'
-  return '正在计算路线'
+  return '计算中'
 }
 
 function compactLegDescription(leg: RouteLeg) {
@@ -245,7 +301,7 @@ function compactLegDescription(leg: RouteLeg) {
     return `${distance} · ${duration}`
   }
   if (leg.status === 'failed') return '路线暂未算出'
-  return '正在计算路线'
+  return '计算中'
 }
 
 function isCrossDayLeg(leg: RouteLeg) {
@@ -261,7 +317,8 @@ function routeAriaLabel(leg: RouteLeg) {
   return `查看从 ${from} 到 ${to} 的路线`
 }
 
-function openRouteLeg(leg: RouteLeg) {
+function openRouteLeg(leg: DisplayRouteLeg) {
+  if (leg.pending) return
   selectedLegId.value = leg.id
   routeDrawerOpen.value = true
 }
@@ -341,7 +398,8 @@ async function onDragEnd(event: DraggableEvent<ItineraryItem>) {
   }
   // moveItem 成功或失败都会重载 board，镜像由 days 的 watcher 重建
   const moved = await board.moveItem(id, to, event.newIndex)
-  if (moved) await loadRoutePlan(false)
+  if (!moved) lists.value = Object.fromEntries(days.value.map((day) => [day.date, [...day.items]]))
+  if (moved || actionFailure.value) await loadRoutePlan(false)
   if (moved && feedback.value.length) {
     noticeType.value = 'warning'
     notice.value = feedback.value
@@ -442,6 +500,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  routeRequest++
   if (routePoll) clearTimeout(routePoll)
   if (mediaQueryListener) mediaQuery?.removeEventListener('change', mediaQueryListener)
   if (scrollListener) window.removeEventListener('scroll', scrollListener)
@@ -487,8 +546,9 @@ onUnmounted(() => {
         <Route aria-hidden="true" />
         <span>
           相邻点位路线
+          <template v-if="reordering || hasCalculatingLegs"> · 计算中</template>
           <template
-            v-if="
+            v-else-if="
               routePlan.summary.status === 'ready' &&
               routePlan.summary.total_distance_meters != null
             "
@@ -564,7 +624,7 @@ onUnmounted(() => {
             @end="onDragEnd"
           >
             <div v-for="item in lists[day.date] ?? []" :key="item.id" class="item-group">
-              <article class="item" :class="[`item--${item.status}`, `item--kind-${item.kind}`]">
+              <article class="item" :class="`item--kind-${item.kind}`">
                 <button
                   type="button"
                   class="drag-handle"
@@ -585,12 +645,6 @@ onUnmounted(() => {
                       <component :is="itineraryKindIcons[item.kind]" aria-hidden="true" />
                       {{ itineraryKindLabels[item.kind] }}
                     </ElTag>
-                    <ElTag
-                      v-if="item.status !== 'pending'"
-                      size="small"
-                      :type="item.status === 'completed' ? 'success' : 'info'"
-                      >{{ itineraryStatusLabels[item.status] }}</ElTag
-                    >
                   </div>
                   <p v-if="item.place_name || item.address" class="item-place">
                     {{ item.place_name }}<span v-if="item.place_name && item.address"> · </span
@@ -633,12 +687,14 @@ onUnmounted(() => {
                   'route-connector--cross-day': isCrossDayLeg(byOrigin.get(item.id)!),
                 }"
                 :aria-label="routeAriaLabel(byOrigin.get(item.id)!)"
+                :aria-busy="byOrigin.get(item.id)!.status === 'stale'"
+                :disabled="byOrigin.get(item.id)!.pending"
                 @click="openRouteLeg(byOrigin.get(item.id)!)"
               >
                 <component :is="modeMeta[byOrigin.get(item.id)!.mode].icon" aria-hidden="true" />
                 <span>{{ modeMeta[byOrigin.get(item.id)!.mode].label }}</span>
                 <strong>{{ compactLegDescription(byOrigin.get(item.id)!) }}</strong>
-                <ChevronRight aria-hidden="true" />
+                <ChevronRight v-if="!byOrigin.get(item.id)!.pending" aria-hidden="true" />
               </button>
             </div>
           </VueDraggable>
@@ -786,7 +842,10 @@ onUnmounted(() => {
   text-align: left;
   cursor: pointer;
 }
-.route-connector:hover strong,
+.route-connector:disabled {
+  cursor: progress;
+}
+.route-connector:not(:disabled):hover strong,
 .route-connector:focus-visible strong {
   color: var(--tf-accent);
 }
@@ -1146,13 +1205,6 @@ onUnmounted(() => {
 .item:hover {
   border-color: color-mix(in srgb, var(--item-kind) 48%, var(--tf-line-soft));
   transform: translateY(-1px);
-}
-.item--completed .item-title strong,
-.item--skipped .item-title strong {
-  color: var(--tf-text-2);
-}
-.item--skipped .item-title strong {
-  text-decoration: line-through;
 }
 .item--ghost {
   background: var(--tf-accent-soft);

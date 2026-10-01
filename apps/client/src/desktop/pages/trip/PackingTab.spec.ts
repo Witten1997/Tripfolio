@@ -84,7 +84,7 @@ describe('两态行李清单', () => {
     view.unmount()
   })
 
-  it('保存过程中禁用勾选，失败保留原状态和重试入口', async () => {
+  it('保存过程中只禁用当前项，失败保留原状态和重试入口', async () => {
     let fail!: (error: Error) => void
     vi.mocked(updatePackingItem).mockImplementationOnce(
       () =>
@@ -97,7 +97,11 @@ describe('两态行李清单', () => {
     ;(input.element as HTMLInputElement).focus()
     await input.setValue(true)
     ;(input.element as HTMLInputElement).blur()
-    expect(view.findAllComponents(ElCheckbox).every((check) => check.props('disabled'))).toBe(true)
+    expect(view.findAllComponents(ElCheckbox).map((check) => check.props('disabled'))).toEqual([
+      false,
+      false,
+      true,
+    ])
     expect(view.findAll('.item')[2]!.attributes('aria-busy')).toBe('true')
     fail(new Error('断网'))
     await flushPromises()

@@ -87,6 +87,7 @@ func toItineraryResource(row dbgen.ItineraryItem, currency string) (itinerary.Re
 		amount, currencyCode = &a, &c
 	}
 	return itinerary.Resource{
+		FootprintExcluded: row.FootprintExcluded, POIID: row.PoiID,
 		ID: row.ID, TripID: row.TripID, Title: row.Title, Kind: itinerary.Kind(row.Kind), ScheduledOn: types.DateOf(row.ScheduledOn), SortOrder: row.SortOrder,
 		PlannedStartLocal: localPtr(row.PlannedStartLocal), PlannedEndLocal: localPtr(row.PlannedEndLocal), PlannedDurationMinutes: row.PlannedDurationMinutes,
 		PlaceName: row.PlaceName, Address: row.Address, Latitude: lat, Longitude: lng,
@@ -172,7 +173,8 @@ func (r *itineraryRepo) MaxSortOrder(ctx context.Context, accountID, tripID uuid
 
 func (r *itineraryRepo) Insert(ctx context.Context, accountID uuid.UUID, it itinerary.Resource) (itinerary.Resource, error) {
 	row, err := r.scope.Queries.InsertItineraryItem(ctx, dbgen.InsertItineraryItemParams{
-		ID: it.ID, AccountID: accountID, TripID: it.TripID, Title: it.Title, Kind: string(it.Kind), ScheduledOn: it.ScheduledOn.Time(), SortOrder: it.SortOrder,
+		PoiID: it.POIID,
+		ID:    it.ID, AccountID: accountID, TripID: it.TripID, Title: it.Title, Kind: string(it.Kind), ScheduledOn: it.ScheduledOn.Time(), SortOrder: it.SortOrder,
 		PlannedStartLocal: localTime(it.PlannedStartLocal), PlannedEndLocal: localTime(it.PlannedEndLocal), PlannedDurationMinutes: it.PlannedDurationMinutes,
 		PlaceName: it.PlaceName, Address: it.Address, Latitude: floatText(it.Latitude), Longitude: floatText(it.Longitude),
 		EstimatedAmount: it.EstimatedAmount, Notes: it.Notes, Status: string(it.Status),
@@ -190,6 +192,7 @@ func (r *itineraryRepo) Insert(ctx context.Context, accountID uuid.UUID, it itin
 
 func (r *itineraryRepo) Update(ctx context.Context, accountID, tripID, id uuid.UUID, v itinerary.Values, now time.Time) (itinerary.Resource, error) {
 	row, err := r.scope.Queries.UpdateItineraryItem(ctx, dbgen.UpdateItineraryItemParams{
+		FootprintExcluded: v.FootprintExcluded, PoiID: v.POIID,
 		AccountID: accountID, TripID: tripID, ID: id, Title: v.Title, Kind: string(v.Kind),
 		PlannedStartLocal: localTime(v.PlannedStartLocal), PlannedEndLocal: localTime(v.PlannedEndLocal), PlannedDurationMinutes: v.PlannedDurationMinutes,
 		PlaceName: v.PlaceName, Address: v.Address, Latitude: floatText(v.Latitude), Longitude: floatText(v.Longitude),

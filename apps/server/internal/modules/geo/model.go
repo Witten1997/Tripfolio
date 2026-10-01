@@ -23,6 +23,9 @@ func (c Coordinate) Valid() bool {
 }
 
 type Place struct {
+	Province  string  `json:"province"`
+	City      string  `json:"city"`
+	District  string  `json:"district"`
 	Name      string  `json:"name"`
 	Address   string  `json:"address"`
 	Latitude  float64 `json:"latitude"`

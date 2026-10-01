@@ -104,7 +104,8 @@ func (h *Handler) CreateItineraryItem(ctx context.Context, req generated.CreateI
 	}
 	b := req.Body
 	cmd := itinerary.CreateCommand{
-		ID: uuid.UUID(b.Id), Title: b.Title, Kind: itinerary.Kind(b.Kind), ScheduledOn: string(b.ScheduledOn),
+		POIID: b.PoiId,
+		ID:    uuid.UUID(b.Id), Title: b.Title, Kind: itinerary.Kind(b.Kind), ScheduledOn: string(b.ScheduledOn),
 		PlaceName: b.PlaceName, Address: b.Address, Notes: b.Notes, ActualNotes: b.ActualNotes, CurrencyCode: currencyPtr(b.CurrencyCode),
 	}
 	// 创建时显式 null 与缺省等价，都取默认值。
@@ -162,6 +163,7 @@ func (h *Handler) UpdateItineraryItem(ctx context.Context, req generated.UpdateI
 	}
 	b := req.Body
 	patch := itinerary.Patch{
+		FootprintExcluded: b.FootprintExcluded, POIID: b.PoiId,
 		Title: b.Title, PlaceName: b.PlaceName, Address: b.Address, Notes: b.Notes, ActualNotes: b.ActualNotes,
 		CurrencyCode: currencyPtr(b.CurrencyCode),
 	}

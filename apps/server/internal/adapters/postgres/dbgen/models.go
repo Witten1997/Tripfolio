@@ -97,6 +97,16 @@ type AuthChallenge struct {
 	InvalidatedAt  *time.Time
 }
 
+type DashboardRegion struct {
+	Latitude     string
+	Longitude    string
+	ProvinceCode string
+	ProvinceName string
+	CityCode     string
+	CityName     string
+	ResolvedAt   time.Time
+}
+
 type DataSnapshot struct {
 	ID              uuid.UUID
 	AccountID       uuid.UUID
@@ -213,6 +223,8 @@ type ItineraryItem struct {
 	ActualStartLocal       *time.Time
 	ActualEndLocal         *time.Time
 	ActualNotes            string
+	FootprintExcluded      bool
+	PoiID                  string
 }
 
 type ItineraryRouteLeg struct {

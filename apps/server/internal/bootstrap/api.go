@@ -28,6 +28,7 @@ import (
 	"tripfolio/server/internal/modules/finance"
 	geoservice "tripfolio/server/internal/modules/geo"
 	"tripfolio/server/internal/modules/metadata"
+	"tripfolio/server/internal/modules/travel/dashboard"
 	"tripfolio/server/internal/modules/travel/itinerary"
 	"tripfolio/server/internal/modules/travel/member"
 	"tripfolio/server/internal/modules/travel/packing"
@@ -39,6 +40,7 @@ import (
 
 // Services 是 API 用到的全部业务服务；测试也用它在内存或真实数据库上组装。
 type Services struct {
+	Dashboard  *dashboard.Service
 	Identity   *account.IdentityService
 	Sessions   *account.SessionService
 	Profile    *account.ProfileService
@@ -110,6 +112,7 @@ func BuildServices(pool *pgxpool.Pool, cfg config.Config, logger *slog.Logger, m
 		geoSvc = geoservice.NewService(places)
 	}
 	routeStore := travelpg.NewRoutePlanStore(pool)
+	dashboardSvc := dashboard.NewService(travelpg.NewDashboardStore(pool), geoSvc, clk)
 	routePlans := routeplan.NewService(travelpg.NewRoutePlanUnitOfWork(writer), routeStore, routeStore, geoSvc, clk)
 
 	shares := share.NewService(share.Deps{
@@ -138,7 +141,8 @@ func BuildServices(pool *pgxpool.Pool, cfg config.Config, logger *slog.Logger, m
 	profile := account.NewProfileService(store, assetSvc, clk)
 
 	return Services{
-		Identity: identity, Sessions: sessions, Profile: profile, Categories: categories,
+		Dashboard: dashboardSvc,
+		Identity:  identity, Sessions: sessions, Profile: profile, Categories: categories,
 		Trips: trips, Itinerary: itineraries, RoutePlans: routePlans, Packing: packings, Todos: todos, Members: members, Ledger: ledger, Statistics: statistics, Settlement: settlement,
 		Assets: assetSvc, AssetVerifier: verifier, ObjectStore: objects, Geo: geoSvc, Shares: shares,
 	}, nil

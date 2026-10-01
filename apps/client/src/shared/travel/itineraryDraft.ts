@@ -8,6 +8,7 @@ export type PlannedMode = 'none' | 'end' | 'duration'
 
 /** 表单草稿：计划开始只编辑时间，其余当地时间以“YYYY-MM-DD HH:mm”编辑。 */
 export interface ItineraryDraft {
+  poi_id: string
   title: string
   kind: ItineraryItem['kind']
   scheduled_on: string
@@ -21,14 +22,13 @@ export interface ItineraryDraft {
   longitude: number | null
   estimated_amount: string
   notes: string
-  status: ItineraryItem['status']
   actual_start: string
   actual_end: string
   actual_notes: string
 }
 
-/** 校验后的字段集合：契约创建正文去掉 id；currency_code 仅在金额非空时携带。 */
-export type ItineraryValues = Omit<ItineraryCreate, 'id'>
+/** 校验后的字段集合：不携带 id 或已停用的状态；currency_code 仅在金额非空时携带。 */
+export type ItineraryValues = Omit<ItineraryCreate, 'id' | 'status'>
 
 export const itineraryFieldLabels: Record<string, string> = {
   title: '标题',
@@ -43,7 +43,6 @@ export const itineraryFieldLabels: Record<string, string> = {
   longitude: '经度',
   estimated_amount: '预计费用',
   notes: '备注',
-  status: '状态',
   actual_start_local: '实际开始',
   actual_end_local: '实际结束',
   actual_notes: '实际记录',
@@ -51,6 +50,7 @@ export const itineraryFieldLabels: Record<string, string> = {
 
 export function emptyItineraryDraft(scheduledOn = ''): ItineraryDraft {
   return {
+    poi_id: '',
     title: '',
     kind: 'attraction',
     scheduled_on: scheduledOn,
@@ -64,7 +64,6 @@ export function emptyItineraryDraft(scheduledOn = ''): ItineraryDraft {
     longitude: null,
     estimated_amount: '',
     notes: '',
-    status: 'pending',
     actual_start: '',
     actual_end: '',
     actual_notes: '',
@@ -99,6 +98,7 @@ export function validDate(value: string) {
 
 export function itineraryDraftFrom(item: ItineraryItem): ItineraryDraft {
   return {
+    poi_id: item.poi_id ?? '',
     title: item.title,
     kind: item.kind,
     scheduled_on: item.scheduled_on,
@@ -118,7 +118,6 @@ export function itineraryDraftFrom(item: ItineraryItem): ItineraryDraft {
     longitude: item.longitude,
     estimated_amount: item.estimated_amount ?? '',
     notes: item.notes,
-    status: item.status,
     actual_start: toEditable(item.actual_start_local),
     actual_end: toEditable(item.actual_end_local),
     actual_notes: item.actual_notes,
@@ -133,6 +132,7 @@ export interface TripMoney {
 /** 标题与位置作为一个快照更新，换选 POI 不遗留上一次的标题。 */
 export function applyItineraryPlace(draft: ItineraryDraft, place: GeoPlace) {
   Object.assign(draft, {
+    poi_id: place.poi_id ?? '',
     title: place.name.trim() || '地图选点',
     place_name: place.name.trim() || '地图选点',
     address: place.address,
@@ -142,7 +142,14 @@ export function applyItineraryPlace(draft: ItineraryDraft, place: GeoPlace) {
 }
 
 export function clearItineraryPlace(draft: ItineraryDraft) {
-  Object.assign(draft, { title: '', place_name: '', address: '', latitude: null, longitude: null })
+  Object.assign(draft, {
+    poi_id: '',
+    title: '',
+    place_name: '',
+    address: '',
+    latitude: null,
+    longitude: null,
+  })
 }
 
 /** 只预填独立账目的备注与日期，不建立关联，也不转换预计费用。 */
@@ -219,6 +226,7 @@ export function validateItineraryDraft(
   }
   if (Object.keys(errors).length) throw new DraftError(errors)
   const values: ItineraryValues = {
+    poi_id: draft.poi_id,
     title,
     kind: draft.kind,
     scheduled_on: draft.scheduled_on,
@@ -231,7 +239,6 @@ export function validateItineraryDraft(
     longitude: draft.longitude,
     estimated_amount: amount,
     notes: draft.notes,
-    status: draft.status,
     actual_start_local: actualStart,
     actual_end_local: actualEnd,
     actual_notes: draft.actual_notes,
@@ -241,6 +248,7 @@ export function validateItineraryDraft(
 }
 
 const patchFields = [
+  'poi_id',
   'title',
   'kind',
   'planned_start_local',
@@ -252,7 +260,6 @@ const patchFields = [
   'longitude',
   'estimated_amount',
   'notes',
-  'status',
   'actual_start_local',
   'actual_end_local',
   'actual_notes',
@@ -265,7 +272,8 @@ export function changedItineraryFields(
 ): ItineraryPatch {
   const patch: Record<string, unknown> = {}
   for (const key of patchFields) {
-    if ((values[key] ?? null) !== baseline[key]) patch[key] = values[key] ?? null
+    if ((values[key] ?? null) !== (key === 'poi_id' ? (baseline[key] ?? '') : baseline[key]))
+      patch[key] = values[key] ?? null
   }
   if ('estimated_amount' in patch && values.estimated_amount !== null) {
     patch.currency_code = values.currency_code

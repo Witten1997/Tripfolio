@@ -44,6 +44,13 @@ ItineraryItem:
       deleted_at,
     ]
   properties:
+    poi_id:
+      type: string
+      maxLength: 128
+      description: 高德 POI 标识；地图手动选点或历史地点为空字符串
+    footprint_excluded:
+      type: boolean
+      description: 是否手动排除旅行足迹，不影响原行程、天数和账目
     id:
       type: string
       format: uuid
@@ -164,6 +171,10 @@ ItineraryCreate:
     planned_end_local 与 planned_duration_minutes 不能同时提供。
   required: [id, title, kind, scheduled_on]
   properties:
+    poi_id:
+      type: string
+      maxLength: 128
+      description: 高德 POI 标识；地图手动选点或历史地点为空字符串
     id:
       type: string
       format: uuid
@@ -236,6 +247,13 @@ ItineraryPatch:
     id、scheduled_on、sort_order 不可在此修改，跨日移动与排序走重排接口；
     estimated_amount 改为非空值时须同时携带 currency_code。
   properties:
+    poi_id:
+      type: string
+      maxLength: 128
+      description: 高德 POI 标识；地图手动选点或历史地点为空字符串
+    footprint_excluded:
+      type: boolean
+      description: 是否手动排除旅行足迹，不影响原行程、天数和账目
     title:
       type: string
       minLength: 1

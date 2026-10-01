@@ -210,6 +210,7 @@ func (c *AmapClient) ReverseGeocode(ctx context.Context, accountKey string, lat,
 		comp.District.String(),
 	)
 	place := Place{
+		Province: comp.Province.String(), City: comp.City.String(), District: comp.District.String(),
 		Name:      name,
 		Address:   address,
 		Latitude:  lat,
@@ -277,6 +278,7 @@ func (c *AmapClient) SearchPlaces(ctx context.Context, accountKey, keyword strin
 			continue
 		}
 		places = append(places, Place{
+			Province: tip.Province.String(), City: tip.City.String(), District: tip.District.String(),
 			Name:      name,
 			Address:   firstNonEmpty(tip.Address.String(), tip.Province.String()+tip.City.String()+tip.District.String()),
 			Latitude:  lat,

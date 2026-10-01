@@ -26,6 +26,7 @@ const detailRoutes = new Set([
   'trip-todos',
 ])
 const protectedBottomBarRoutes = new Set([
+  'dashboard',
   'trips',
   'account',
   'personal-settings',
@@ -97,6 +98,15 @@ function createTrip() {
           <ActionIcon name="luggage" />
           <span>旅行</span>
         </RouterLink>
+        <RouterLink
+          :to="{ name: 'dashboard' }"
+          class="mobile-bottom-bar__item"
+          :class="{ 'is-active': route.name === 'dashboard' }"
+          aria-label="看板"
+        >
+          <ActionIcon name="dashboard" />
+          <span>看板</span>
+        </RouterLink>
         <button
           class="mobile-bottom-bar__create"
           type="button"
@@ -143,7 +153,7 @@ function createTrip() {
 
 .mobile-bottom-bar {
   display: grid;
-  grid-template-columns: 1fr 72px 1fr;
+  grid-template-columns: 1fr 1fr 72px 1fr;
   align-items: end;
   min-height: 52px;
   padding: 3px max(18px, env(safe-area-inset-right)) env(safe-area-inset-bottom)

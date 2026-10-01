@@ -30,6 +30,9 @@ type Querier interface {
 	CreateChallenge(ctx context.Context, arg CreateChallengeParams) (AuthChallenge, error)
 	// 登录会话。摘要列只做常量时间比较，所有查找按主键。
 	CreateSession(ctx context.Context, arg CreateSessionParams) (AccountSession, error)
+	DashboardCategories(ctx context.Context, arg DashboardCategoriesParams) ([]DashboardCategoriesRow, error)
+	DashboardPlaces(ctx context.Context, arg DashboardPlacesParams) ([]DashboardPlacesRow, error)
+	DashboardTrips(ctx context.Context, arg DashboardTripsParams) ([]DashboardTripsRow, error)
 	DeleteExpiredChallenges(ctx context.Context, expiresAt time.Time) (int64, error)
 	// 票据引用：整体替换。
 	DeleteLedgerAttachments(ctx context.Context, arg DeleteLedgerAttachmentsParams) error
@@ -173,6 +176,7 @@ type Querier interface {
 	RevokeSession(ctx context.Context, arg RevokeSessionParams) error
 	RotateSession(ctx context.Context, arg RotateSessionParams) error
 	RotateTripShare(ctx context.Context, arg RotateTripShareParams) (TripShare, error)
+	SaveDashboardRegion(ctx context.Context, arg SaveDashboardRegionParams) error
 	SetAccountStatus(ctx context.Context, arg SetAccountStatusParams) error
 	SetAssetThumbnail(ctx context.Context, arg SetAssetThumbnailParams) (Asset, error)
 	SetChallengeDelivery(ctx context.Context, arg SetChallengeDeliveryParams) error

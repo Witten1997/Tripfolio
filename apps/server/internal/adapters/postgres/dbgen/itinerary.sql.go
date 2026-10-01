@@ -13,7 +13,7 @@ import (
 )
 
 const getItineraryItem = `-- name: GetItineraryItem :one
-SELECT id, account_id, version, created_at, updated_at, deleted_at, trip_id, title, kind, scheduled_on, sort_order, planned_start_local, planned_end_local, planned_duration_minutes, place_name, address, latitude, longitude, estimated_amount, notes, status, actual_start_local, actual_end_local, actual_notes FROM itinerary_items
+SELECT id, account_id, version, created_at, updated_at, deleted_at, trip_id, title, kind, scheduled_on, sort_order, planned_start_local, planned_end_local, planned_duration_minutes, place_name, address, latitude, longitude, estimated_amount, notes, status, actual_start_local, actual_end_local, actual_notes, footprint_excluded, poi_id FROM itinerary_items
 WHERE account_id = $1 AND trip_id = $2 AND id = $3
 `
 
@@ -51,12 +51,14 @@ func (q *Queries) GetItineraryItem(ctx context.Context, arg GetItineraryItemPara
 		&i.ActualStartLocal,
 		&i.ActualEndLocal,
 		&i.ActualNotes,
+		&i.FootprintExcluded,
+		&i.PoiID,
 	)
 	return i, err
 }
 
 const getItineraryItemForUpdate = `-- name: GetItineraryItemForUpdate :one
-SELECT id, account_id, version, created_at, updated_at, deleted_at, trip_id, title, kind, scheduled_on, sort_order, planned_start_local, planned_end_local, planned_duration_minutes, place_name, address, latitude, longitude, estimated_amount, notes, status, actual_start_local, actual_end_local, actual_notes FROM itinerary_items
+SELECT id, account_id, version, created_at, updated_at, deleted_at, trip_id, title, kind, scheduled_on, sort_order, planned_start_local, planned_end_local, planned_duration_minutes, place_name, address, latitude, longitude, estimated_amount, notes, status, actual_start_local, actual_end_local, actual_notes, footprint_excluded, poi_id FROM itinerary_items
 WHERE account_id = $1 AND trip_id = $2 AND id = $3
 FOR UPDATE
 `
@@ -95,6 +97,8 @@ func (q *Queries) GetItineraryItemForUpdate(ctx context.Context, arg GetItinerar
 		&i.ActualStartLocal,
 		&i.ActualEndLocal,
 		&i.ActualNotes,
+		&i.FootprintExcluded,
+		&i.PoiID,
 	)
 	return i, err
 }
@@ -135,12 +139,12 @@ func (q *Queries) GetTripContentInfo(ctx context.Context, arg GetTripContentInfo
 const insertItineraryItem = `-- name: InsertItineraryItem :one
 INSERT INTO itinerary_items (id, account_id, trip_id, title, kind, scheduled_on, sort_order,
     planned_start_local, planned_end_local, planned_duration_minutes, place_name, address, latitude, longitude,
-    estimated_amount, notes, status, actual_start_local, actual_end_local, actual_notes, created_at, updated_at)
+    poi_id, estimated_amount, notes, status, actual_start_local, actual_end_local, actual_notes, created_at, updated_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7,
     $8, $9, $10, $11, $12,
-    $13, $14, $15, $16, $17,
-    $18, $19, $20, $21, $21)
-RETURNING id, account_id, version, created_at, updated_at, deleted_at, trip_id, title, kind, scheduled_on, sort_order, planned_start_local, planned_end_local, planned_duration_minutes, place_name, address, latitude, longitude, estimated_amount, notes, status, actual_start_local, actual_end_local, actual_notes
+    $13, $14, $15, $16, $17, $18,
+    $19, $20, $21, $22, $22)
+RETURNING id, account_id, version, created_at, updated_at, deleted_at, trip_id, title, kind, scheduled_on, sort_order, planned_start_local, planned_end_local, planned_duration_minutes, place_name, address, latitude, longitude, estimated_amount, notes, status, actual_start_local, actual_end_local, actual_notes, footprint_excluded, poi_id
 `
 
 type InsertItineraryItemParams struct {
@@ -158,6 +162,7 @@ type InsertItineraryItemParams struct {
 	Address                string
 	Latitude               *string
 	Longitude              *string
+	PoiID                  string
 	EstimatedAmount        *string
 	Notes                  string
 	Status                 string
@@ -183,6 +188,7 @@ func (q *Queries) InsertItineraryItem(ctx context.Context, arg InsertItineraryIt
 		arg.Address,
 		arg.Latitude,
 		arg.Longitude,
+		arg.PoiID,
 		arg.EstimatedAmount,
 		arg.Notes,
 		arg.Status,
@@ -217,6 +223,8 @@ func (q *Queries) InsertItineraryItem(ctx context.Context, arg InsertItineraryIt
 		&i.ActualStartLocal,
 		&i.ActualEndLocal,
 		&i.ActualNotes,
+		&i.FootprintExcluded,
+		&i.PoiID,
 	)
 	return i, err
 }
@@ -239,7 +247,7 @@ func (q *Queries) ItineraryItemIDExists(ctx context.Context, arg ItineraryItemID
 }
 
 const listItineraryItems = `-- name: ListItineraryItems :many
-SELECT id, account_id, version, created_at, updated_at, deleted_at, trip_id, title, kind, scheduled_on, sort_order, planned_start_local, planned_end_local, planned_duration_minutes, place_name, address, latitude, longitude, estimated_amount, notes, status, actual_start_local, actual_end_local, actual_notes FROM itinerary_items
+SELECT id, account_id, version, created_at, updated_at, deleted_at, trip_id, title, kind, scheduled_on, sort_order, planned_start_local, planned_end_local, planned_duration_minutes, place_name, address, latitude, longitude, estimated_amount, notes, status, actual_start_local, actual_end_local, actual_notes, footprint_excluded, poi_id FROM itinerary_items
 WHERE account_id = $1 AND trip_id = $2 AND deleted_at IS NULL
   AND ($3::date IS NULL OR scheduled_on >= $3::date)
   AND ($4::date IS NULL OR scheduled_on <= $4::date)
@@ -307,6 +315,8 @@ func (q *Queries) ListItineraryItems(ctx context.Context, arg ListItineraryItems
 			&i.ActualStartLocal,
 			&i.ActualEndLocal,
 			&i.ActualNotes,
+			&i.FootprintExcluded,
+			&i.PoiID,
 		); err != nil {
 			return nil, err
 		}
@@ -319,7 +329,7 @@ func (q *Queries) ListItineraryItems(ctx context.Context, arg ListItineraryItems
 }
 
 const listItineraryItemsForDays = `-- name: ListItineraryItemsForDays :many
-SELECT id, account_id, version, created_at, updated_at, deleted_at, trip_id, title, kind, scheduled_on, sort_order, planned_start_local, planned_end_local, planned_duration_minutes, place_name, address, latitude, longitude, estimated_amount, notes, status, actual_start_local, actual_end_local, actual_notes FROM itinerary_items
+SELECT id, account_id, version, created_at, updated_at, deleted_at, trip_id, title, kind, scheduled_on, sort_order, planned_start_local, planned_end_local, planned_duration_minutes, place_name, address, latitude, longitude, estimated_amount, notes, status, actual_start_local, actual_end_local, actual_notes, footprint_excluded, poi_id FROM itinerary_items
 WHERE account_id = $1 AND trip_id = $2 AND deleted_at IS NULL
   AND scheduled_on = ANY($3::date[])
 ORDER BY scheduled_on, sort_order, id
@@ -366,6 +376,8 @@ func (q *Queries) ListItineraryItemsForDays(ctx context.Context, arg ListItinera
 			&i.ActualStartLocal,
 			&i.ActualEndLocal,
 			&i.ActualNotes,
+			&i.FootprintExcluded,
+			&i.PoiID,
 		); err != nil {
 			return nil, err
 		}
@@ -404,7 +416,7 @@ const repositionItineraryItem = `-- name: RepositionItineraryItem :one
 UPDATE itinerary_items
 SET scheduled_on = $1, sort_order = $2, version = version + 1, updated_at = $3
 WHERE account_id = $4 AND trip_id = $5 AND id = $6
-RETURNING id, account_id, version, created_at, updated_at, deleted_at, trip_id, title, kind, scheduled_on, sort_order, planned_start_local, planned_end_local, planned_duration_minutes, place_name, address, latitude, longitude, estimated_amount, notes, status, actual_start_local, actual_end_local, actual_notes
+RETURNING id, account_id, version, created_at, updated_at, deleted_at, trip_id, title, kind, scheduled_on, sort_order, planned_start_local, planned_end_local, planned_duration_minutes, place_name, address, latitude, longitude, estimated_amount, notes, status, actual_start_local, actual_end_local, actual_notes, footprint_excluded, poi_id
 `
 
 type RepositionItineraryItemParams struct {
@@ -451,6 +463,8 @@ func (q *Queries) RepositionItineraryItem(ctx context.Context, arg RepositionIti
 		&i.ActualStartLocal,
 		&i.ActualEndLocal,
 		&i.ActualNotes,
+		&i.FootprintExcluded,
+		&i.PoiID,
 	)
 	return i, err
 }
@@ -459,7 +473,7 @@ const softDeleteItineraryItem = `-- name: SoftDeleteItineraryItem :one
 UPDATE itinerary_items
 SET deleted_at = $1, version = version + 1, updated_at = $1
 WHERE account_id = $2 AND trip_id = $3 AND id = $4
-RETURNING id, account_id, version, created_at, updated_at, deleted_at, trip_id, title, kind, scheduled_on, sort_order, planned_start_local, planned_end_local, planned_duration_minutes, place_name, address, latitude, longitude, estimated_amount, notes, status, actual_start_local, actual_end_local, actual_notes
+RETURNING id, account_id, version, created_at, updated_at, deleted_at, trip_id, title, kind, scheduled_on, sort_order, planned_start_local, planned_end_local, planned_duration_minutes, place_name, address, latitude, longitude, estimated_amount, notes, status, actual_start_local, actual_end_local, actual_notes, footprint_excluded, poi_id
 `
 
 type SoftDeleteItineraryItemParams struct {
@@ -502,6 +516,8 @@ func (q *Queries) SoftDeleteItineraryItem(ctx context.Context, arg SoftDeleteIti
 		&i.ActualStartLocal,
 		&i.ActualEndLocal,
 		&i.ActualNotes,
+		&i.FootprintExcluded,
+		&i.PoiID,
 	)
 	return i, err
 }
@@ -510,26 +526,28 @@ const updateItineraryItem = `-- name: UpdateItineraryItem :one
 WITH invalidated_routes AS (
     UPDATE itinerary_route_legs AS leg
     SET status = 'stale', route_distance_meters = NULL, route_duration_seconds = NULL,
-        error_code = NULL, calculated_at = NULL, version = leg.version + 1, updated_at = $16
+        error_code = NULL, calculated_at = NULL, version = leg.version + 1, updated_at = $18
     FROM itinerary_items AS item
-    WHERE item.account_id = $17 AND item.trip_id = $18 AND item.id = $19
+    WHERE item.account_id = $19 AND item.trip_id = $20 AND item.id = $21
       AND leg.account_id = item.account_id AND leg.trip_id = item.trip_id
       AND (leg.from_item_id = item.id OR leg.to_item_id = item.id)
-      AND (item.latitude IS DISTINCT FROM $8::numeric
-        OR item.longitude IS DISTINCT FROM $9::numeric)
+      AND (item.latitude IS DISTINCT FROM $10::numeric
+        OR item.longitude IS DISTINCT FROM $11::numeric)
 )
 UPDATE itinerary_items
-SET title = $1, kind = $2,
-    planned_start_local = $3, planned_end_local = $4, planned_duration_minutes = $5,
-    place_name = $6, address = $7, latitude = $8, longitude = $9,
-    estimated_amount = $10, notes = $11, status = $12,
-    actual_start_local = $13, actual_end_local = $14, actual_notes = $15,
-    version = itinerary_items.version + 1, updated_at = $16
-WHERE itinerary_items.account_id = $17 AND itinerary_items.trip_id = $18 AND itinerary_items.id = $19
-RETURNING itinerary_items.id, itinerary_items.account_id, itinerary_items.version, itinerary_items.created_at, itinerary_items.updated_at, itinerary_items.deleted_at, itinerary_items.trip_id, itinerary_items.title, itinerary_items.kind, itinerary_items.scheduled_on, itinerary_items.sort_order, itinerary_items.planned_start_local, itinerary_items.planned_end_local, itinerary_items.planned_duration_minutes, itinerary_items.place_name, itinerary_items.address, itinerary_items.latitude, itinerary_items.longitude, itinerary_items.estimated_amount, itinerary_items.notes, itinerary_items.status, itinerary_items.actual_start_local, itinerary_items.actual_end_local, itinerary_items.actual_notes
+SET footprint_excluded = $1, poi_id = $2, title = $3, kind = $4,
+    planned_start_local = $5, planned_end_local = $6, planned_duration_minutes = $7,
+    place_name = $8, address = $9, latitude = $10, longitude = $11,
+    estimated_amount = $12, notes = $13, status = $14,
+    actual_start_local = $15, actual_end_local = $16, actual_notes = $17,
+    version = itinerary_items.version + 1, updated_at = $18
+WHERE itinerary_items.account_id = $19 AND itinerary_items.trip_id = $20 AND itinerary_items.id = $21
+RETURNING itinerary_items.id, itinerary_items.account_id, itinerary_items.version, itinerary_items.created_at, itinerary_items.updated_at, itinerary_items.deleted_at, itinerary_items.trip_id, itinerary_items.title, itinerary_items.kind, itinerary_items.scheduled_on, itinerary_items.sort_order, itinerary_items.planned_start_local, itinerary_items.planned_end_local, itinerary_items.planned_duration_minutes, itinerary_items.place_name, itinerary_items.address, itinerary_items.latitude, itinerary_items.longitude, itinerary_items.estimated_amount, itinerary_items.notes, itinerary_items.status, itinerary_items.actual_start_local, itinerary_items.actual_end_local, itinerary_items.actual_notes, itinerary_items.footprint_excluded, itinerary_items.poi_id
 `
 
 type UpdateItineraryItemParams struct {
+	FootprintExcluded      bool
+	PoiID                  string
 	Title                  string
 	Kind                   string
 	PlannedStartLocal      *time.Time
@@ -553,6 +571,8 @@ type UpdateItineraryItemParams struct {
 
 func (q *Queries) UpdateItineraryItem(ctx context.Context, arg UpdateItineraryItemParams) (ItineraryItem, error) {
 	row := q.db.QueryRow(ctx, updateItineraryItem,
+		arg.FootprintExcluded,
+		arg.PoiID,
 		arg.Title,
 		arg.Kind,
 		arg.PlannedStartLocal,
@@ -599,6 +619,8 @@ func (q *Queries) UpdateItineraryItem(ctx context.Context, arg UpdateItineraryIt
 		&i.ActualStartLocal,
 		&i.ActualEndLocal,
 		&i.ActualNotes,
+		&i.FootprintExcluded,
+		&i.PoiID,
 	)
 	return i, err
 }

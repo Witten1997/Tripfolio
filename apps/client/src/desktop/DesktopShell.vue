@@ -72,6 +72,14 @@ watch(
           </RouterLink>
           <RouterLink
             v-if="session.isAuthenticated"
+            :to="{ name: 'dashboard' }"
+            class="desktop-shell__nav-item"
+          >
+            <ActionIcon name="dashboard" />
+            <span>看板</span>
+          </RouterLink>
+          <RouterLink
+            v-if="session.isAuthenticated"
             :to="{ name: 'recycle-bin' }"
             class="desktop-shell__nav-item"
           >

@@ -25,6 +25,10 @@ declare module 'vue-router' {
 
 // 移动壳的认证页在安卓阶段用 Vant 重做；网页优先阶段两个壳共用桌面实现。
 const pages = {
+  dashboard: {
+    desktop: () => import('@/desktop/pages/DashboardPage.vue'),
+    mobile: () => import('@/desktop/pages/DashboardPage.vue'),
+  },
   tripList: {
     desktop: () => import('@/desktop/pages/TripListPage.vue'),
     // 移动页复用桌面业务逻辑，并在外层补齐移动布局与底栏新建入口。
@@ -126,6 +130,7 @@ export function buildRoutes(shell: Shell): RouteRecordRaw[] {
       meta: guest,
     },
     { path: '/trips', name: 'trips', component: pick(pages.tripList) },
+    { path: '/dashboard', name: 'dashboard', component: pick(pages.dashboard) },
     {
       path: '/trips/:tripId',
       name: 'trip-detail',
