@@ -29,6 +29,7 @@ import (
 
 // Deps 是路由需要的全部依赖，由 bootstrap 显式装配。
 type Deps struct {
+	Admin       http.Handler
 	Dashboard   *dashboard.Service
 	Logger      *slog.Logger
 	Metadata    metadata.Metadata
@@ -109,6 +110,9 @@ func NewRouter(d Deps) http.Handler {
 
 	r.Get("/health/live", live)
 	r.Get("/health/ready", ready(d.Readiness))
+	if d.Admin != nil {
+		r.Mount("/api/v1/admin", d.Admin)
+	}
 
 	handler := &Handler{
 		dashboard: d.Dashboard,

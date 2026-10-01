@@ -1,0 +1,11 @@
+{
+  "extends": "@vue/tsconfig/tsconfig.dom.json",
+  "include": ["src/**/*", "vite.config.ts"],
+  "compilerOptions": {
+    "composite": true,
+    "tsBuildInfoFile": "./node_modules/.tmp/admin.tsbuildinfo",
+    "types": ["vite/client", "node"],
+    "strict": true,
+    "noEmit": true
+  }
+}

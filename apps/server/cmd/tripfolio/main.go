@@ -47,7 +47,7 @@ func run(args []string) int {
 	case "healthcheck":
 		// 健康检查不读配置：只要进程在监听就能判断，避免配置问题连带探针失败。
 		return healthcheck(os.Stderr)
-	case "serve", "migrate":
+	case "serve", "migrate", "admin":
 	default:
 		fmt.Fprintf(os.Stderr, "未知命令 %q\n\n", command)
 		usage(os.Stderr)
@@ -78,6 +78,12 @@ func run(args []string) int {
 	defer stop()
 
 	switch command {
+	case "admin":
+		if err := bootstrap.RunAdmin(ctx, cfg, rest, os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, "后台资格维护失败：", err)
+			return 1
+		}
+		return 0
 	case "migrate":
 		if err := bootstrap.RunMigrate(ctx, cfg, logger, rest); err != nil {
 			logger.Error("migrate 失败", "error", err)
@@ -149,6 +155,8 @@ func usage(w io.Writer) {
   tripfolio migrate down             回退最近一次业务迁移（仅开发环境）
   tripfolio healthcheck              请求本机 /health/ready，供容器健康检查使用
   tripfolio version                  打印版本
+  tripfolio admin grant --email 邮箱 --reason 原因   授予现有账号超级管理员资格
+  tripfolio admin revoke --email 邮箱 --reason 原因  撤销资格（保留最后一个可用超级管理员）
 
 常用环境变量（完整清单见 apps/server/.env.example）：
   TRIPFOLIO_DATABASE_URL         外部 PostgreSQL 连接串

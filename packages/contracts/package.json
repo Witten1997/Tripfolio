@@ -8,6 +8,9 @@
     "./openapi/v1": {
       "types": "./generated/openapi.v1.d.ts"
     },
+    "./openapi/admin": {
+      "types": "./generated/openapi.admin.d.ts"
+    },
     "./fixtures/money.json": "./fixtures/money.json"
   },
   "files": [
@@ -20,7 +23,8 @@
     "lint": "redocly lint openapi/v1/openapi.yaml",
     "bundle": "redocly bundle openapi/v1/openapi.yaml -o dist/openapi.v1.yaml",
     "gen:ts": "openapi-typescript dist/openapi.v1.yaml -o generated/openapi.v1.d.ts --export-type --alphabetize",
-    "build": "pnpm lint && pnpm bundle && pnpm gen:ts",
+    "admin:build": "redocly lint openapi/admin/openapi.yaml && redocly bundle openapi/admin/openapi.yaml -o dist/openapi.admin.yaml && openapi-typescript dist/openapi.admin.yaml -o generated/openapi.admin.d.ts --export-type --alphabetize",
+    "build": "pnpm lint && pnpm bundle && pnpm gen:ts && pnpm admin:build",
     "check": "pnpm build && git diff --exit-code -- dist generated"
   },
   "devDependencies": {

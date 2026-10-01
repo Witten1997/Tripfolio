@@ -18,6 +18,7 @@ import (
 	"tripfolio/server/internal/adapters/queue"
 	"tripfolio/server/internal/config"
 	"tripfolio/server/internal/modules/metadata"
+	"tripfolio/server/internal/transport/adminapi"
 	"tripfolio/server/internal/transport/httpapi"
 	riverjobs "tripfolio/server/internal/transport/river"
 	"tripfolio/server/internal/web"
@@ -161,7 +162,12 @@ func RunServe(ctx context.Context, cfg config.Config, logger *slog.Logger) error
 		return &StartupError{Phase: PhaseServices, Cause: err, Hints: servicesHints(cfg)}
 	}
 
+	adminOrigins := []string{cfg.WebBaseURL}
+	if cfg.Env != "prod" {
+		adminOrigins = append(adminOrigins, "http://localhost:5174", "http://127.0.0.1:5174")
+	}
 	router := httpapi.NewRouter(httpapi.Deps{
+		Admin:  adminapi.NewHandler(adminapi.Options{Service: services.Admin, Secure: cfg.CookieSecure, Origins: adminOrigins, Logger: logger}),
 		Logger: logger, Metadata: metadata.Current(), Readiness: readiness, CORSOrigins: cfg.CORSOrigins,
 		Cookies:  httpapi.CookieSettings{Secure: cfg.CookieSecure},
 		Identity: services.Identity, Sessions: services.Sessions, Profile: services.Profile, Categories: services.Categories,

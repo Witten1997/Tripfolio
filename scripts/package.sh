@@ -33,11 +33,14 @@ fi
 echo "==> 构建契约与前端"
 pnpm --filter @tripfolio/contracts build
 pnpm --filter @tripfolio/client build
+pnpm --filter @tripfolio/admin build
 
 echo "==> 复制前端产物到 $dest"
 # 保留 .gitignore：该目录里的构建产物按约定不入库
 find "$dest" -mindepth 1 -not -name .gitignore -delete
 cp -R apps/client/dist/. "$dest"/
+mkdir -p "$dest/admin"
+cp -R apps/admin/dist/. "$dest/admin"/
 
 echo "==> 编译 $target_os/$target_arch（版本 $version）"
 mkdir -p "$(dirname "$out")"

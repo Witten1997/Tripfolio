@@ -12,9 +12,11 @@
     "contracts:build": "pnpm --filter @tripfolio/contracts build",
     "client:dev": "pnpm --filter @tripfolio/client dev",
     "client:build": "pnpm --filter @tripfolio/client build",
+    "admin:dev": "pnpm --filter @tripfolio/admin dev",
+    "admin:build": "pnpm --filter @tripfolio/admin build",
     "typecheck": "pnpm -r --if-present typecheck",
     "test": "pnpm -r --if-present test",
-    "build": "pnpm --filter @tripfolio/contracts build && pnpm --filter @tripfolio/client build",
+    "build": "pnpm --filter @tripfolio/contracts build && pnpm --filter @tripfolio/client build && pnpm --filter @tripfolio/admin build",
     "format": "prettier --write \"**/*.{ts,vue,json,yaml,yml,md,css}\"",
     "format:check": "prettier --check \"**/*.{ts,vue,json,yaml,yml,md,css}\""
   },

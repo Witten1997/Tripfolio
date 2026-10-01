@@ -30,6 +30,9 @@ func toTodoResource(row dbgen.TodoItem) todo.Resource {
 	}
 }
 
+// ToTodoResource 供后台查询复用规范资源转换。
+func ToTodoResource(row dbgen.TodoItem) todo.Resource { return toTodoResource(row) }
+
 func dueTime(d *types.Date) *time.Time {
 	if d == nil {
 		return nil

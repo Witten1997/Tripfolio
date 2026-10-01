@@ -26,6 +26,9 @@ func toPackingResource(row dbgen.PackingItem) packing.Resource {
 	}
 }
 
+// ToPackingResource 供后台查询复用规范资源转换。
+func ToPackingResource(row dbgen.PackingItem) packing.Resource { return toPackingResource(row) }
+
 func packingTripInfo(ctx context.Context, q *dbgen.Queries, accountID, tripID uuid.UUID) (packing.TripInfo, bool, error) {
 	info, err := q.GetTripContentInfo(ctx, dbgen.GetTripContentInfoParams{AccountID: accountID, ID: tripID})
 	if errors.Is(err, pgx.ErrNoRows) {

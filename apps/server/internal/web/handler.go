@@ -139,6 +139,22 @@ func (h *handler) serveStatic(w http.ResponseWriter, r *http.Request) {
 			h.serveFile(w, r, name)
 			return
 		}
+		if name == "admin" {
+			http.Redirect(w, r, "/admin/", http.StatusPermanentRedirect)
+			return
+		}
+		if strings.HasPrefix(name, "admin/") {
+			if strings.HasPrefix(name, "admin/assets/") {
+				http.NotFound(w, r)
+				return
+			}
+			if _, err := fs.Stat(h.assets, "admin/index.html"); err != nil {
+				http.Error(w, "后台前端产物缺失，请构建并重新打包管理后台", http.StatusServiceUnavailable)
+				return
+			}
+			h.serveFile(w, r, "admin/index.html")
+			return
+		}
 		if strings.HasPrefix(name, assetsDir) {
 			http.NotFound(w, r)
 			return
@@ -178,8 +194,11 @@ func (h *handler) serveFile(w http.ResponseWriter, r *http.Request, name string)
 		return
 	}
 	w.Header().Set("Cache-Control", noCache)
-	if strings.HasPrefix(name, assetsDir) {
+	if strings.HasPrefix(name, assetsDir) || strings.HasPrefix(name, "admin/assets/") {
 		w.Header().Set("Cache-Control", immutableCache)
+	}
+	if strings.HasPrefix(name, "admin/") {
+		w.Header().Set("X-Robots-Tag", "noindex, nofollow")
 	}
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	http.ServeContent(w, r, name, modTime(h.assets, name), bytes.NewReader(data))

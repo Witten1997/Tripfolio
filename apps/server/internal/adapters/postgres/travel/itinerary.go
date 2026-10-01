@@ -97,6 +97,11 @@ func toItineraryResource(row dbgen.ItineraryItem, currency string) (itinerary.Re
 	}, nil
 }
 
+// ToItineraryResource 供后台查询复用规范字段与金额转换。
+func ToItineraryResource(row dbgen.ItineraryItem, currency string) (itinerary.Resource, error) {
+	return toItineraryResource(row, currency)
+}
+
 func itineraryTripInfo(ctx context.Context, q *dbgen.Queries, accountID, tripID uuid.UUID) (itinerary.TripInfo, bool, error) {
 	info, err := q.GetTripContentInfo(ctx, dbgen.GetTripContentInfoParams{AccountID: accountID, ID: tripID})
 	if errors.Is(err, pgx.ErrNoRows) {

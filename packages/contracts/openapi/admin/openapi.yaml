@@ -1,0 +1,445 @@
+openapi: 3.0.3
+info:
+  title: Tripfolio Admin API
+  version: 0.1.0
+  description: 超级管理员后台，独立密码登录与会话。所有私人数据访问须审计。
+  license:
+    name: Proprietary
+    url: https://example.invalid/tripfolio/license
+servers:
+  - url: /api/v1/admin
+tags:
+  - name: admin-auth
+    description: 后台登录与会话
+  - name: admin-users
+    description: 平台概览与用户查询，私人信息访问留痕
+  - name: admin-trips
+    description: 跨账号旅行与内容查询
+security:
+  - adminSession: []
+paths:
+  /trips:
+    $ref: ./trips.yaml#/TripListPath
+  /trips/{trip_id}:
+    $ref: ./trips.yaml#/TripPath
+  /trips/{trip_id}/content:
+    $ref: ./trips.yaml#/ContentPath
+  /login:
+    post:
+      tags: [admin-auth]
+      operationId: adminLogin
+      summary: 使用现有超级管理员账号密码登录
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: 已创建独立后台会话，HttpOnly Cookie 写入响应
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionEnvelope'
+        default:
+          $ref: '#/components/responses/Problem'
+  /session:
+    get:
+      tags: [admin-auth]
+      operationId: adminCurrent
+      summary: 获取当前后台身份与请求防伪令牌
+      responses:
+        '200':
+          description: 当前后台身份
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionEnvelope'
+        default:
+          $ref: '#/components/responses/Problem'
+    delete:
+      tags: [admin-auth]
+      operationId: adminLogout
+      summary: 撤销当前后台会话并退出
+      parameters:
+        - $ref: '#/components/parameters/CSRF'
+      responses:
+        '204':
+          description: 已退出后台
+        default:
+          $ref: '#/components/responses/Problem'
+  /reauthenticate:
+    post:
+      tags: [admin-auth]
+      operationId: adminReauthenticate
+      summary: 为敏感操作再次验证密码
+      parameters:
+        - $ref: '#/components/parameters/CSRF'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordRequest'
+      responses:
+        '204':
+          description: 密码复验成功，有效期五分钟
+        default:
+          $ref: '#/components/responses/Problem'
+  /sessions:
+    get:
+      tags: [admin-auth]
+      operationId: adminListSessions
+      summary: 查询自己的有效后台会话
+      responses:
+        '200':
+          description: 有效会话列表
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ManagedSession'
+        default:
+          $ref: '#/components/responses/Problem'
+  /sessions/{session_id}:
+    delete:
+      tags: [admin-auth]
+      operationId: adminRevokeSession
+      summary: 撤销自己指定的后台会话
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/CSRF'
+      responses:
+        '204':
+          description: 会话已撤销
+        default:
+          $ref: '#/components/responses/Problem'
+  /overview:
+    get:
+      tags: [admin-users]
+      operationId: adminOverview
+      summary: 查询平台概览与最近七天注册量
+      responses:
+        '200':
+          description: 当前平台统计，北京时间口径
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Overview'
+        default:
+          $ref: '#/components/responses/Problem'
+  /users:
+    get:
+      tags: [admin-users]
+      operationId: adminUsers
+      summary: 分页检索用户
+      parameters:
+        - name: q
+          in: query
+          schema:
+            type: string
+            maxLength: 254
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [active, deleting]
+        - name: registered_from
+          in: query
+          description: 注册日期起，含当日，按北京时间
+          schema:
+            type: string
+            format: date
+        - name: registered_to
+          in: query
+          description: 注册日期止，含当日，按北京时间
+          schema:
+            type: string
+            format: date
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 10000
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: 用户列表
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserPage'
+        default:
+          $ref: '#/components/responses/Problem'
+  /users/{account_id}:
+    get:
+      tags: [admin-users]
+      operationId: adminUser
+      summary: 查看指定用户的资料、资源数量与有效用户端会话
+      parameters:
+        - name: account_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: 用户详情
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: '#/components/schemas/UserDetail'
+        default:
+          $ref: '#/components/responses/Problem'
+components:
+  securitySchemes:
+    adminSession:
+      type: apiKey
+      in: cookie
+      name: __Host-tripfolio_admin
+      description: HTTPS 使用此名称；本地 HTTP 使用 tripfolio_admin。普通用户 Bearer 凭证不能用于后台。
+  parameters:
+    CSRF:
+      name: X-Admin-CSRF
+      in: header
+      required: true
+      schema:
+        type: string
+      description: 登录或当前身份响应返回的后台请求防伪令牌
+  responses:
+    Problem:
+      description: 请求失败，包含稳定错误代码和请求编号
+      content:
+        application/problem+json:
+          schema:
+            $ref: ../v1/schemas/common.yaml#/Problem
+  schemas:
+    AdminTripSummary:
+      $ref: ./trips.yaml#/schemas/AdminTripSummary
+    AdminTripPage:
+      $ref: ./trips.yaml#/schemas/AdminTripPage
+    AdminTripDetail:
+      $ref: ./trips.yaml#/schemas/AdminTripDetail
+    AdminContentPage:
+      $ref: ./trips.yaml#/schemas/AdminContentPage
+    Overview:
+      type: object
+      required: [users, new_users_today, trips, asset_bytes, failed_jobs, signups, as_of]
+      properties:
+        users:
+          type: integer
+          format: int64
+        new_users_today:
+          type: integer
+          format: int64
+        trips:
+          type: integer
+          format: int64
+        asset_bytes:
+          type: integer
+          format: int64
+        failed_jobs:
+          type: integer
+          format: int64
+        as_of:
+          type: string
+          format: date-time
+        signups:
+          type: array
+          items:
+            type: object
+            required: [date, count]
+            properties:
+              date:
+                type: string
+                format: date
+              count:
+                type: integer
+                format: int64
+    User:
+      type: object
+      required:
+        [
+          id,
+          email,
+          nickname,
+          status,
+          is_super_admin,
+          created_at,
+          last_seen_at,
+          trip_count,
+          asset_count,
+          asset_bytes,
+        ]
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+        nickname:
+          type: string
+        status:
+          type: string
+        is_super_admin:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        last_seen_at:
+          type: string
+          format: date-time
+          nullable: true
+        trip_count:
+          type: integer
+          format: int64
+        asset_count:
+          type: integer
+          format: int64
+        asset_bytes:
+          type: integer
+          format: int64
+    UserPage:
+      type: object
+      required: [data, total, page, page_size]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/User'
+        total:
+          type: integer
+          format: int64
+        page:
+          type: integer
+        page_size:
+          type: integer
+    UserDetail:
+      type: object
+      required: [account, sessions]
+      properties:
+        account:
+          $ref: '#/components/schemas/User'
+        sessions:
+          type: array
+          items:
+            type: object
+            required: [id, client_kind, device_name, created_at, last_seen_at, expires_at]
+            properties:
+              id:
+                type: string
+                format: uuid
+              client_kind:
+                type: string
+              device_name:
+                type: string
+              created_at:
+                type: string
+                format: date-time
+              last_seen_at:
+                type: string
+                format: date-time
+              expires_at:
+                type: string
+                format: date-time
+    LoginRequest:
+      type: object
+      additionalProperties: false
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        password:
+          type: string
+          minLength: 1
+          maxLength: 1024
+    PasswordRequest:
+      type: object
+      additionalProperties: false
+      required: [password]
+      properties:
+        password:
+          type: string
+          minLength: 1
+          maxLength: 1024
+    ManagedSession:
+      type: object
+      required: [id, created_at, last_seen_at, expires_at, source_ip, user_agent, current]
+      properties:
+        id:
+          type: string
+          format: uuid
+        created_at:
+          type: string
+          format: date-time
+        last_seen_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+        source_ip:
+          type: string
+        user_agent:
+          type: string
+        current:
+          type: boolean
+    AdminIdentity:
+      type: object
+      required: [id, email, nickname, role, session_id, expires_at, csrf_token]
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+        nickname:
+          type: string
+        role:
+          type: string
+          enum: [super_admin]
+        session_id:
+          type: string
+          format: uuid
+        expires_at:
+          type: string
+          format: date-time
+        csrf_token:
+          type: string
+    SessionEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/AdminIdentity'

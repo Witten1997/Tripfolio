@@ -1,0 +1,166 @@
+TripListPath:
+  get:
+    tags: [admin-trips]
+    operationId: adminTrips
+    summary: 分页检索全平台旅行
+    parameters:
+      - name: account_id
+        in: query
+        schema: { type: string, format: uuid }
+      - name: q
+        in: query
+        schema: { type: string, maxLength: 120 }
+      - name: phase
+        in: query
+        schema: { type: string, enum: [planned, ongoing, ended] }
+      - name: archived
+        in: query
+        schema: { type: string, enum: ['all', 'true', 'false'], default: 'all' }
+      - name: trash
+        in: query
+        schema: { type: string, enum: [exclude, only, all], default: exclude }
+      - name: date_from
+        in: query
+        description: 旅行日期范围与筛选区间有交集即匹配，起止日均包含
+        schema: { type: string, format: date }
+      - name: date_to
+        in: query
+        schema: { type: string, format: date }
+      - $ref: '#/parameters/Page'
+      - $ref: '#/parameters/PageSize'
+    responses:
+      '200':
+        description: 旅行列表，阶段按每趟旅行自己的时区计算
+        content:
+          application/json:
+            schema: { $ref: '#/schemas/AdminTripPage' }
+      default:
+        $ref: ./openapi.yaml#/components/responses/Problem
+TripPath:
+  get:
+    tags: [admin-trips]
+    operationId: adminTrip
+    summary: 查看旅行基础信息及所属账号
+    parameters:
+      - $ref: '#/parameters/TripID'
+    responses:
+      '200':
+        description: 旅行详情，包含回收站状态
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [data]
+              properties:
+                data: { $ref: '#/schemas/AdminTripDetail' }
+      default:
+        $ref: ./openapi.yaml#/components/responses/Problem
+ContentPath:
+  get:
+    tags: [admin-trips]
+    operationId: adminTripContent
+    summary: 分页查看旅行行程、物资、待办或成员
+    description: 每次只返回指定类型的有效内容；旅行已在回收站时仍可由后台查看，不包含此前单独删除的内容。
+    parameters:
+      - $ref: '#/parameters/TripID'
+      - name: kind
+        in: query
+        required: true
+        schema: { type: string, enum: [itinerary, packing, todos, members] }
+      - $ref: '#/parameters/Page'
+      - $ref: '#/parameters/PageSize'
+    responses:
+      '200':
+        description: 内容列表，仅 kind 对应的数组有数据，其他数组为空
+        content:
+          application/json:
+            schema: { $ref: '#/schemas/AdminContentPage' }
+      default:
+        $ref: ./openapi.yaml#/components/responses/Problem
+parameters:
+  TripID:
+    name: trip_id
+    in: path
+    required: true
+    schema: { type: string, format: uuid }
+  Page:
+    name: page
+    in: query
+    schema: { type: integer, minimum: 1, maximum: 10000, default: 1 }
+  PageSize:
+    name: page_size
+    in: query
+    schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+schemas:
+  AdminOwner:
+    type: object
+    required: [id, email, nickname]
+    properties:
+      id: { type: string, format: uuid }
+      email: { type: string }
+      nickname: { type: string }
+  AdminTripSummary:
+    type: object
+    required:
+      [
+        id,
+        owner,
+        name,
+        destination,
+        start_date,
+        end_date,
+        phase,
+        archived_at,
+        deleted_at,
+        updated_at,
+      ]
+    properties:
+      id: { type: string, format: uuid }
+      owner: { $ref: '#/schemas/AdminOwner' }
+      name: { type: string }
+      destination: { type: string }
+      start_date: { type: string, format: date }
+      end_date: { type: string, format: date }
+      phase: { type: string, enum: [planned, ongoing, ended] }
+      archived_at: { type: string, format: date-time, nullable: true }
+      deleted_at: { type: string, format: date-time, nullable: true }
+      updated_at: { type: string, format: date-time }
+  AdminTripPage:
+    type: object
+    required: [data, total, page, page_size]
+    properties:
+      data:
+        type: array
+        items: { $ref: '#/schemas/AdminTripSummary' }
+      total: { type: integer, format: int64 }
+      page: { type: integer }
+      page_size: { type: integer }
+  AdminTripDetail:
+    type: object
+    required: [trip, owner, phase]
+    properties:
+      trip: { $ref: ../v1/schemas/trip.yaml#/Trip }
+      owner: { $ref: '#/schemas/AdminOwner' }
+      phase: { type: string, enum: [planned, ongoing, ended] }
+  AdminContentPage:
+    type: object
+    required: [owner_id, trip_id, kind, itinerary, packing, todos, members, total, page, page_size]
+    properties:
+      owner_id: { type: string, format: uuid }
+      trip_id: { type: string, format: uuid }
+      kind: { type: string, enum: [itinerary, packing, todos, members] }
+      itinerary:
+        type: array
+        items: { $ref: ../v1/schemas/itinerary.yaml#/ItineraryItem }
+      packing:
+        type: array
+        items: { $ref: ../v1/schemas/packing.yaml#/PackingItem }
+      todos:
+        type: array
+        items: { $ref: ../v1/schemas/todo.yaml#/Todo }
+      members:
+        type: array
+        items: { $ref: ../v1/schemas/member.yaml#/TripMember }
+      total: { type: integer, format: int64 }
+      page: { type: integer }
+      page_size: { type: integer }

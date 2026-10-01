@@ -14,6 +14,7 @@ import (
 	"tripfolio/server/internal/adapters/mail"
 	"tripfolio/server/internal/adapters/objectstore"
 	accountpg "tripfolio/server/internal/adapters/postgres/account"
+	adminpg "tripfolio/server/internal/adapters/postgres/admin"
 	assetspg "tripfolio/server/internal/adapters/postgres/assets"
 	financepg "tripfolio/server/internal/adapters/postgres/finance"
 	"tripfolio/server/internal/adapters/postgres/pgcore"
@@ -24,6 +25,7 @@ import (
 	"tripfolio/server/internal/config"
 	"tripfolio/server/internal/foundation/clock"
 	"tripfolio/server/internal/modules/account"
+	"tripfolio/server/internal/modules/admin"
 	"tripfolio/server/internal/modules/assets"
 	"tripfolio/server/internal/modules/finance"
 	geoservice "tripfolio/server/internal/modules/geo"
@@ -40,6 +42,7 @@ import (
 
 // Services 是 API 用到的全部业务服务；测试也用它在内存或真实数据库上组装。
 type Services struct {
+	Admin      *admin.Service
 	Dashboard  *dashboard.Service
 	Identity   *account.IdentityService
 	Sessions   *account.SessionService
@@ -76,9 +79,10 @@ func BuildServices(pool *pgxpool.Pool, cfg config.Config, logger *slog.Logger, m
 	clk := clock.Real{}
 	policy := account.DefaultPolicy()
 	store := accountpg.NewStore(pool)
+	hasher := security.NewPasswordHasher(cfg.PasswordHashConcurrency)
 	sessions := account.NewSessionService(store, security.NewTokenIssuer(keyring, policy.AccessTokenTTL), clk, policy)
 	identity := account.NewIdentityService(account.IdentityDeps{
-		Store: store, Sessions: sessions, Hasher: security.NewPasswordHasher(cfg.PasswordHashConcurrency), Keyring: keyring,
+		Store: store, Sessions: sessions, Hasher: hasher, Keyring: keyring,
 		Mailer: mailer, Limiter: ratelimit.New(), Clock: clk, Policy: policy, Logger: logger,
 	})
 
@@ -141,6 +145,7 @@ func BuildServices(pool *pgxpool.Pool, cfg config.Config, logger *slog.Logger, m
 	profile := account.NewProfileService(store, assetSvc, clk)
 
 	return Services{
+		Admin:     admin.NewService(adminpg.NewStore(pool), hasher, clk),
 		Dashboard: dashboardSvc,
 		Identity:  identity, Sessions: sessions, Profile: profile, Categories: categories,
 		Trips: trips, Itinerary: itineraries, RoutePlans: routePlans, Packing: packings, Todos: todos, Members: members, Ledger: ledger, Statistics: statistics, Settlement: settlement,
