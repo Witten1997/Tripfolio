@@ -74,9 +74,10 @@ type Snapshot struct {
 }
 
 type RecalculateJobArgs struct {
-	AccountID uuid.UUID `json:"account_id"`
-	TripID    uuid.UUID `json:"trip_id"`
-	Revision  int64     `json:"revision"`
+	AccountID   uuid.UUID `json:"account_id"`
+	TripID      uuid.UUID `json:"trip_id"`
+	Revision    int64     `json:"revision"`
+	Incremental bool      `json:"incremental,omitempty"`
 }
 
 func (RecalculateJobArgs) Kind() string { return "trip_route_recalculate" }

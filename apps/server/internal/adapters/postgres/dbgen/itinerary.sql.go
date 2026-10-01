@@ -507,15 +507,26 @@ func (q *Queries) SoftDeleteItineraryItem(ctx context.Context, arg SoftDeleteIti
 }
 
 const updateItineraryItem = `-- name: UpdateItineraryItem :one
+WITH invalidated_routes AS (
+    UPDATE itinerary_route_legs AS leg
+    SET status = 'stale', route_distance_meters = NULL, route_duration_seconds = NULL,
+        error_code = NULL, calculated_at = NULL, version = leg.version + 1, updated_at = $16
+    FROM itinerary_items AS item
+    WHERE item.account_id = $17 AND item.trip_id = $18 AND item.id = $19
+      AND leg.account_id = item.account_id AND leg.trip_id = item.trip_id
+      AND (leg.from_item_id = item.id OR leg.to_item_id = item.id)
+      AND (item.latitude IS DISTINCT FROM $8::numeric
+        OR item.longitude IS DISTINCT FROM $9::numeric)
+)
 UPDATE itinerary_items
 SET title = $1, kind = $2,
     planned_start_local = $3, planned_end_local = $4, planned_duration_minutes = $5,
     place_name = $6, address = $7, latitude = $8, longitude = $9,
     estimated_amount = $10, notes = $11, status = $12,
     actual_start_local = $13, actual_end_local = $14, actual_notes = $15,
-    version = version + 1, updated_at = $16
-WHERE account_id = $17 AND trip_id = $18 AND id = $19
-RETURNING id, account_id, version, created_at, updated_at, deleted_at, trip_id, title, kind, scheduled_on, sort_order, planned_start_local, planned_end_local, planned_duration_minutes, place_name, address, latitude, longitude, estimated_amount, notes, status, actual_start_local, actual_end_local, actual_notes
+    version = itinerary_items.version + 1, updated_at = $16
+WHERE itinerary_items.account_id = $17 AND itinerary_items.trip_id = $18 AND itinerary_items.id = $19
+RETURNING itinerary_items.id, itinerary_items.account_id, itinerary_items.version, itinerary_items.created_at, itinerary_items.updated_at, itinerary_items.deleted_at, itinerary_items.trip_id, itinerary_items.title, itinerary_items.kind, itinerary_items.scheduled_on, itinerary_items.sort_order, itinerary_items.planned_start_local, itinerary_items.planned_end_local, itinerary_items.planned_duration_minutes, itinerary_items.place_name, itinerary_items.address, itinerary_items.latitude, itinerary_items.longitude, itinerary_items.estimated_amount, itinerary_items.notes, itinerary_items.status, itinerary_items.actual_start_local, itinerary_items.actual_end_local, itinerary_items.actual_notes
 `
 
 type UpdateItineraryItemParams struct {

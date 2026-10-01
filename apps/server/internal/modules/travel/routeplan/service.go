@@ -153,6 +153,17 @@ func (s *Service) Recalculate(ctx context.Context, args RecalculateJobArgs) erro
 				mode, source = old.Mode, "manual"
 			}
 		}
+		// 重排只改变相邻关系；坐标修改会在写事务中将相关路段置为 stale。
+		if args.Incremental && retained && old.Mode == mode && old.DirectDistanceMeters == direct &&
+			(old.Status == "failed" || old.Status == "ready" && old.RouteDistanceMeters != nil && old.RouteDurationSeconds != nil) {
+			legs = append(legs, old)
+			if old.Status == "ready" {
+				ready++
+				totalDistance += *old.RouteDistanceMeters
+				totalDuration += *old.RouteDurationSeconds
+			}
+			continue
+		}
 		leg := Leg{ID: id, FromItemID: from.ID, ToItemID: to.ID, Version: version, Mode: mode,
 			ModeSource: source, DirectDistanceMeters: direct, Status: "failed", CalculatedAt: &now}
 		if s.router == nil {

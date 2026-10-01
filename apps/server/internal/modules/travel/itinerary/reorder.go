@@ -107,6 +107,7 @@ func (s *Service) Reorder(ctx context.Context, a actor.Actor, operationID, tripI
 			}
 		}
 		now := s.clock.Now()
+		changed := false
 		for i, day := range cmd.Days {
 			date := dates[i]
 			for order, item := range day.Items {
@@ -122,9 +123,13 @@ func (s *Service) Reorder(ctx context.Context, a actor.Actor, operationID, tripI
 					scope.Warn(write.WarnItineraryOutsideTripDates)
 				}
 				record(scope, moved, write.ChangeUpsert, PositionFields)
+				changed = true
 			}
 		}
-		return recalculateRoutes(ctx, scope, repo, a.AccountID, tripID, now)
+		if !changed {
+			return nil
+		}
+		return recalculateRoutes(ctx, scope, repo, a.AccountID, tripID, now, true)
 	}, nil)
 }
 

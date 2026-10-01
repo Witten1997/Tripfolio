@@ -64,7 +64,8 @@ WHERE account_id = sqlc.arg(account_id) AND trip_id = sqlc.arg(trip_id) AND revi
 
 -- name: DeleteRoutePlanLegs :exec
 DELETE FROM itinerary_route_legs
-WHERE account_id = sqlc.arg(account_id) AND trip_id = sqlc.arg(trip_id);
+WHERE account_id = sqlc.arg(account_id) AND trip_id = sqlc.arg(trip_id)
+  AND NOT (id = ANY(sqlc.arg(retained_ids)::uuid[]));
 
 -- name: InsertRoutePlanLeg :one
 INSERT INTO itinerary_route_legs (
@@ -78,6 +79,12 @@ VALUES (
     sqlc.narg(route_duration_seconds), sqlc.arg(status), sqlc.narg(error_code),
     sqlc.narg(calculated_at), sqlc.arg(created_at), sqlc.arg(updated_at)
 )
+ON CONFLICT (id) DO UPDATE
+SET version = EXCLUDED.version, mode = EXCLUDED.mode, mode_source = EXCLUDED.mode_source,
+    direct_distance_meters = EXCLUDED.direct_distance_meters,
+    route_distance_meters = EXCLUDED.route_distance_meters, route_duration_seconds = EXCLUDED.route_duration_seconds,
+    status = EXCLUDED.status, error_code = EXCLUDED.error_code,
+    calculated_at = EXCLUDED.calculated_at, updated_at = EXCLUDED.updated_at
 RETURNING *;
 
 -- name: GetRoutePlanLegForUpdate :one

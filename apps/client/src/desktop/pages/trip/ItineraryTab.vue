@@ -185,15 +185,21 @@ function scheduleRoutePoll() {
   routePoll = setTimeout(async () => {
     routePoll = undefined
     routePollAttempts += 1
-    await loadRoutePlan()
+    await loadRoutePlan(false)
   }, 1400)
 }
 
-async function loadRoutePlan() {
+async function loadRoutePlan(requestRecalculation = true) {
   try {
-    routePlan.value = await getRoutePlan(context.tripId)
+    const plan = await getRoutePlan(context.tripId)
+    if (plan.summary.revision !== routePlan.value?.summary.revision) routePollAttempts = 0
+    routePlan.value = plan
     routeFailure.value = null
-    if (routePlan.value.summary.status === 'stale' && !recalculationRequested) {
+    if (
+      requestRecalculation &&
+      routePlan.value.summary.status === 'stale' &&
+      !recalculationRequested
+    ) {
       recalculationRequested = true
       routePollAttempts = 0
       await recalculateRoutePlan(context.tripId, randomId())
@@ -335,7 +341,7 @@ async function onDragEnd(event: DraggableEvent<ItineraryItem>) {
   }
   // moveItem 成功或失败都会重载 board，镜像由 days 的 watcher 重建
   const moved = await board.moveItem(id, to, event.newIndex)
-  if (moved) await loadRoutePlan()
+  if (moved) await loadRoutePlan(false)
   if (moved && feedback.value.length) {
     noticeType.value = 'warning'
     notice.value = feedback.value

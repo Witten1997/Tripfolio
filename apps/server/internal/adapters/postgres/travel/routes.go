@@ -165,10 +165,25 @@ func (s *RoutePlanStore) Replace(ctx context.Context, accountID, tripID uuid.UUI
 	if current.Revision != revision {
 		return false, nil
 	}
-	if err := q.DeleteRoutePlanLegs(ctx, dbgen.DeleteRoutePlanLegsParams{AccountID: accountID, TripID: tripID}); err != nil {
+	existing, err := q.ListRoutePlanLegs(ctx, dbgen.ListRoutePlanLegsParams{AccountID: accountID, TripID: tripID})
+	if err != nil {
+		return false, err
+	}
+	versions := make(map[uuid.UUID]int64, len(existing))
+	for _, leg := range existing {
+		versions[leg.ID] = leg.Version
+	}
+	retainedIDs := make([]uuid.UUID, 0, len(legs))
+	for _, leg := range legs {
+		retainedIDs = append(retainedIDs, leg.ID)
+	}
+	if err := q.DeleteRoutePlanLegs(ctx, dbgen.DeleteRoutePlanLegsParams{AccountID: accountID, TripID: tripID, RetainedIds: retainedIDs}); err != nil {
 		return false, err
 	}
 	for _, leg := range legs {
+		if versions[leg.ID] == leg.Version {
+			continue
+		}
 		if _, err := q.InsertRoutePlanLeg(ctx, dbgen.InsertRoutePlanLegParams{ID: leg.ID, AccountID: accountID, TripID: tripID,
 			FromItemID: leg.FromItemID, ToItemID: leg.ToItemID, Version: leg.Version, Mode: string(leg.Mode), ModeSource: leg.ModeSource,
 			DirectDistanceMeters: leg.DirectDistanceMeters, RouteDistanceMeters: leg.RouteDistanceMeters,

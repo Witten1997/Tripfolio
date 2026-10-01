@@ -54,7 +54,7 @@ type Config struct {
 	GlobalDailyLimit int
 	// CacheTTL 是逆地理编码缓存时长，0 表示用默认值 24 小时。
 	CacheTTL time.Duration
-	// RouteInterval 是同一个 Key 算路请求的最小发起间隔，默认 1.1 秒。
+	// RouteInterval 是同一个 Key 算路请求的最小发起间隔，默认 50 毫秒。
 	// 配合串行门闩保护低 QPS 配额；测试可使用极短间隔。
 	RouteInterval time.Duration
 	// HTTPClient 可注入自定义客户端；为 nil 时按 Timeout 构造。
@@ -124,7 +124,7 @@ func NewAmapClient(cfg Config, limiter Limiter) (*AmapClient, error) {
 	}
 	interval := cfg.RouteInterval
 	if interval <= 0 {
-		interval = 1100 * time.Millisecond
+		interval = 50 * time.Millisecond
 	}
 	return &AmapClient{
 		key:           cfg.Key,

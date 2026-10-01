@@ -32,15 +32,26 @@ VALUES (sqlc.arg(id), sqlc.arg(account_id), sqlc.arg(trip_id), sqlc.arg(title), 
 RETURNING *;
 
 -- name: UpdateItineraryItem :one
+WITH invalidated_routes AS (
+    UPDATE itinerary_route_legs AS leg
+    SET status = 'stale', route_distance_meters = NULL, route_duration_seconds = NULL,
+        error_code = NULL, calculated_at = NULL, version = leg.version + 1, updated_at = sqlc.arg(updated_at)
+    FROM itinerary_items AS item
+    WHERE item.account_id = sqlc.arg(account_id) AND item.trip_id = sqlc.arg(trip_id) AND item.id = sqlc.arg(id)
+      AND leg.account_id = item.account_id AND leg.trip_id = item.trip_id
+      AND (leg.from_item_id = item.id OR leg.to_item_id = item.id)
+      AND (item.latitude IS DISTINCT FROM sqlc.narg(latitude)::numeric
+        OR item.longitude IS DISTINCT FROM sqlc.narg(longitude)::numeric)
+)
 UPDATE itinerary_items
 SET title = sqlc.arg(title), kind = sqlc.arg(kind),
     planned_start_local = sqlc.narg(planned_start_local), planned_end_local = sqlc.narg(planned_end_local), planned_duration_minutes = sqlc.narg(planned_duration_minutes),
     place_name = sqlc.arg(place_name), address = sqlc.arg(address), latitude = sqlc.narg(latitude), longitude = sqlc.narg(longitude),
     estimated_amount = sqlc.narg(estimated_amount), notes = sqlc.arg(notes), status = sqlc.arg(status),
     actual_start_local = sqlc.narg(actual_start_local), actual_end_local = sqlc.narg(actual_end_local), actual_notes = sqlc.arg(actual_notes),
-    version = version + 1, updated_at = sqlc.arg(updated_at)
-WHERE account_id = sqlc.arg(account_id) AND trip_id = sqlc.arg(trip_id) AND id = sqlc.arg(id)
-RETURNING *;
+    version = itinerary_items.version + 1, updated_at = sqlc.arg(updated_at)
+WHERE itinerary_items.account_id = sqlc.arg(account_id) AND itinerary_items.trip_id = sqlc.arg(trip_id) AND itinerary_items.id = sqlc.arg(id)
+RETURNING itinerary_items.*;
 
 -- name: SoftDeleteItineraryItem :one
 UPDATE itinerary_items

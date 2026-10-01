@@ -15,15 +15,17 @@ import (
 const deleteRoutePlanLegs = `-- name: DeleteRoutePlanLegs :exec
 DELETE FROM itinerary_route_legs
 WHERE account_id = $1 AND trip_id = $2
+  AND NOT (id = ANY($3::uuid[]))
 `
 
 type DeleteRoutePlanLegsParams struct {
-	AccountID uuid.UUID
-	TripID    uuid.UUID
+	AccountID   uuid.UUID
+	TripID      uuid.UUID
+	RetainedIds []uuid.UUID
 }
 
 func (q *Queries) DeleteRoutePlanLegs(ctx context.Context, arg DeleteRoutePlanLegsParams) error {
-	_, err := q.db.Exec(ctx, deleteRoutePlanLegs, arg.AccountID, arg.TripID)
+	_, err := q.db.Exec(ctx, deleteRoutePlanLegs, arg.AccountID, arg.TripID, arg.RetainedIds)
 	return err
 }
 
@@ -183,6 +185,12 @@ VALUES (
     $11, $12, $13,
     $14, $15, $16
 )
+ON CONFLICT (id) DO UPDATE
+SET version = EXCLUDED.version, mode = EXCLUDED.mode, mode_source = EXCLUDED.mode_source,
+    direct_distance_meters = EXCLUDED.direct_distance_meters,
+    route_distance_meters = EXCLUDED.route_distance_meters, route_duration_seconds = EXCLUDED.route_duration_seconds,
+    status = EXCLUDED.status, error_code = EXCLUDED.error_code,
+    calculated_at = EXCLUDED.calculated_at, updated_at = EXCLUDED.updated_at
 RETURNING id, account_id, trip_id, from_item_id, to_item_id, version, mode, mode_source, direct_distance_meters, route_distance_meters, route_duration_seconds, status, error_code, calculated_at, created_at, updated_at
 `
 
