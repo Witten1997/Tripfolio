@@ -7,7 +7,7 @@ info:
     name: Proprietary
     url: https://example.invalid/tripfolio/license
 servers:
-  - url: /api/v1/admin
+  - url: /api/v1/wahaha
 tags:
   - name: admin-operations
     description: 审计中心与运行状态，查询留痕且不返回原始异常或任务参数

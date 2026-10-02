@@ -123,7 +123,7 @@ func (h *Handler) authenticate(next http.Handler) http.Handler {
 			h.reject(w, r, nil, "request.origin", csrfError())
 			return
 		}
-		if r.Method == http.MethodPost && r.URL.Path == "/api/v1/admin/login" {
+		if r.Method == http.MethodPost && r.URL.Path == "/api/v1/wahaha/login" {
 			next.ServeHTTP(w, r)
 			return
 		}

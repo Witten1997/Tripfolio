@@ -110,8 +110,10 @@ func NewRouter(d Deps) http.Handler {
 
 	r.Get("/health/live", live)
 	r.Get("/health/ready", ready(d.Readiness))
+	r.Handle("/api/v1/admin", http.HandlerFunc(notFound))
+	r.Handle("/api/v1/admin/*", http.HandlerFunc(notFound))
 	if d.Admin != nil {
-		r.Mount("/api/v1/admin", d.Admin)
+		r.Mount("/api/v1/wahaha", d.Admin)
 	}
 
 	handler := &Handler{

@@ -45,7 +45,7 @@ async function signOut() {
   <div v-else-if="identity" class="admin-layout">
     <a href="#main-content" class="skip-link">跳到主要内容</a>
     <aside class="sidebar">
-      <a class="brand" href="/admin/" aria-label="Tripfolio 管理后台首页">
+      <a class="brand" href="/wahaha/" aria-label="Tripfolio 管理后台首页">
         <ShieldCheck :size="28" aria-hidden="true" />
         <span>Tripfolio<small>管理后台</small></span>
       </a>

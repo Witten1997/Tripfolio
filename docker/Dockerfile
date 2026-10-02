@@ -56,7 +56,7 @@ RUN go mod download
 COPY apps/server/ ./
 # 前端产物覆盖进 embed 目录：本机残留的旧产物已被 .dockerignore 排除，镜像里只会嵌这一份
 COPY --from=web /src/apps/client/dist ./internal/web/dist
-COPY --from=web /src/apps/admin/dist ./internal/web/dist/admin
+COPY --from=web /src/apps/admin/dist ./internal/web/dist/wahaha
 RUN go build -ldflags="-s -w -X main.version=${VERSION}" -o /out/tripfolio ./cmd/tripfolio
 
 # ---------- 阶段 3：运行镜像 ----------

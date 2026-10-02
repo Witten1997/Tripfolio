@@ -130,6 +130,10 @@ func (h *handler) serveStatic(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := strings.TrimPrefix(r.URL.Path, "/")
+	if name == "admin" || strings.HasPrefix(name, "admin/") {
+		http.NotFound(w, r)
+		return
+	}
 	if name != "" {
 		if hasDotSegment(name) {
 			http.NotFound(w, r)
@@ -139,20 +143,20 @@ func (h *handler) serveStatic(w http.ResponseWriter, r *http.Request) {
 			h.serveFile(w, r, name)
 			return
 		}
-		if name == "admin" {
-			http.Redirect(w, r, "/admin/", http.StatusPermanentRedirect)
+		if name == "wahaha" {
+			http.Redirect(w, r, "/wahaha/", http.StatusPermanentRedirect)
 			return
 		}
-		if strings.HasPrefix(name, "admin/") {
-			if strings.HasPrefix(name, "admin/assets/") {
+		if strings.HasPrefix(name, "wahaha/") {
+			if strings.HasPrefix(name, "wahaha/assets/") {
 				http.NotFound(w, r)
 				return
 			}
-			if _, err := fs.Stat(h.assets, "admin/index.html"); err != nil {
+			if _, err := fs.Stat(h.assets, "wahaha/index.html"); err != nil {
 				http.Error(w, "后台前端产物缺失，请构建并重新打包管理后台", http.StatusServiceUnavailable)
 				return
 			}
-			h.serveFile(w, r, "admin/index.html")
+			h.serveFile(w, r, "wahaha/index.html")
 			return
 		}
 		if strings.HasPrefix(name, assetsDir) {
@@ -194,10 +198,10 @@ func (h *handler) serveFile(w http.ResponseWriter, r *http.Request, name string)
 		return
 	}
 	w.Header().Set("Cache-Control", noCache)
-	if strings.HasPrefix(name, assetsDir) || strings.HasPrefix(name, "admin/assets/") {
+	if strings.HasPrefix(name, assetsDir) || strings.HasPrefix(name, "wahaha/assets/") {
 		w.Header().Set("Cache-Control", immutableCache)
 	}
-	if strings.HasPrefix(name, "admin/") {
+	if strings.HasPrefix(name, "wahaha/") {
 		w.Header().Set("X-Robots-Tag", "noindex, nofollow")
 	}
 	w.Header().Set("X-Content-Type-Options", "nosniff")

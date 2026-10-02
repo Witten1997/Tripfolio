@@ -40,7 +40,7 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
   if (identity.value) headers.set('X-Admin-CSRF', identity.value.csrf_token)
   let response: Response
   try {
-    response = await fetch(`/api/v1/admin${path}`, {
+    response = await fetch(`/api/v1/wahaha${path}`, {
       ...init,
       headers,
       credentials: 'same-origin',
