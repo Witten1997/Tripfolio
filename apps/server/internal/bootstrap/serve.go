@@ -153,7 +153,7 @@ func RunServe(ctx context.Context, cfg config.Config, logger *slog.Logger) error
 	}
 	defer stopWorker(worker, cfg, logger)
 
-	webHandler, err := web.NewHandler(web.Options{Logger: logger, JSCode: cfg.AMapJSCode, AdminSetupOpen: services.Admin.SetupOpen})
+	webHandler, err := web.NewHandler(web.Options{Logger: logger, JSCode: cfg.AMapJSCode, AdminPath: cfg.AdminPath, AdminSetupOpen: services.Admin.SetupOpen})
 	if err != nil {
 		return &StartupError{Phase: PhaseServices, Cause: fmt.Errorf("组装前端资源与高德代理: %w", err), Hints: servicesHints(cfg)}
 	}
@@ -167,8 +167,9 @@ func RunServe(ctx context.Context, cfg config.Config, logger *slog.Logger) error
 		adminOrigins = append(adminOrigins, "http://localhost:5174", "http://127.0.0.1:5174")
 	}
 	router := httpapi.NewRouter(httpapi.Deps{
-		Admin:  adminapi.NewHandler(adminapi.Options{Service: services.Admin, Runtime: adminRuntime(pool, readiness, worker, cfg), Secure: cfg.CookieSecure, Origins: adminOrigins, Logger: logger}),
-		Logger: logger, Metadata: metadata.Current(), Readiness: readiness, CORSOrigins: cfg.CORSOrigins,
+		AdminBasePath: cfg.AdminAPIPath(),
+		Admin:         adminapi.NewHandler(adminapi.Options{BasePath: cfg.AdminAPIPath(), Service: services.Admin, Runtime: adminRuntime(pool, readiness, worker, cfg), Secure: cfg.CookieSecure, Origins: adminOrigins, Logger: logger}),
+		Logger:        logger, Metadata: metadata.Current(), Readiness: readiness, CORSOrigins: cfg.CORSOrigins,
 		Cookies:  httpapi.CookieSettings{Secure: cfg.CookieSecure},
 		Identity: services.Identity, Sessions: services.Sessions, Profile: services.Profile, Categories: services.Categories,
 		Trips: services.Trips, Itinerary: services.Itinerary, RoutePlans: services.RoutePlans, Packing: services.Packing, Todos: services.Todos, Members: services.Members,

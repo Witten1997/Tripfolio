@@ -1,4 +1,5 @@
 import { shallowRef } from 'vue'
+import { adminAPIPath } from './config'
 import type { components } from '@tripfolio/contracts/openapi/admin'
 
 export type AdminIdentity = components['schemas']['AdminIdentity']
@@ -65,7 +66,7 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
   if (identity.value) headers.set('X-Admin-CSRF', identity.value.csrf_token)
   let response: Response
   try {
-    response = await fetch(`/api/v1/wahaha${path}`, {
+    response = await fetch(`${adminAPIPath}${path}`, {
       ...init,
       headers,
       credentials: 'same-origin',

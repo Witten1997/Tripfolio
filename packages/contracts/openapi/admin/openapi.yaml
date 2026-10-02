@@ -7,7 +7,11 @@ info:
     name: Proprietary
     url: https://example.invalid/tripfolio/license
 servers:
-  - url: /api/v1/wahaha
+  - url: /api/v1/{admin_path}
+    variables:
+      admin_path:
+        default: wahaha
+        description: TRIPFOLIO_ADMIN_PATH 去掉首尾斜杠后的值，随服务启动配置。
 tags:
   - name: admin-operations
     description: 审计中心与运行状态，查询留痕且不返回原始异常或任务参数

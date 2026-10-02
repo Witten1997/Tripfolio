@@ -1,8 +1,9 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { adminBasePath } from './config'
 import { checkSetup, identity, restoreSession, setupRequired } from './api'
 
 export const router = createRouter({
-  history: createWebHistory(import.meta.env.BASE_URL),
+  history: createWebHistory(adminBasePath),
   routes: [
     { path: '/', redirect: '/overview' },
     { path: '/overview', name: 'overview', component: () => import('./pages/OverviewPage.vue') },

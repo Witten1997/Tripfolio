@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"tripfolio/server/internal/config"
 )
 
 // 前端资源的缓存策略：Vite 产物文件名带内容哈希，可长缓存；入口文件每次校验，发版后立即生效。
@@ -41,6 +43,7 @@ func DefaultUpstreams() []Upstream {
 
 // Options 是构造处理器的依赖；除 Assets 外都可缺省，便于测试注入。
 type Options struct {
+	AdminPath      string
 	AdminSetupOpen func(context.Context) (bool, error)
 	Logger         *slog.Logger
 	// JSCode 是高德 JS API 安全密钥，由服务端覆盖进查询串，不进入浏览器产物。
@@ -54,6 +57,7 @@ type Options struct {
 }
 
 type handler struct {
+	adminPath      string
 	adminSetupOpen func(context.Context) (bool, error)
 	logger         *slog.Logger
 	jsCode         string
@@ -72,6 +76,10 @@ type proxyRoute struct {
 // NewHandler 组装静态资源、SPA 回退与高德代理。
 // 它挂在外层路由的兜底位置：/api/v1 与 /health/* 由各自的路由先匹配。
 func NewHandler(o Options) (http.Handler, error) {
+	adminPath, err := config.ParseAdminPath(o.AdminPath)
+	if err != nil {
+		return nil, err
+	}
 	assets := o.Assets
 	if assets == nil {
 		var err error
@@ -93,7 +101,7 @@ func NewHandler(o Options) (http.Handler, error) {
 		upstreams = DefaultUpstreams()
 	}
 	// 代理在构造时建好：上游地址解析只做一次，请求路径上不再重复 url.Parse 与分配。
-	base := &handler{logger: logger, jsCode: o.JSCode, assets: assets, adminSetupOpen: o.AdminSetupOpen}
+	base := &handler{logger: logger, jsCode: o.JSCode, assets: assets, adminPath: adminPath, adminSetupOpen: o.AdminSetupOpen}
 	proxies := make([]proxyRoute, 0, len(upstreams))
 	for _, up := range upstreams {
 		proxy, err := base.proxyFor(up, transport)
@@ -103,7 +111,7 @@ func NewHandler(o Options) (http.Handler, error) {
 		proxies = append(proxies, proxyRoute{prefix: up.Prefix, handler: proxy})
 	}
 	base.proxies = proxies
-	_, err := fs.Stat(assets, "index.html")
+	_, err = fs.Stat(assets, "index.html")
 	base.noEntry = err != nil
 	h := base
 	if h.noEntry {
@@ -133,49 +141,22 @@ func (h *handler) serveStatic(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := strings.TrimPrefix(r.URL.Path, "/")
-	if name == "wahaha/setup" || strings.HasPrefix(name, "wahaha/setup/") {
-		w.Header().Set("Cache-Control", "no-store")
-		if h.adminSetupOpen == nil {
-			http.NotFound(w, r)
-			return
-		}
-		open, err := h.adminSetupOpen(r.Context())
-		if err != nil {
-			http.Error(w, "初始化状态暂不可用，请稍后重试", http.StatusServiceUnavailable)
-			return
-		}
-		if !open {
-			http.NotFound(w, r)
-			return
-		}
+	if hasDotSegment(name) {
+		http.NotFound(w, r)
+		return
 	}
-	if name == "admin" || strings.HasPrefix(name, "admin/") {
+	if r.URL.Path == h.adminPath || strings.HasPrefix(r.URL.Path, h.adminPath+"/") {
+		h.serveAdmin(w, r)
+		return
+	}
+	// 内嵌目录不是公开挂载点，旧入口也不能绕过运行时配置。
+	if name == "admin" || strings.HasPrefix(name, "admin/") || name == "wahaha" || strings.HasPrefix(name, "wahaha/") {
 		http.NotFound(w, r)
 		return
 	}
 	if name != "" {
-		if hasDotSegment(name) {
-			http.NotFound(w, r)
-			return
-		}
 		if info, err := fs.Stat(h.assets, name); err == nil && !info.IsDir() {
 			h.serveFile(w, r, name)
-			return
-		}
-		if name == "wahaha" {
-			http.Redirect(w, r, "/wahaha/", http.StatusPermanentRedirect)
-			return
-		}
-		if strings.HasPrefix(name, "wahaha/") {
-			if strings.HasPrefix(name, "wahaha/assets/") {
-				http.NotFound(w, r)
-				return
-			}
-			if _, err := fs.Stat(h.assets, "wahaha/index.html"); err != nil {
-				http.Error(w, "后台前端产物缺失，请构建并重新打包管理后台", http.StatusServiceUnavailable)
-				return
-			}
-			h.serveFile(w, r, "wahaha/index.html")
 			return
 		}
 		if strings.HasPrefix(name, assetsDir) {

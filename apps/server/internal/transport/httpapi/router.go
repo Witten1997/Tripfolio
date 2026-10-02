@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"tripfolio/server/internal/config"
 	"tripfolio/server/internal/foundation/apperr"
 	"tripfolio/server/internal/modules/travel/share"
 
@@ -29,23 +30,24 @@ import (
 
 // Deps 是路由需要的全部依赖，由 bootstrap 显式装配。
 type Deps struct {
-	Admin       http.Handler
-	Dashboard   *dashboard.Service
-	Logger      *slog.Logger
-	Metadata    metadata.Metadata
-	Readiness   Readiness
-	CORSOrigins []string
-	Cookies     CookieSettings
-	Identity    *account.IdentityService
-	Sessions    *account.SessionService
-	Profile     *account.ProfileService
-	Categories  *finance.CategoryService
-	Trips       *trip.Service
-	Itinerary   *itinerary.Service
-	RoutePlans  *routeplan.Service
-	Packing     *packing.Service
-	Todos       *todo.Service
-	Members     *member.Service
+	AdminBasePath string
+	Admin         http.Handler
+	Dashboard     *dashboard.Service
+	Logger        *slog.Logger
+	Metadata      metadata.Metadata
+	Readiness     Readiness
+	CORSOrigins   []string
+	Cookies       CookieSettings
+	Identity      *account.IdentityService
+	Sessions      *account.SessionService
+	Profile       *account.ProfileService
+	Categories    *finance.CategoryService
+	Trips         *trip.Service
+	Itinerary     *itinerary.Service
+	RoutePlans    *routeplan.Service
+	Packing       *packing.Service
+	Todos         *todo.Service
+	Members       *member.Service
 	// Shares 未装配时，缺少分享头返回 401，有分享头返回 503。
 	Shares *share.Service
 	// 任一服务为 nil 时对应接口返回 503 DEPENDENCY_UNAVAILABLE。
@@ -112,8 +114,16 @@ func NewRouter(d Deps) http.Handler {
 	r.Get("/health/ready", ready(d.Readiness))
 	r.Handle("/api/v1/admin", http.HandlerFunc(notFound))
 	r.Handle("/api/v1/admin/*", http.HandlerFunc(notFound))
+	adminBasePath := d.AdminBasePath
+	if adminBasePath == "" {
+		adminBasePath = (config.Config{}).AdminAPIPath()
+	}
+	if adminBasePath != "/api/v1/wahaha" {
+		r.Handle("/api/v1/wahaha", http.HandlerFunc(notFound))
+		r.Handle("/api/v1/wahaha/*", http.HandlerFunc(notFound))
+	}
 	if d.Admin != nil {
-		r.Mount("/api/v1/wahaha", d.Admin)
+		r.Mount(adminBasePath, d.Admin)
 	}
 
 	handler := &Handler{

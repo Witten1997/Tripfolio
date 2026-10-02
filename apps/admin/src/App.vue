@@ -14,6 +14,7 @@ import {
 } from '@lucide/vue'
 import { ElMessage } from 'element-plus'
 import { identity, logout } from './api'
+import { adminBasePath } from './config'
 
 const route = useRoute()
 const router = useRouter()
@@ -44,9 +45,11 @@ async function signOut() {
 <template>
   <RouterView v-if="route.name === 'login' || route.name === 'setup'" />
   <div v-else-if="identity" class="admin-layout">
-    <a href="#main-content" class="skip-link">跳到主要内容</a>
+    <a :href="router.resolve(route.fullPath).href + '#main-content'" class="skip-link"
+      >跳到主要内容</a
+    >
     <aside class="sidebar">
-      <a class="brand" href="/wahaha/" aria-label="Tripfolio 管理后台首页">
+      <a class="brand" :href="adminBasePath" aria-label="Tripfolio 管理后台首页">
         <ShieldCheck :size="28" aria-hidden="true" />
         <span>Tripfolio<small>管理后台</small></span>
       </a>

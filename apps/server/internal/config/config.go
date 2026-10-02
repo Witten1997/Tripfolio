@@ -61,6 +61,8 @@ type Config struct {
 	Env string
 	// HTTPAddr 是 API 监听地址，例如 ":8080"。
 	HTTPAddr string
+	// AdminPath 是后台页面的单层路径，API 同步挂到 /api/v1 + AdminPath。
+	AdminPath string
 	// DatabaseURL 是 PostgreSQL 连接串（pgx 格式）。
 	DatabaseURL string
 	// DBMaxConns 是连接池上限。
@@ -116,8 +118,15 @@ func Load(getenv func(string) string) (Config, error) {
 	cfg := Config{
 		Env:         get("ENV", "dev"),
 		HTTPAddr:    get("HTTP_ADDR", ":8080"),
+		AdminPath:   get("ADMIN_PATH", DefaultAdminPath),
 		DatabaseURL: get("DATABASE_URL", ""),
 		Keyring:     get("KEYRING", ""),
+	}
+
+	if path, err := ParseAdminPath(cfg.AdminPath); err != nil {
+		errs = append(errs, err)
+	} else {
+		cfg.AdminPath = path
 	}
 
 	switch cfg.Env {

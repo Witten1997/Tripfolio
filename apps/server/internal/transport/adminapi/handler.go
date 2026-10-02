@@ -15,6 +15,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
+	"tripfolio/server/internal/config"
 	"tripfolio/server/internal/foundation/apperr"
 	"tripfolio/server/internal/modules/admin"
 	"tripfolio/server/internal/transport/adminapi/generated"
@@ -23,17 +24,21 @@ import (
 )
 
 type Options struct {
-	Runtime func(context.Context) admin.RuntimeStatus
-	Service *admin.Service
-	Secure  bool
-	Origins []string
-	Logger  *slog.Logger
+	BasePath string
+	Runtime  func(context.Context) admin.RuntimeStatus
+	Service  *admin.Service
+	Secure   bool
+	Origins  []string
+	Logger   *slog.Logger
 }
 
 type Handler struct{ options Options }
 type sessionKey struct{}
 
 func NewHandler(o Options) http.Handler {
+	if o.BasePath == "" {
+		o.BasePath = (config.Config{}).AdminAPIPath()
+	}
 	if o.Logger == nil {
 		o.Logger = slog.Default()
 	}
@@ -119,7 +124,7 @@ func (h *Handler) authenticate(next http.Handler) http.Handler {
 			h.fail(w, r, apperr.New(503, "DEPENDENCY_UNAVAILABLE", "管理后台尚未启用"))
 			return
 		}
-		setup := strings.TrimRight(r.URL.Path, "/") == "/api/v1/wahaha/setup"
+		setup := strings.TrimRight(r.URL.Path, "/") == h.options.BasePath+"/setup"
 		if setup {
 			open, err := h.options.Service.SetupOpen(r.Context())
 			if err != nil {
@@ -139,7 +144,7 @@ func (h *Handler) authenticate(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		if r.Method == http.MethodPost && r.URL.Path == "/api/v1/wahaha/login" {
+		if r.Method == http.MethodPost && r.URL.Path == h.options.BasePath+"/login" {
 			next.ServeHTTP(w, r)
 			return
 		}
