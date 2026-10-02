@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { Users, Map, HardDrive, RefreshCw, ArrowUpRight } from '@lucide/vue'
+import { Users, Map, RefreshCw, ArrowUpRight } from '@lucide/vue'
 import { loadOverview, type Overview } from '../api'
-import { formatBytes, formatTime } from '../format'
+import { formatTime } from '../format'
 
 const data = ref<Overview | null>(null)
 const loading = ref(false)
@@ -54,12 +54,6 @@ onMounted(refresh)
           <p>旅行总量</p>
           <strong>{{ data.trips.toLocaleString() }}</strong
           ><span>包含归档，排除回收站</span>
-        </article>
-        <article class="metric">
-          <HardDrive :size="20" aria-hidden="true" />
-          <p>可用文件容量</p>
-          <strong>{{ formatBytes(data.asset_bytes) }}</strong
-          ><span>按系统记录的文件大小统计</span>
         </article>
       </div>
       <section class="trend-panel" aria-labelledby="signup-title">

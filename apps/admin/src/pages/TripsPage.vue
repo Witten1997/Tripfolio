@@ -69,7 +69,7 @@ watch(
       <div>
         <p class="eyebrow">PLATFORM TRIPS</p>
         <h1>旅行管理</h1>
-        <p class="muted">按所属用户定位旅行，查看行程与准备事项。</p>
+        <p class="muted">按所属用户定位旅行，查看基本情况与内容数量。</p>
       </div>
       <el-button :loading="loading" @click="refresh"
         ><RefreshCw v-if="!loading" :size="15" />刷新</el-button
@@ -182,7 +182,7 @@ watch(
         <el-table-column label="操作" width="95" fixed="right"
           ><template #default="{ row }"
             ><RouterLink class="text-link" :to="{ name: 'trip', params: { id: row.id } }"
-              >查看详情</RouterLink
+              >查看概况</RouterLink
             ></template
           ></el-table-column
         >

@@ -9,6 +9,8 @@ import {
   LayoutDashboard,
   Users,
   Map,
+  ScrollText,
+  Activity,
 } from '@lucide/vue'
 import { ElMessage } from 'element-plus'
 import { identity, logout } from './api'
@@ -20,7 +22,9 @@ const titles: Record<string, string> = {
   users: '用户管理',
   account: '账号与安全',
   trips: '旅行管理',
-  trip: '旅行详情',
+  trip: '旅行概况',
+  audits: '审计中心',
+  runtime: '运行状态',
 }
 const pageTitle = computed(() => titles[String(route.name)] || '管理后台')
 watch(identity, (value) => {
@@ -61,6 +65,12 @@ async function signOut() {
         >
         <RouterLink to="/account" class="nav-item"
           ><UserRound :size="18" aria-hidden="true" />账号与安全</RouterLink
+        >
+        <RouterLink to="/audits" class="nav-item"
+          ><ScrollText :size="18" aria-hidden="true" />审计中心</RouterLink
+        >
+        <RouterLink to="/runtime" class="nav-item"
+          ><Activity :size="18" aria-hidden="true" />运行状态</RouterLink
         >
       </nav>
       <div class="sidebar-bottom">

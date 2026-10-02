@@ -21,7 +21,6 @@ type Overview struct {
 	Users         int64       `json:"users"`
 	NewUsersToday int64       `json:"new_users_today"`
 	Trips         int64       `json:"trips"`
-	AssetBytes    int64       `json:"asset_bytes"`
 	FailedJobs    int64       `json:"failed_jobs"`
 	Signups       []SignupDay `json:"signups"`
 	AsOf          time.Time   `json:"as_of"`
@@ -36,8 +35,6 @@ type User struct {
 	CreatedAt    time.Time  `json:"created_at"`
 	LastSeenAt   *time.Time `json:"last_seen_at"`
 	TripCount    int64      `json:"trip_count"`
-	AssetCount   int64      `json:"asset_count"`
-	AssetBytes   int64      `json:"asset_bytes"`
 }
 
 type UserSession struct {

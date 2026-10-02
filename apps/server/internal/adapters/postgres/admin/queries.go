@@ -17,8 +17,7 @@ func (s *Store) Overview(ctx context.Context, now time.Time) (admin.Overview, er
 		(SELECT count(*) FROM accounts),
 		(SELECT count(*) FROM accounts WHERE created_at>=date_trunc('day',$1::timestamptz AT TIME ZONE 'Asia/Shanghai') AT TIME ZONE 'Asia/Shanghai' AND created_at<=$1),
 		(SELECT count(*) FROM trips WHERE deleted_at IS NULL),
-		(SELECT coalesce(sum(byte_size),0)::bigint FROM assets WHERE deleted_at IS NULL AND status='ready'),
-		(SELECT count(*) FROM river_job WHERE state IN ('retryable','discarded'))`, now).Scan(&result.Users, &result.NewUsersToday, &result.Trips, &result.AssetBytes, &result.FailedJobs)
+		(SELECT count(*) FROM river_job WHERE state IN ('retryable','discarded'))`, now).Scan(&result.Users, &result.NewUsersToday, &result.Trips, &result.FailedJobs)
 	if err != nil {
 		return result, err
 	}
@@ -43,13 +42,11 @@ func (s *Store) Overview(ctx context.Context, now time.Time) (admin.Overview, er
 const userColumns = `a.id,a.email,a.nickname,a.status,
 	EXISTS(SELECT 1 FROM admin_principals p WHERE p.account_id=a.id AND p.revoked_at IS NULL),a.created_at,
 	(SELECT max(last_seen_at) FROM account_sessions WHERE account_id=a.id),
-	(SELECT count(*) FROM trips t WHERE t.account_id=a.id AND t.deleted_at IS NULL),
-	(SELECT count(*) FROM assets f WHERE f.account_id=a.id AND f.deleted_at IS NULL AND f.status='ready'),
-	(SELECT coalesce(sum(byte_size),0)::bigint FROM assets f WHERE f.account_id=a.id AND f.deleted_at IS NULL AND f.status='ready')`
+	(SELECT count(*) FROM trips t WHERE t.account_id=a.id AND t.deleted_at IS NULL)`
 
 func scanUser(row interface{ Scan(...any) error }) (admin.User, error) {
 	var user admin.User
-	err := row.Scan(&user.ID, &user.Email, &user.Nickname, &user.Status, &user.IsSuperAdmin, &user.CreatedAt, &user.LastSeenAt, &user.TripCount, &user.AssetCount, &user.AssetBytes)
+	err := row.Scan(&user.ID, &user.Email, &user.Nickname, &user.Status, &user.IsSuperAdmin, &user.CreatedAt, &user.LastSeenAt, &user.TripCount)
 	return user, err
 }
 

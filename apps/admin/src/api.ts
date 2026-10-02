@@ -9,7 +9,11 @@ export type UserPage = components['schemas']['UserPage']
 export type UserDetail = components['schemas']['UserDetail']
 export type AdminTripPage = components['schemas']['AdminTripPage']
 export type AdminTripDetail = components['schemas']['AdminTripDetail']
-export type AdminContentPage = components['schemas']['AdminContentPage']
+export type AuditEntry = components['schemas']['AuditEntry']
+export type AuditPage = components['schemas']['AuditPage']
+export type RuntimeStatus = components['schemas']['RuntimeStatus']
+export type JobPage = components['schemas']['JobPage']
+export type DeletionJobPage = components['schemas']['DeletionJobPage']
 export const identity = shallowRef<AdminIdentity | null>(null)
 export const connectionError = shallowRef('')
 let initialized = false
@@ -131,8 +135,24 @@ export function listTrips(query: Record<string, string>) {
 export async function loadTrip(id: string) {
   return (await request<{ data: AdminTripDetail }>(`/trips/${encodeURIComponent(id)}`)).data
 }
-export function loadTripContent(id: string, kind: AdminContentPage['kind'], page: number) {
-  return request<AdminContentPage>(
-    `/trips/${encodeURIComponent(id)}/content?${new URLSearchParams({ kind, page: String(page), page_size: '20' })}`,
+
+export function listAudits(query: Record<string, string>) {
+  const params = new URLSearchParams(Object.entries(query).filter(([, value]) => value !== ''))
+  return request<AuditPage>(`/audits?${params}`)
+}
+
+export async function loadRuntime() {
+  return (await request<{ data: RuntimeStatus }>('/runtime')).data
+}
+
+export function listJobs(state: string, page: number) {
+  return request<JobPage>(
+    `/jobs?${new URLSearchParams({ state, page: String(page), page_size: '20' })}`,
+  )
+}
+
+export function listDeletionJobs(state: string, page: number) {
+  return request<DeletionJobPage>(
+    `/deletion-jobs?${new URLSearchParams({ state, page: String(page), page_size: '20' })}`,
   )
 }

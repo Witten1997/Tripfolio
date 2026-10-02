@@ -11,6 +11,8 @@ export const router = createRouter({
     { path: '/trips/:id', name: 'trip', component: () => import('./pages/TripDetailPage.vue') },
     { path: '/login', name: 'login', component: () => import('./pages/LoginPage.vue') },
     { path: '/account', name: 'account', component: () => import('./pages/AccountPage.vue') },
+    { path: '/audits', name: 'audits', component: () => import('./pages/AuditsPage.vue') },
+    { path: '/runtime', name: 'runtime', component: () => import('./pages/RuntimePage.vue') },
     { path: '/:pathMatch(.*)*', redirect: '/overview' },
   ],
 })

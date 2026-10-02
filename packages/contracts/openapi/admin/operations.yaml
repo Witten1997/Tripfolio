@@ -1,0 +1,469 @@
+AuditPath:
+  get:
+    tags:
+      - 'admin-operations'
+    operationId: 'adminAudits'
+    summary: '按操作者、所属账号、操作、结果和北京时间日期查询审计'
+    parameters:
+      - name: as_of
+        in: query
+        description: 首次查询返回的时间，后续翻页复用，避免新审计记录导致重复
+        schema:
+          type: string
+          format: date-time
+      - name: 'actor_account_id'
+        in: 'query'
+        schema:
+          type: 'string'
+          format: 'uuid'
+      - name: 'subject_account_id'
+        in: 'query'
+        schema:
+          type: 'string'
+          format: 'uuid'
+      - name: 'action'
+        in: 'query'
+        schema:
+          type: 'string'
+          maxLength: 80
+      - name: 'result'
+        in: 'query'
+        schema:
+          type: 'string'
+          enum:
+            - 'success'
+            - 'failure'
+            - 'denied'
+      - name: 'date_from'
+        in: 'query'
+        description: '含起始日，按北京时间'
+        schema:
+          type: 'string'
+          format: 'date'
+      - name: 'date_to'
+        in: 'query'
+        description: '含结束日，按北京时间'
+        schema:
+          type: 'string'
+          format: 'date'
+      - name: 'page'
+        in: 'query'
+        schema:
+          type: 'integer'
+          minimum: 1
+          maximum: 10000
+          default: 1
+      - name: 'page_size'
+        in: 'query'
+        schema:
+          type: 'integer'
+          minimum: 1
+          maximum: 100
+          default: 20
+    responses:
+      '200':
+        description: '查询成功，访问已审计'
+        content:
+          'application/json':
+            schema:
+              $ref: '#/schemas/AuditPage'
+      default:
+        $ref: './openapi.yaml#/components/responses/Problem'
+RuntimePath:
+  get:
+    tags:
+      - 'admin-operations'
+    operationId: 'adminRuntime'
+    summary: '服务与依赖状态、失败和清理任务数量'
+    responses:
+      '200':
+        description: '查询成功，访问已审计'
+        content:
+          'application/json':
+            schema:
+              type: 'object'
+              required:
+                - 'data'
+              properties:
+                data:
+                  $ref: '#/schemas/RuntimeStatus'
+      default:
+        $ref: './openapi.yaml#/components/responses/Problem'
+JobsPath:
+  get:
+    tags:
+      - 'admin-operations'
+    operationId: 'adminJobs'
+    summary: '分页查询失败任务，仅返回固定分类错误摘要'
+    parameters:
+      - name: 'state'
+        in: 'query'
+        schema:
+          type: 'string'
+          enum:
+            - 'retryable'
+            - 'discarded'
+      - name: 'page'
+        in: 'query'
+        schema:
+          type: 'integer'
+          minimum: 1
+          maximum: 10000
+          default: 1
+      - name: 'page_size'
+        in: 'query'
+        schema:
+          type: 'integer'
+          minimum: 1
+          maximum: 100
+          default: 20
+    responses:
+      '200':
+        description: '查询成功，访问已审计'
+        content:
+          'application/json':
+            schema:
+              $ref: '#/schemas/JobPage'
+      default:
+        $ref: './openapi.yaml#/components/responses/Problem'
+DeletionJobsPath:
+  get:
+    tags:
+      - 'admin-operations'
+    operationId: 'adminDeletionJobs'
+    summary: '分页查询清理任务进度，不提供触发或重试操作'
+    parameters:
+      - name: 'state'
+        in: 'query'
+        schema:
+          type: 'string'
+          enum:
+            - 'queued'
+            - 'running'
+            - 'completed'
+            - 'failed'
+      - name: 'page'
+        in: 'query'
+        schema:
+          type: 'integer'
+          minimum: 1
+          maximum: 10000
+          default: 1
+      - name: 'page_size'
+        in: 'query'
+        schema:
+          type: 'integer'
+          minimum: 1
+          maximum: 100
+          default: 20
+    responses:
+      '200':
+        description: '查询成功，访问已审计'
+        content:
+          'application/json':
+            schema:
+              $ref: '#/schemas/DeletionJobPage'
+      default:
+        $ref: './openapi.yaml#/components/responses/Problem'
+schemas:
+  AuditEntry:
+    type: 'object'
+    required:
+      - 'id'
+      - 'actor_account_id'
+      - 'subject_account_id'
+      - 'resource_id'
+      - 'action'
+      - 'resource_type'
+      - 'result'
+      - 'request_id'
+      - 'source_ip'
+      - 'occurred_at'
+      - 'summary'
+      - 'result_count'
+    properties:
+      id:
+        type: 'string'
+        format: 'uuid'
+      actor_account_id:
+        type: 'string'
+        format: 'uuid'
+        nullable: true
+      subject_account_id:
+        type: 'string'
+        format: 'uuid'
+        nullable: true
+      resource_id:
+        type: 'string'
+        format: 'uuid'
+        nullable: true
+      action:
+        type: 'string'
+      resource_type:
+        type: 'string'
+      result:
+        type: 'string'
+        enum:
+          - 'success'
+          - 'failure'
+          - 'denied'
+      request_id:
+        type: 'string'
+      source_ip:
+        type: 'string'
+      occurred_at:
+        type: 'string'
+        format: 'date-time'
+      summary:
+        type: 'string'
+      result_count:
+        type: 'integer'
+        format: 'int64'
+        nullable: true
+  AuditPage:
+    type: 'object'
+    required:
+      - as_of
+      - 'data'
+      - 'total'
+      - 'page'
+      - 'page_size'
+    properties:
+      as_of:
+        type: string
+        format: date-time
+      data:
+        type: 'array'
+        items:
+          $ref: '#/schemas/AuditEntry'
+      total:
+        type: 'integer'
+        format: 'int64'
+      page:
+        type: 'integer'
+      page_size:
+        type: 'integer'
+  ComponentStatus:
+    type: 'object'
+    required:
+      - 'name'
+      - 'status'
+      - 'summary'
+    properties:
+      name:
+        type: 'string'
+        enum:
+          - 'api'
+          - 'database'
+          - 'worker'
+          - 'object_store'
+          - 'maps'
+          - 'mail'
+          - 'trip_purge'
+      status:
+        type: 'string'
+        enum:
+          - 'ok'
+          - 'unavailable'
+          - 'configured'
+          - 'disabled'
+      summary:
+        type: 'string'
+  JobCounts:
+    type: 'object'
+    required:
+      - 'running'
+      - 'pending'
+      - 'retryable'
+      - 'discarded'
+      - 'deletion_pending'
+      - 'deletion_failed'
+    properties:
+      running:
+        type: 'integer'
+        format: 'int64'
+      pending:
+        type: 'integer'
+        format: 'int64'
+      retryable:
+        type: 'integer'
+        format: 'int64'
+      discarded:
+        type: 'integer'
+        format: 'int64'
+      deletion_pending:
+        type: 'integer'
+        format: 'int64'
+      deletion_failed:
+        type: 'integer'
+        format: 'int64'
+  RuntimeStatus:
+    type: 'object'
+    required:
+      - 'status'
+      - 'started_at'
+      - 'as_of'
+      - 'components'
+      - 'jobs'
+    properties:
+      status:
+        type: 'string'
+        enum:
+          - 'ok'
+          - 'degraded'
+      started_at:
+        type: 'string'
+        format: 'date-time'
+      as_of:
+        type: 'string'
+        format: 'date-time'
+      components:
+        type: 'array'
+        items:
+          $ref: '#/schemas/ComponentStatus'
+      jobs:
+        $ref: '#/schemas/JobCounts'
+  Job:
+    type: 'object'
+    required:
+      - 'id'
+      - 'kind'
+      - 'state'
+      - 'attempt'
+      - 'max_attempts'
+      - 'created_at'
+      - 'attempted_at'
+      - 'scheduled_at'
+      - 'error_summary'
+    properties:
+      id:
+        type: 'string'
+        description: '十进制任务编号，使用字符串避免大整数精度丢失'
+      kind:
+        type: 'string'
+        enum:
+          - 'ping'
+          - 'trip_purge'
+          - 'asset_verify'
+          - 'route_recalculate'
+          - 'unknown'
+      state:
+        type: 'string'
+        enum:
+          - 'retryable'
+          - 'discarded'
+      attempt:
+        type: 'integer'
+      max_attempts:
+        type: 'integer'
+      created_at:
+        type: 'string'
+        format: 'date-time'
+      attempted_at:
+        type: 'string'
+        format: 'date-time'
+        nullable: true
+      scheduled_at:
+        type: 'string'
+        format: 'date-time'
+      error_summary:
+        type: 'string'
+  JobPage:
+    type: 'object'
+    required:
+      - 'data'
+      - 'total'
+      - 'page'
+      - 'page_size'
+    properties:
+      data:
+        type: 'array'
+        items:
+          $ref: '#/schemas/Job'
+      total:
+        type: 'integer'
+        format: 'int64'
+      page:
+        type: 'integer'
+      page_size:
+        type: 'integer'
+  DeletionJob:
+    type: 'object'
+    required:
+      - 'id'
+      - 'owner_account_id'
+      - 'target_trip_id'
+      - 'scope'
+      - 'status'
+      - 'stage'
+      - 'processed_items'
+      - 'total_items'
+      - 'created_at'
+      - 'finished_at'
+      - 'error_summary'
+    properties:
+      id:
+        type: 'string'
+        format: 'uuid'
+      owner_account_id:
+        type: 'string'
+        format: 'uuid'
+      target_trip_id:
+        type: 'string'
+        format: 'uuid'
+        nullable: true
+      scope:
+        type: 'string'
+        enum:
+          - 'trip'
+          - 'account'
+      status:
+        type: 'string'
+        enum:
+          - 'queued'
+          - 'running'
+          - 'completed'
+          - 'failed'
+      stage:
+        type: 'string'
+        enum:
+          - 'revoke_access'
+          - 'remove_objects'
+          - 'remove_rows'
+          - 'finalize'
+          - 'done'
+      processed_items:
+        type: 'integer'
+        format: 'int64'
+      total_items:
+        type: 'integer'
+        format: 'int64'
+        nullable: true
+      created_at:
+        type: 'string'
+        format: 'date-time'
+      finished_at:
+        type: 'string'
+        format: 'date-time'
+        nullable: true
+      error_summary:
+        type: 'string'
+  DeletionJobPage:
+    type: 'object'
+    required:
+      - 'data'
+      - 'total'
+      - 'page'
+      - 'page_size'
+    properties:
+      data:
+        type: 'array'
+        items:
+          $ref: '#/schemas/DeletionJob'
+      total:
+        type: 'integer'
+        format: 'int64'
+      page:
+        type: 'integer'
+      page_size:
+        type: 'integer'

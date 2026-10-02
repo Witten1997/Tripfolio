@@ -23,6 +23,7 @@ import (
 )
 
 type Options struct {
+	Runtime func(context.Context) admin.RuntimeStatus
 	Service *admin.Service
 	Secure  bool
 	Origins []string
@@ -44,7 +45,11 @@ func NewHandler(o Options) http.Handler {
 		h.fail(w, r, apperr.New(405, "METHOD_NOT_ALLOWED", "请求方法不允许"))
 	})
 	return generated.HandlerWithOptions(h, generated.ChiServerOptions{BaseRouter: r, ErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
-		h.reject(w, r, nil, "request.invalid", apperr.BadRequest("MALFORMED_REQUEST", "请求参数无效"))
+		var actor *admin.Session
+		if sess, ok := r.Context().Value(sessionKey{}).(admin.Session); ok {
+			actor = &sess
+		}
+		h.reject(w, r, actor, "request.invalid", apperr.BadRequest("MALFORMED_REQUEST", "请求参数无效"))
 	}})
 }
 

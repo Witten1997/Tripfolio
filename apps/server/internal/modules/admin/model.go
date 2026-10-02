@@ -51,9 +51,12 @@ type Session struct {
 }
 
 type Store interface {
+	Audits(context.Context, AuditFilter) (AuditPage, error)
+	JobCounts(context.Context) (JobCounts, error)
+	Jobs(context.Context, JobFilter) (JobPage, error)
+	DeletionJobs(context.Context, JobFilter) (DeletionJobPage, error)
 	Trips(context.Context, TripFilter, time.Time) (TripPage, error)
 	Trip(context.Context, uuid.UUID, time.Time) (TripDetail, bool, error)
-	TripContent(context.Context, uuid.UUID, ContentFilter) (ContentPage, bool, error)
 	Overview(context.Context, time.Time) (Overview, error)
 	Users(context.Context, UserFilter) (UserPage, error)
 	User(context.Context, uuid.UUID, time.Time) (UserDetail, bool, error)

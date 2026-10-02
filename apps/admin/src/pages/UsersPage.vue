@@ -2,7 +2,7 @@
 import { onMounted, ref } from 'vue'
 import { Search, RefreshCw } from '@lucide/vue'
 import { listUsers, loadUser, type UserPage, type UserDetail } from '../api'
-import { formatBytes, formatTime, statusLabel, clientLabel } from '../format'
+import { formatTime, statusLabel, clientLabel } from '../format'
 
 const query = ref('')
 const status = ref('')
@@ -152,11 +152,6 @@ onMounted(refresh)
           ></el-table-column
         >
         <el-table-column label="旅行" prop="trip_count" width="80" align="right" />
-        <el-table-column label="文件容量" width="115" align="right"
-          ><template #default="{ row }">{{
-            formatBytes(row.asset_bytes)
-          }}</template></el-table-column
-        >
         <el-table-column label="注册时间" min-width="165"
           ><template #default="{ row }">{{ formatTime(row.created_at) }}</template></el-table-column
         >
@@ -207,10 +202,6 @@ onMounted(refresh)
           <dd>{{ formatTime(detail.account.last_seen_at) }}</dd>
           <dt>旅行数量</dt>
           <dd>{{ detail.account.trip_count }}</dd>
-          <dt>可用文件数量</dt>
-          <dd>{{ detail.account.asset_count }}</dd>
-          <dt>文件容量</dt>
-          <dd>{{ formatBytes(detail.account.asset_bytes) }}</dd>
         </dl>
         <RouterLink
           class="text-link"

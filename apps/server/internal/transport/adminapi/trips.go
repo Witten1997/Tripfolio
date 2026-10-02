@@ -48,18 +48,3 @@ func (h *Handler) AdminTrip(w http.ResponseWriter, r *http.Request, id uuid.UUID
 	}
 	writeJSON(w, map[string]any{"data": result})
 }
-func (h *Handler) AdminTripContent(w http.ResponseWriter, r *http.Request, id uuid.UUID, p generated.AdminTripContentParams) {
-	f := admin.ContentFilter{Kind: string(p.Kind), Page: 1, PageSize: 20}
-	if p.Page != nil {
-		f.Page = *p.Page
-	}
-	if p.PageSize != nil {
-		f.PageSize = *p.PageSize
-	}
-	result, err := h.options.Service.TripContent(r.Context(), current(r), id, f, requestInfo(r))
-	if err != nil {
-		h.queryError(w, r, err)
-		return
-	}
-	writeJSON(w, result)
-}

@@ -167,7 +167,7 @@ func RunServe(ctx context.Context, cfg config.Config, logger *slog.Logger) error
 		adminOrigins = append(adminOrigins, "http://localhost:5174", "http://127.0.0.1:5174")
 	}
 	router := httpapi.NewRouter(httpapi.Deps{
-		Admin:  adminapi.NewHandler(adminapi.Options{Service: services.Admin, Secure: cfg.CookieSecure, Origins: adminOrigins, Logger: logger}),
+		Admin:  adminapi.NewHandler(adminapi.Options{Service: services.Admin, Runtime: adminRuntime(pool, readiness, worker, cfg), Secure: cfg.CookieSecure, Origins: adminOrigins, Logger: logger}),
 		Logger: logger, Metadata: metadata.Current(), Readiness: readiness, CORSOrigins: cfg.CORSOrigins,
 		Cookies:  httpapi.CookieSettings{Secure: cfg.CookieSecure},
 		Identity: services.Identity, Sessions: services.Sessions, Profile: services.Profile, Categories: services.Categories,

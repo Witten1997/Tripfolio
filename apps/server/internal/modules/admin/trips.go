@@ -10,10 +10,6 @@ import (
 
 	"github.com/google/uuid"
 	"tripfolio/server/internal/foundation/apperr"
-	"tripfolio/server/internal/modules/travel/itinerary"
-	"tripfolio/server/internal/modules/travel/member"
-	"tripfolio/server/internal/modules/travel/packing"
-	"tripfolio/server/internal/modules/travel/todo"
 	"tripfolio/server/internal/modules/travel/trip"
 )
 
@@ -46,25 +42,29 @@ type TripPage struct {
 	PageSize int           `json:"page_size"`
 }
 type TripDetail struct {
-	Trip  trip.Resource `json:"trip"`
-	Owner Owner         `json:"owner"`
-	Phase trip.Phase    `json:"phase"`
+	Trip   TripOverview `json:"trip"`
+	Owner  Owner        `json:"owner"`
+	Phase  string       `json:"phase"`
+	Counts TripCounts   `json:"counts"`
 }
-type ContentFilter struct {
-	Kind           string
-	Page, PageSize int
+type TripOverview struct {
+	ID               uuid.UUID  `json:"id"`
+	Name             string     `json:"name"`
+	Destination      string     `json:"destination"`
+	StartDate        string     `json:"start_date"`
+	EndDate          string     `json:"end_date"`
+	BudgetAmount     *string    `json:"budget_amount"`
+	CurrencyCode     string     `json:"currency_code"`
+	ArchivedAt       *time.Time `json:"archived_at"`
+	DeletedAt        *time.Time `json:"deleted_at"`
+	PurgeRequestedAt *time.Time `json:"purge_requested_at"`
+	UpdatedAt        time.Time  `json:"updated_at"`
 }
-type ContentPage struct {
-	OwnerID   uuid.UUID            `json:"owner_id"`
-	TripID    uuid.UUID            `json:"trip_id"`
-	Kind      string               `json:"kind"`
-	Itinerary []itinerary.Resource `json:"itinerary"`
-	Packing   []packing.Resource   `json:"packing"`
-	Todos     []todo.Resource      `json:"todos"`
-	Members   []member.Resource    `json:"members"`
-	Total     int64                `json:"total"`
-	Page      int                  `json:"page"`
-	PageSize  int                  `json:"page_size"`
+type TripCounts struct {
+	Itinerary int64 `json:"itinerary"`
+	Packing   int64 `json:"packing"`
+	Todos     int64 `json:"todos"`
+	Members   int64 `json:"members"`
 }
 
 func validPage(page, size int) bool { return page >= 1 && page <= 10000 && size >= 1 && size <= 100 }
@@ -116,6 +116,7 @@ func (s *Service) Trip(ctx context.Context, sess Session, id uuid.UUID, info Req
 	a.ResourceType = "trip"
 	a.ResourceID = &id
 	a.SubjectID = nil
+	a.Details = map[string]any{"scope": "overview"}
 	if found {
 		a.SubjectID = &result.Owner.ID
 	} else {
@@ -126,45 +127,6 @@ func (s *Service) Trip(ctx context.Context, sess Session, id uuid.UUID, info Req
 	}
 	if !found {
 		return TripDetail{}, apperr.NotFound()
-	}
-	return result, nil
-}
-func (s *Service) TripContent(ctx context.Context, sess Session, id uuid.UUID, f ContentFilter, info RequestInfo) (ContentPage, error) {
-	if !validPage(f.Page, f.PageSize) || (f.Kind != "itinerary" && f.Kind != "packing" && f.Kind != "todos" && f.Kind != "members") {
-		return ContentPage{}, apperr.BadRequest("MALFORMED_REQUEST", "内容类型或分页参数无效")
-	}
-	result, found, err := s.store.TripContent(ctx, id, f)
-	if err != nil {
-		return ContentPage{}, apperr.Internal(err)
-	}
-	ids := []uuid.UUID{}
-	for _, v := range result.Itinerary {
-		ids = append(ids, v.ID)
-	}
-	for _, v := range result.Packing {
-		ids = append(ids, v.ID)
-	}
-	for _, v := range result.Todos {
-		ids = append(ids, v.ID)
-	}
-	for _, v := range result.Members {
-		ids = append(ids, v.ID)
-	}
-	a := s.event(&sess, "trip.content.read", "success", info)
-	a.ResourceType = "trip"
-	a.ResourceID = &id
-	a.SubjectID = nil
-	if found {
-		a.SubjectID = &result.OwnerID
-	} else {
-		a.Result = "failure"
-	}
-	a.Details = map[string]any{"kind": f.Kind, "page": f.Page, "page_size": f.PageSize, "resource_ids": ids, "result_count": len(ids)}
-	if err = s.recordRead(ctx, a); err != nil {
-		return ContentPage{}, err
-	}
-	if !found {
-		return ContentPage{}, apperr.NotFound()
 	}
 	return result, nil
 }

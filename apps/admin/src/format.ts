@@ -5,18 +5,6 @@ export const formatTime = (value: string | null) =>
       )
     : '暂无记录'
 
-export function formatBytes(value: number) {
-  if (value < 1024) return `${value} B`
-  const units = ['KB', 'MB', 'GB', 'TB']
-  let size = value / 1024
-  let index = 0
-  while (size >= 1024 && index < units.length - 1) {
-    size /= 1024
-    index++
-  }
-  return `${size.toFixed(1)} ${units[index]}`
-}
-
 const statuses: Record<string, string> = { active: '正常', deleting: '注销中' }
 const clients: Record<string, string> = { web: '网页端', android: 'Android', harmony: 'HarmonyOS' }
 export const statusLabel = (value: string) => statuses[value] || value

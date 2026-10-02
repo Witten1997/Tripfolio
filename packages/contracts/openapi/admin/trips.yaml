@@ -40,12 +40,12 @@ TripPath:
   get:
     tags: [admin-trips]
     operationId: adminTrip
-    summary: 查看旅行基础信息及所属账号
+    summary: 查看旅行概况及内容数量
     parameters:
       - $ref: '#/parameters/TripID'
     responses:
       '200':
-        description: 旅行详情，包含回收站状态
+        description: 旅行概况，包含回收站状态，不返回私人内容明细
         content:
           application/json:
             schema:
@@ -53,28 +53,6 @@ TripPath:
               required: [data]
               properties:
                 data: { $ref: '#/schemas/AdminTripDetail' }
-      default:
-        $ref: ./openapi.yaml#/components/responses/Problem
-ContentPath:
-  get:
-    tags: [admin-trips]
-    operationId: adminTripContent
-    summary: 分页查看旅行行程、物资、待办或成员
-    description: 每次只返回指定类型的有效内容；旅行已在回收站时仍可由后台查看，不包含此前单独删除的内容。
-    parameters:
-      - $ref: '#/parameters/TripID'
-      - name: kind
-        in: query
-        required: true
-        schema: { type: string, enum: [itinerary, packing, todos, members] }
-      - $ref: '#/parameters/Page'
-      - $ref: '#/parameters/PageSize'
-    responses:
-      '200':
-        description: 内容列表，仅 kind 对应的数组有数据，其他数组为空
-        content:
-          application/json:
-            schema: { $ref: '#/schemas/AdminContentPage' }
       default:
         $ref: ./openapi.yaml#/components/responses/Problem
 parameters:
@@ -137,30 +115,46 @@ schemas:
       page_size: { type: integer }
   AdminTripDetail:
     type: object
-    required: [trip, owner, phase]
+    required: [trip, owner, phase, counts]
     properties:
-      trip: { $ref: ../v1/schemas/trip.yaml#/Trip }
+      trip: { $ref: '#/schemas/AdminTripOverview' }
       owner: { $ref: '#/schemas/AdminOwner' }
       phase: { type: string, enum: [planned, ongoing, ended] }
-  AdminContentPage:
+      counts: { $ref: '#/schemas/AdminTripCounts' }
+  AdminTripOverview:
     type: object
-    required: [owner_id, trip_id, kind, itinerary, packing, todos, members, total, page, page_size]
+    required:
+      [
+        id,
+        name,
+        destination,
+        start_date,
+        end_date,
+        budget_amount,
+        currency_code,
+        archived_at,
+        deleted_at,
+        purge_requested_at,
+        updated_at,
+      ]
     properties:
-      owner_id: { type: string, format: uuid }
-      trip_id: { type: string, format: uuid }
-      kind: { type: string, enum: [itinerary, packing, todos, members] }
-      itinerary:
-        type: array
-        items: { $ref: ../v1/schemas/itinerary.yaml#/ItineraryItem }
-      packing:
-        type: array
-        items: { $ref: ../v1/schemas/packing.yaml#/PackingItem }
-      todos:
-        type: array
-        items: { $ref: ../v1/schemas/todo.yaml#/Todo }
-      members:
-        type: array
-        items: { $ref: ../v1/schemas/member.yaml#/TripMember }
-      total: { type: integer, format: int64 }
-      page: { type: integer }
-      page_size: { type: integer }
+      id: { type: string, format: uuid }
+      name: { type: string }
+      destination: { type: string }
+      start_date: { type: string, format: date }
+      end_date: { type: string, format: date }
+      budget_amount: { type: string, nullable: true, description: 按旅行币种小数位返回的预算 }
+      currency_code: { type: string }
+      archived_at: { type: string, format: date-time, nullable: true }
+      deleted_at: { type: string, format: date-time, nullable: true }
+      purge_requested_at: { type: string, format: date-time, nullable: true }
+      updated_at: { type: string, format: date-time }
+  AdminTripCounts:
+    type: object
+    description: 仅统计未单独删除的内容数量，不返回内容明细；旅行在回收站时仍可查看数量。
+    required: [itinerary, packing, todos, members]
+    properties:
+      itinerary: { type: integer, format: int64, minimum: 0 }
+      packing: { type: integer, format: int64, minimum: 0 }
+      todos: { type: integer, format: int64, minimum: 0 }
+      members: { type: integer, format: int64, minimum: 0 }

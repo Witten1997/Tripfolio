@@ -4,6 +4,57 @@
  */
 
 export type paths = {
+    "/audits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 按操作者、所属账号、操作、结果和北京时间日期查询审计 */
+        get: operations["adminAudits"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/deletion-jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 分页查询清理任务进度，不提供触发或重试操作 */
+        get: operations["adminDeletionJobs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 分页查询失败任务，仅返回固定分类错误摘要 */
+        get: operations["adminJobs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/login": {
         parameters: {
             query?: never;
@@ -49,6 +100,23 @@ export type paths = {
         put?: never;
         /** 为敏感操作再次验证密码 */
         post: operations["adminReauthenticate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/runtime": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 服务与依赖状态、失败和清理任务数量 */
+        get: operations["adminRuntime"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -131,28 +199,8 @@ export type paths = {
             path?: never;
             cookie?: never;
         };
-        /** 查看旅行基础信息及所属账号 */
+        /** 查看旅行概况及内容数量 */
         get: operations["adminTrip"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/trips/{trip_id}/content": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * 分页查看旅行行程、物资、待办或成员
-         * @description 每次只返回指定类型的有效内容；旅行已在回收站时仍可由后台查看，不包含此前单独删除的内容。
-         */
-        get: operations["adminTripContent"];
         put?: never;
         post?: never;
         delete?: never;
@@ -199,22 +247,6 @@ export type paths = {
 export type webhooks = Record<string, never>;
 export type components = {
     schemas: {
-        AdminContentPage: {
-            itinerary: components["schemas"]["ItineraryItem"][];
-            /** @enum {string} */
-            kind: "itinerary" | "packing" | "todos" | "members";
-            members: components["schemas"]["TripMember"][];
-            /** Format: uuid */
-            owner_id: string;
-            packing: components["schemas"]["PackingItem"][];
-            page: number;
-            page_size: number;
-            todos: components["schemas"]["Todo"][];
-            /** Format: int64 */
-            total: number;
-            /** Format: uuid */
-            trip_id: string;
-        };
         AdminIdentity: {
             csrf_token: string;
             email: string;
@@ -234,11 +266,44 @@ export type components = {
             id: string;
             nickname: string;
         };
+        /** @description 仅统计未单独删除的内容数量，不返回内容明细；旅行在回收站时仍可查看数量。 */
+        AdminTripCounts: {
+            /** Format: int64 */
+            itinerary: number;
+            /** Format: int64 */
+            members: number;
+            /** Format: int64 */
+            packing: number;
+            /** Format: int64 */
+            todos: number;
+        };
         AdminTripDetail: {
+            counts: components["schemas"]["AdminTripCounts"];
             owner: components["schemas"]["AdminOwner"];
             /** @enum {string} */
             phase: "planned" | "ongoing" | "ended";
-            trip: components["schemas"]["Trip"];
+            trip: components["schemas"]["AdminTripOverview"];
+        };
+        AdminTripOverview: {
+            /** Format: date-time */
+            archived_at: string | null;
+            /** @description 按旅行币种小数位返回的预算 */
+            budget_amount: string | null;
+            currency_code: string;
+            /** Format: date-time */
+            deleted_at: string | null;
+            destination: string;
+            /** Format: date */
+            end_date: string;
+            /** Format: uuid */
+            id: string;
+            name: string;
+            /** Format: date-time */
+            purge_requested_at: string | null;
+            /** Format: date */
+            start_date: string;
+            /** Format: date-time */
+            updated_at: string;
         };
         AdminTripPage: {
             data: components["schemas"]["AdminTripSummary"][];
@@ -266,16 +331,73 @@ export type components = {
             /** Format: date-time */
             updated_at: string;
         };
-        /**
-         * @description 支持清单内的 ISO 4217 三字母大写代码；清单见 Metadata.currencies
-         * @example CNY
-         */
-        CurrencyCode: string;
-        /**
-         * @description YYYY-MM-DD，不带时区
-         * @example 2026-10-01
-         */
-        Date: string;
+        AuditEntry: {
+            action: string;
+            /** Format: uuid */
+            actor_account_id: string | null;
+            /** Format: uuid */
+            id: string;
+            /** Format: date-time */
+            occurred_at: string;
+            request_id: string;
+            /** Format: uuid */
+            resource_id: string | null;
+            resource_type: string;
+            /** @enum {string} */
+            result: "success" | "failure" | "denied";
+            /** Format: int64 */
+            result_count: number | null;
+            source_ip: string;
+            /** Format: uuid */
+            subject_account_id: string | null;
+            summary: string;
+        };
+        AuditPage: {
+            /** Format: date-time */
+            as_of: string;
+            data: components["schemas"]["AuditEntry"][];
+            page: number;
+            page_size: number;
+            /** Format: int64 */
+            total: number;
+        };
+        ComponentStatus: {
+            /** @enum {string} */
+            name: "api" | "database" | "worker" | "object_store" | "maps" | "mail" | "trip_purge";
+            /** @enum {string} */
+            status: "ok" | "unavailable" | "configured" | "disabled";
+            summary: string;
+        };
+        DeletionJob: {
+            /** Format: date-time */
+            created_at: string;
+            error_summary: string;
+            /** Format: date-time */
+            finished_at: string | null;
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            owner_account_id: string;
+            /** Format: int64 */
+            processed_items: number;
+            /** @enum {string} */
+            scope: "trip" | "account";
+            /** @enum {string} */
+            stage: "revoke_access" | "remove_objects" | "remove_rows" | "finalize" | "done";
+            /** @enum {string} */
+            status: "queued" | "running" | "completed" | "failed";
+            /** Format: uuid */
+            target_trip_id: string | null;
+            /** Format: int64 */
+            total_items: number | null;
+        };
+        DeletionJobPage: {
+            data: components["schemas"]["DeletionJob"][];
+            page: number;
+            page_size: number;
+            /** Format: int64 */
+            total: number;
+        };
         FieldError: {
             /** @description 稳定的校验错误代码 */
             code: string;
@@ -284,78 +406,44 @@ export type components = {
             /** @description 面向用户的说明，可直接展示 */
             message: string;
         };
-        /**
-         * Format: date-time
-         * @description RFC 3339 UTC 时间点，例如 2026-09-11T08:30:00Z
-         */
-        Instant: string;
-        /**
-         * @description 每日行程项目的规范资源（接口设计 3.3）；同一结构也是同步日志与快照中的表示。
-         *     currency_code 由旅行派生、只读，与 estimated_amount 成对出现，金额为空时为 null。
-         */
-        ItineraryItem: {
-            actual_end_local: string | null;
-            actual_notes: string;
-            actual_start_local: string | null;
-            address: string;
-            created_at: components["schemas"]["Instant"];
-            /** @description 由旅行派生的币种，只读；estimated_amount 为空时为 null */
-            currency_code: string | null;
+        Job: {
+            attempt: number;
             /** Format: date-time */
-            deleted_at: string | null;
-            /** @description 预计费用，格式同 Money；不进入实际开支统计 */
-            estimated_amount: string | null;
-            /** @description 是否手动排除旅行足迹，不影响原行程、天数和账目 */
-            footprint_excluded?: boolean;
-            /** Format: uuid */
+            attempted_at: string | null;
+            /** Format: date-time */
+            created_at: string;
+            error_summary: string;
+            /** @description 十进制任务编号，使用字符串避免大整数精度丢失 */
             id: string;
-            kind: components["schemas"]["ItineraryKind"];
-            /**
-             * Format: double
-             * @description GCJ-02 纬度，最多 6 位小数；与 longitude 同时为空或同时非空
-             */
-            latitude: number | null;
-            /**
-             * Format: double
-             * @description GCJ-02 经度，最多 6 位小数；与 latitude 同时为空或同时非空
-             */
-            longitude: number | null;
-            notes: string;
-            place_name: string;
-            /**
-             * Format: int32
-             * @description 计划时长；与 planned_end_local 互斥
-             */
-            planned_duration_minutes: number | null;
-            /** @description 计划结束的当地日期时间，允许跨日；与 planned_duration_minutes 互斥 */
-            planned_end_local: string | null;
-            /** @description 计划开始的当地日期时间，按旅行 timezone 解释 */
-            planned_start_local: string | null;
-            /** @description 高德 POI 标识；地图手动选点或历史地点为空字符串 */
-            poi_id?: string;
-            scheduled_on: components["schemas"]["Date"];
-            /**
-             * Format: int32
-             * @description 同日顺序，id 作稳定次序；由服务端维护，创建时追加到当天末尾
-             */
-            sort_order: number;
-            status: components["schemas"]["ItineraryStatus"];
-            title: string;
-            /** Format: uuid */
-            trip_id: string;
-            updated_at: components["schemas"]["Instant"];
-            version: components["schemas"]["Version"];
+            /** @enum {string} */
+            kind: "ping" | "trip_purge" | "asset_verify" | "route_recalculate" | "unknown";
+            max_attempts: number;
+            /** Format: date-time */
+            scheduled_at: string;
+            /** @enum {string} */
+            state: "retryable" | "discarded";
         };
-        /**
-         * @description 项目类型；取值清单见 Metadata.itinerary_kinds
-         * @enum {string}
-         */
-        ItineraryKind: "attraction" | "transport" | "lodging" | "dining" | "other";
-        /**
-         * @description 项目状态；取值清单见 Metadata.itinerary_statuses
-         * @enum {string}
-         */
-        ItineraryStatus: "pending" | "completed" | "skipped";
+        JobCounts: {
+            /** Format: int64 */
+            deletion_failed: number;
+            /** Format: int64 */
+            deletion_pending: number;
+            /** Format: int64 */
+            discarded: number;
+            /** Format: int64 */
+            pending: number;
+            /** Format: int64 */
+            retryable: number;
+            /** Format: int64 */
+            running: number;
+        };
+        JobPage: {
+            data: components["schemas"]["Job"][];
+            page: number;
+            page_size: number;
+            /** Format: int64 */
+            total: number;
+        };
         LoginRequest: {
             /** Format: email */
             email: string;
@@ -378,8 +466,6 @@ export type components = {
             /** Format: date-time */
             as_of: string;
             /** Format: int64 */
-            asset_bytes: number;
-            /** Format: int64 */
             failed_jobs: number;
             /** Format: int64 */
             new_users_today: number;
@@ -394,34 +480,6 @@ export type components = {
             /** Format: int64 */
             users: number;
         };
-        /**
-         * @description 物资分类；取值清单见 Metadata.packing_categories
-         * @enum {string}
-         */
-        PackingCategory: "documents" | "electronics" | "clothing" | "daily" | "food" | "medicine" | "other";
-        /** @description 行李清单物品的规范资源（接口设计 3.4）；同一结构也是同步日志与快照中的表示 */
-        PackingItem: {
-            category: components["schemas"]["PackingCategory"];
-            created_at: components["schemas"]["Instant"];
-            /** Format: date-time */
-            deleted_at: string | null;
-            /** Format: uuid */
-            id: string;
-            name: string;
-            notes: string;
-            /** Format: int32 */
-            quantity: number;
-            status: components["schemas"]["PackingStatus"];
-            /** Format: uuid */
-            trip_id: string;
-            updated_at: components["schemas"]["Instant"];
-            version: components["schemas"]["Version"];
-        };
-        /**
-         * @description 物品状态；取值清单见 Metadata.packing_statuses
-         * @enum {string}
-         */
-        PackingStatus: "pending" | "ready" | "packed";
         PasswordRequest: {
             password: string;
         };
@@ -449,106 +507,20 @@ export type components = {
              */
             type: string;
         };
+        RuntimeStatus: {
+            /** Format: date-time */
+            as_of: string;
+            components: components["schemas"]["ComponentStatus"][];
+            jobs: components["schemas"]["JobCounts"];
+            /** Format: date-time */
+            started_at: string;
+            /** @enum {string} */
+            status: "ok" | "degraded";
+        };
         SessionEnvelope: {
             data: components["schemas"]["AdminIdentity"];
         };
-        /** @description 分摊百分比，0–100 的十进制字符串，最多 2 位小数 */
-        SharePercent: string;
-        /** @description 待办的规范资源（接口设计 3.4）；同一结构也是同步日志与快照中的表示 */
-        Todo: {
-            /** @description 是否已完成；与 completed_at 是否为空一致 */
-            completed: boolean;
-            /**
-             * Format: date-time
-             * @description 完成时刻，由服务端生成；客户端只能写 completed
-             */
-            completed_at: string | null;
-            created_at: components["schemas"]["Instant"];
-            /** Format: date-time */
-            deleted_at: string | null;
-            /** @description 截止日期；null 表示不限期 */
-            due_on: string | null;
-            /** Format: uuid */
-            id: string;
-            notes: string;
-            title: string;
-            /** Format: uuid */
-            trip_id: string;
-            updated_at: components["schemas"]["Instant"];
-            version: components["schemas"]["Version"];
-        };
-        /** @description 旅行的规范资源（接口设计 3.2）；同一结构也是同步日志与快照中的表示 */
-        Trip: {
-            /**
-             * Format: date-time
-             * @description 归档时间；归档与旅行阶段独立
-             */
-            archived_at: string | null;
-            /** @description 总预算；null 表示未设置，"0.00" 表示零预算；格式同 Money */
-            budget_amount: string | null;
-            created_at: components["schemas"]["Instant"];
-            currency_code: components["schemas"]["CurrencyCode"];
-            /**
-             * Format: date-time
-             * @description 存在有效账目时非空，此时币种不可改
-             */
-            currency_locked_at: string | null;
-            /**
-             * Format: date-time
-             * @description 进入回收站的时间
-             */
-            deleted_at: string | null;
-            destination: string;
-            end_date: components["schemas"]["Date"];
-            /** Format: uuid */
-            id: string;
-            name: string;
-            notes: string;
-            /**
-             * Format: date-time
-             * @description 回收站自动清理截止时间，在此之前可恢复
-             */
-            purge_after_at: string | null;
-            /**
-             * Format: date-time
-             * @description 已请求永久清理的时间，非空后不能再恢复
-             */
-            purge_requested_at: string | null;
-            /** @description 短途区间上限，超过后自动采用驾车 */
-            route_short_distance_meters: number;
-            /**
-             * @description 直线距离位于短途区间时自动采用的方式
-             * @enum {string}
-             */
-            route_short_mode: "walking" | "cycling";
-            start_date: components["schemas"]["Date"];
-            /** @description 本次旅行的唯一 IANA 时区，例如 Asia/Tokyo */
-            timezone: string;
-            updated_at: components["schemas"]["Instant"];
-            version: components["schemas"]["Version"];
-        };
-        /** @description 旅行成员的规范资源（接口设计 3.5 TripMember）；同一结构也是同步日志与快照中的表示。is_self 成员由创建旅行时生成，不可删除 */
-        TripMember: {
-            created_at: components["schemas"]["Instant"];
-            /** Format: date-time */
-            deleted_at: string | null;
-            /** Format: uuid */
-            id: string;
-            is_self: boolean;
-            name: string;
-            share_percent: components["schemas"]["SharePercent"];
-            /** Format: int32 */
-            sort_order: number;
-            /** Format: uuid */
-            trip_id: string;
-            updated_at: components["schemas"]["Instant"];
-            version: components["schemas"]["Version"];
-        };
         User: {
-            /** Format: int64 */
-            asset_bytes: number;
-            /** Format: int64 */
-            asset_count: number;
             /** Format: date-time */
             created_at: string;
             email: string;
@@ -584,11 +556,6 @@ export type components = {
             /** Format: int64 */
             total: number;
         };
-        /**
-         * @description 资源版本，正整数十进制字符串
-         * @example 7
-         */
-        Version: string;
         /** @description 412 VERSION_CONFLICT 时附带的冲突上下文 */
         VersionConflict: {
             /** @description 本次提交中与基线之后变更相交的字段；因日志过期无法判断时为 null */
@@ -630,6 +597,90 @@ export type components = {
 };
 export type $defs = Record<string, never>;
 export interface operations {
+    adminAudits: {
+        parameters: {
+            query?: {
+                action?: string;
+                actor_account_id?: string;
+                /** @description 首次查询返回的时间，后续翻页复用，避免新审计记录导致重复 */
+                as_of?: string;
+                /** @description 含起始日，按北京时间 */
+                date_from?: string;
+                /** @description 含结束日，按北京时间 */
+                date_to?: string;
+                page?: number;
+                page_size?: number;
+                result?: "success" | "failure" | "denied";
+                subject_account_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 查询成功，访问已审计 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuditPage"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    adminDeletionJobs: {
+        parameters: {
+            query?: {
+                page?: number;
+                page_size?: number;
+                state?: "queued" | "running" | "completed" | "failed";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 查询成功，访问已审计 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeletionJobPage"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    adminJobs: {
+        parameters: {
+            query?: {
+                page?: number;
+                page_size?: number;
+                state?: "retryable" | "discarded";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 查询成功，访问已审计 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobPage"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
     adminLogin: {
         parameters: {
             query?: never;
@@ -700,6 +751,29 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    adminRuntime: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 查询成功，访问已审计 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["RuntimeStatus"];
+                    };
+                };
             };
             default: components["responses"]["Problem"];
         };
@@ -837,7 +911,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description 旅行详情，包含回收站状态 */
+            /** @description 旅行概况，包含回收站状态，不返回私人内容明细 */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -846,33 +920,6 @@ export interface operations {
                     "application/json": {
                         data: components["schemas"]["AdminTripDetail"];
                     };
-                };
-            };
-            default: components["responses"]["Problem"];
-        };
-    };
-    adminTripContent: {
-        parameters: {
-            query: {
-                kind: "itinerary" | "packing" | "todos" | "members";
-                page?: components["parameters"]["Page"];
-                page_size?: components["parameters"]["PageSize"];
-            };
-            header?: never;
-            path: {
-                trip_id: components["parameters"]["TripID"];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description 内容列表，仅 kind 对应的数组有数据，其他数组为空 */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AdminContentPage"];
                 };
             };
             default: components["responses"]["Problem"];

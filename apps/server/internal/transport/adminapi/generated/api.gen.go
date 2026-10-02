@@ -9,41 +9,11 @@ import (
 	"net/http"
 	"time"
 
-	"tripfolio/server/internal/modules/travel/itinerary"
-	"tripfolio/server/internal/modules/travel/member"
-	"tripfolio/server/internal/modules/travel/packing"
-	"tripfolio/server/internal/modules/travel/todo"
-	"tripfolio/server/internal/modules/travel/trip"
-
 	"github.com/go-chi/chi/v5"
 	"github.com/oapi-codegen/nullable"
 	"github.com/oapi-codegen/runtime"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
-
-// Defines values for AdminContentPageKind.
-const (
-	AdminContentPageKindItinerary AdminContentPageKind = "itinerary"
-	AdminContentPageKindMembers   AdminContentPageKind = "members"
-	AdminContentPageKindPacking   AdminContentPageKind = "packing"
-	AdminContentPageKindTodos     AdminContentPageKind = "todos"
-)
-
-// Valid indicates whether the value is a known member of the AdminContentPageKind enum.
-func (e AdminContentPageKind) Valid() bool {
-	switch e {
-	case AdminContentPageKindItinerary:
-		return true
-	case AdminContentPageKindMembers:
-		return true
-	case AdminContentPageKindPacking:
-		return true
-	case AdminContentPageKindTodos:
-		return true
-	default:
-		return false
-	}
-}
 
 // Defines values for AdminIdentityRole.
 const (
@@ -102,102 +72,273 @@ func (e AdminTripSummaryPhase) Valid() bool {
 	}
 }
 
-// Defines values for ItineraryKind.
+// Defines values for AuditEntryResult.
 const (
-	ItineraryKindAttraction ItineraryKind = "attraction"
-	ItineraryKindDining     ItineraryKind = "dining"
-	ItineraryKindLodging    ItineraryKind = "lodging"
-	ItineraryKindOther      ItineraryKind = "other"
-	ItineraryKindTransport  ItineraryKind = "transport"
+	AuditEntryResultDenied  AuditEntryResult = "denied"
+	AuditEntryResultFailure AuditEntryResult = "failure"
+	AuditEntryResultSuccess AuditEntryResult = "success"
 )
 
-// Valid indicates whether the value is a known member of the ItineraryKind enum.
-func (e ItineraryKind) Valid() bool {
+// Valid indicates whether the value is a known member of the AuditEntryResult enum.
+func (e AuditEntryResult) Valid() bool {
 	switch e {
-	case ItineraryKindAttraction:
+	case AuditEntryResultDenied:
 		return true
-	case ItineraryKindDining:
+	case AuditEntryResultFailure:
 		return true
-	case ItineraryKindLodging:
-		return true
-	case ItineraryKindOther:
-		return true
-	case ItineraryKindTransport:
+	case AuditEntryResultSuccess:
 		return true
 	default:
 		return false
 	}
 }
 
-// Defines values for ItineraryStatus.
+// Defines values for ComponentStatusName.
 const (
-	ItineraryStatusCompleted ItineraryStatus = "completed"
-	ItineraryStatusPending   ItineraryStatus = "pending"
-	ItineraryStatusSkipped   ItineraryStatus = "skipped"
+	ComponentStatusNameApi         ComponentStatusName = "api"
+	ComponentStatusNameDatabase    ComponentStatusName = "database"
+	ComponentStatusNameMail        ComponentStatusName = "mail"
+	ComponentStatusNameMaps        ComponentStatusName = "maps"
+	ComponentStatusNameObjectStore ComponentStatusName = "object_store"
+	ComponentStatusNameTripPurge   ComponentStatusName = "trip_purge"
+	ComponentStatusNameWorker      ComponentStatusName = "worker"
 )
 
-// Valid indicates whether the value is a known member of the ItineraryStatus enum.
-func (e ItineraryStatus) Valid() bool {
+// Valid indicates whether the value is a known member of the ComponentStatusName enum.
+func (e ComponentStatusName) Valid() bool {
 	switch e {
-	case ItineraryStatusCompleted:
+	case ComponentStatusNameApi:
 		return true
-	case ItineraryStatusPending:
+	case ComponentStatusNameDatabase:
 		return true
-	case ItineraryStatusSkipped:
+	case ComponentStatusNameMail:
+		return true
+	case ComponentStatusNameMaps:
+		return true
+	case ComponentStatusNameObjectStore:
+		return true
+	case ComponentStatusNameTripPurge:
+		return true
+	case ComponentStatusNameWorker:
 		return true
 	default:
 		return false
 	}
 }
 
-// Defines values for PackingCategory.
+// Defines values for ComponentStatusStatus.
 const (
-	PackingCategoryClothing    PackingCategory = "clothing"
-	PackingCategoryDaily       PackingCategory = "daily"
-	PackingCategoryDocuments   PackingCategory = "documents"
-	PackingCategoryElectronics PackingCategory = "electronics"
-	PackingCategoryFood        PackingCategory = "food"
-	PackingCategoryMedicine    PackingCategory = "medicine"
-	PackingCategoryOther       PackingCategory = "other"
+	ComponentStatusStatusConfigured  ComponentStatusStatus = "configured"
+	ComponentStatusStatusDisabled    ComponentStatusStatus = "disabled"
+	ComponentStatusStatusOk          ComponentStatusStatus = "ok"
+	ComponentStatusStatusUnavailable ComponentStatusStatus = "unavailable"
 )
 
-// Valid indicates whether the value is a known member of the PackingCategory enum.
-func (e PackingCategory) Valid() bool {
+// Valid indicates whether the value is a known member of the ComponentStatusStatus enum.
+func (e ComponentStatusStatus) Valid() bool {
 	switch e {
-	case PackingCategoryClothing:
+	case ComponentStatusStatusConfigured:
 		return true
-	case PackingCategoryDaily:
+	case ComponentStatusStatusDisabled:
 		return true
-	case PackingCategoryDocuments:
+	case ComponentStatusStatusOk:
 		return true
-	case PackingCategoryElectronics:
-		return true
-	case PackingCategoryFood:
-		return true
-	case PackingCategoryMedicine:
-		return true
-	case PackingCategoryOther:
+	case ComponentStatusStatusUnavailable:
 		return true
 	default:
 		return false
 	}
 }
 
-// Defines values for PackingStatus.
+// Defines values for DeletionJobScope.
 const (
-	PackingStatusPacked  PackingStatus = "packed"
-	PackingStatusPending PackingStatus = "pending"
-	PackingStatusReady   PackingStatus = "ready"
+	Account DeletionJobScope = "account"
+	Trip    DeletionJobScope = "trip"
 )
 
-// Valid indicates whether the value is a known member of the PackingStatus enum.
-func (e PackingStatus) Valid() bool {
+// Valid indicates whether the value is a known member of the DeletionJobScope enum.
+func (e DeletionJobScope) Valid() bool {
 	switch e {
-	case PackingStatusPacked:
+	case Account:
 		return true
-	case PackingStatusPending:
+	case Trip:
 		return true
-	case PackingStatusReady:
+	default:
+		return false
+	}
+}
+
+// Defines values for DeletionJobStage.
+const (
+	Done          DeletionJobStage = "done"
+	Finalize      DeletionJobStage = "finalize"
+	RemoveObjects DeletionJobStage = "remove_objects"
+	RemoveRows    DeletionJobStage = "remove_rows"
+	RevokeAccess  DeletionJobStage = "revoke_access"
+)
+
+// Valid indicates whether the value is a known member of the DeletionJobStage enum.
+func (e DeletionJobStage) Valid() bool {
+	switch e {
+	case Done:
+		return true
+	case Finalize:
+		return true
+	case RemoveObjects:
+		return true
+	case RemoveRows:
+		return true
+	case RevokeAccess:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DeletionJobStatus.
+const (
+	DeletionJobStatusCompleted DeletionJobStatus = "completed"
+	DeletionJobStatusFailed    DeletionJobStatus = "failed"
+	DeletionJobStatusQueued    DeletionJobStatus = "queued"
+	DeletionJobStatusRunning   DeletionJobStatus = "running"
+)
+
+// Valid indicates whether the value is a known member of the DeletionJobStatus enum.
+func (e DeletionJobStatus) Valid() bool {
+	switch e {
+	case DeletionJobStatusCompleted:
+		return true
+	case DeletionJobStatusFailed:
+		return true
+	case DeletionJobStatusQueued:
+		return true
+	case DeletionJobStatusRunning:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for JobKind.
+const (
+	JobKindAssetVerify      JobKind = "asset_verify"
+	JobKindPing             JobKind = "ping"
+	JobKindRouteRecalculate JobKind = "route_recalculate"
+	JobKindTripPurge        JobKind = "trip_purge"
+	JobKindUnknown          JobKind = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the JobKind enum.
+func (e JobKind) Valid() bool {
+	switch e {
+	case JobKindAssetVerify:
+		return true
+	case JobKindPing:
+		return true
+	case JobKindRouteRecalculate:
+		return true
+	case JobKindTripPurge:
+		return true
+	case JobKindUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for JobState.
+const (
+	JobStateDiscarded JobState = "discarded"
+	JobStateRetryable JobState = "retryable"
+)
+
+// Valid indicates whether the value is a known member of the JobState enum.
+func (e JobState) Valid() bool {
+	switch e {
+	case JobStateDiscarded:
+		return true
+	case JobStateRetryable:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RuntimeStatusStatus.
+const (
+	RuntimeStatusStatusDegraded RuntimeStatusStatus = "degraded"
+	RuntimeStatusStatusOk       RuntimeStatusStatus = "ok"
+)
+
+// Valid indicates whether the value is a known member of the RuntimeStatusStatus enum.
+func (e RuntimeStatusStatus) Valid() bool {
+	switch e {
+	case RuntimeStatusStatusDegraded:
+		return true
+	case RuntimeStatusStatusOk:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AdminAuditsParamsResult.
+const (
+	AdminAuditsParamsResultDenied  AdminAuditsParamsResult = "denied"
+	AdminAuditsParamsResultFailure AdminAuditsParamsResult = "failure"
+	AdminAuditsParamsResultSuccess AdminAuditsParamsResult = "success"
+)
+
+// Valid indicates whether the value is a known member of the AdminAuditsParamsResult enum.
+func (e AdminAuditsParamsResult) Valid() bool {
+	switch e {
+	case AdminAuditsParamsResultDenied:
+		return true
+	case AdminAuditsParamsResultFailure:
+		return true
+	case AdminAuditsParamsResultSuccess:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AdminDeletionJobsParamsState.
+const (
+	AdminDeletionJobsParamsStateCompleted AdminDeletionJobsParamsState = "completed"
+	AdminDeletionJobsParamsStateFailed    AdminDeletionJobsParamsState = "failed"
+	AdminDeletionJobsParamsStateQueued    AdminDeletionJobsParamsState = "queued"
+	AdminDeletionJobsParamsStateRunning   AdminDeletionJobsParamsState = "running"
+)
+
+// Valid indicates whether the value is a known member of the AdminDeletionJobsParamsState enum.
+func (e AdminDeletionJobsParamsState) Valid() bool {
+	switch e {
+	case AdminDeletionJobsParamsStateCompleted:
+		return true
+	case AdminDeletionJobsParamsStateFailed:
+		return true
+	case AdminDeletionJobsParamsStateQueued:
+		return true
+	case AdminDeletionJobsParamsStateRunning:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AdminJobsParamsState.
+const (
+	AdminJobsParamsStateDiscarded AdminJobsParamsState = "discarded"
+	AdminJobsParamsStateRetryable AdminJobsParamsState = "retryable"
+)
+
+// Valid indicates whether the value is a known member of the AdminJobsParamsState enum.
+func (e AdminJobsParamsState) Valid() bool {
+	switch e {
+	case AdminJobsParamsStateDiscarded:
+		return true
+	case AdminJobsParamsStateRetryable:
 		return true
 	default:
 		return false
@@ -267,30 +408,6 @@ func (e AdminTripsParamsTrash) Valid() bool {
 	}
 }
 
-// Defines values for AdminTripContentParamsKind.
-const (
-	AdminTripContentParamsKindItinerary AdminTripContentParamsKind = "itinerary"
-	AdminTripContentParamsKindMembers   AdminTripContentParamsKind = "members"
-	AdminTripContentParamsKindPacking   AdminTripContentParamsKind = "packing"
-	AdminTripContentParamsKindTodos     AdminTripContentParamsKind = "todos"
-)
-
-// Valid indicates whether the value is a known member of the AdminTripContentParamsKind enum.
-func (e AdminTripContentParamsKind) Valid() bool {
-	switch e {
-	case AdminTripContentParamsKindItinerary:
-		return true
-	case AdminTripContentParamsKindMembers:
-		return true
-	case AdminTripContentParamsKindPacking:
-		return true
-	case AdminTripContentParamsKindTodos:
-		return true
-	default:
-		return false
-	}
-}
-
 // Defines values for AdminUsersParamsStatus.
 const (
 	Active   AdminUsersParamsStatus = "active"
@@ -308,23 +425,6 @@ func (e AdminUsersParamsStatus) Valid() bool {
 		return false
 	}
 }
-
-// AdminContentPage defines model for AdminContentPage.
-type AdminContentPage struct {
-	Itinerary []ItineraryItem      `json:"itinerary"`
-	Kind      AdminContentPageKind `json:"kind"`
-	Members   []TripMember         `json:"members"`
-	OwnerId   openapi_types.UUID   `json:"owner_id"`
-	Packing   []PackingItem        `json:"packing"`
-	Page      int                  `json:"page"`
-	PageSize  int                  `json:"page_size"`
-	Todos     []Todo               `json:"todos"`
-	Total     int64                `json:"total"`
-	TripId    openapi_types.UUID   `json:"trip_id"`
-}
-
-// AdminContentPageKind defines model for AdminContentPage.Kind.
-type AdminContentPageKind string
 
 // AdminIdentity defines model for AdminIdentity.
 type AdminIdentity struct {
@@ -347,17 +447,42 @@ type AdminOwner struct {
 	Nickname string             `json:"nickname"`
 }
 
+// AdminTripCounts 仅统计未单独删除的内容数量，不返回内容明细；旅行在回收站时仍可查看数量。
+type AdminTripCounts struct {
+	Itinerary int64 `json:"itinerary"`
+	Members   int64 `json:"members"`
+	Packing   int64 `json:"packing"`
+	Todos     int64 `json:"todos"`
+}
+
 // AdminTripDetail defines model for AdminTripDetail.
 type AdminTripDetail struct {
-	Owner AdminOwner           `json:"owner"`
-	Phase AdminTripDetailPhase `json:"phase"`
-
-	// Trip 旅行的规范资源（接口设计 3.2）；同一结构也是同步日志与快照中的表示
-	Trip Trip `json:"trip"`
+	// Counts 仅统计未单独删除的内容数量，不返回内容明细；旅行在回收站时仍可查看数量。
+	Counts AdminTripCounts      `json:"counts"`
+	Owner  AdminOwner           `json:"owner"`
+	Phase  AdminTripDetailPhase `json:"phase"`
+	Trip   AdminTripOverview    `json:"trip"`
 }
 
 // AdminTripDetailPhase defines model for AdminTripDetail.Phase.
 type AdminTripDetailPhase string
+
+// AdminTripOverview defines model for AdminTripOverview.
+type AdminTripOverview struct {
+	ArchivedAt nullable.Nullable[time.Time] `json:"archived_at"`
+
+	// BudgetAmount 按旅行币种小数位返回的预算
+	BudgetAmount     nullable.Nullable[string]    `json:"budget_amount"`
+	CurrencyCode     string                       `json:"currency_code"`
+	DeletedAt        nullable.Nullable[time.Time] `json:"deleted_at"`
+	Destination      string                       `json:"destination"`
+	EndDate          openapi_types.Date           `json:"end_date"`
+	Id               openapi_types.UUID           `json:"id"`
+	Name             string                       `json:"name"`
+	PurgeRequestedAt nullable.Nullable[time.Time] `json:"purge_requested_at"`
+	StartDate        openapi_types.Date           `json:"start_date"`
+	UpdatedAt        time.Time                    `json:"updated_at"`
+}
 
 // AdminTripPage defines model for AdminTripPage.
 type AdminTripPage struct {
@@ -384,15 +509,78 @@ type AdminTripSummary struct {
 // AdminTripSummaryPhase defines model for AdminTripSummary.Phase.
 type AdminTripSummaryPhase string
 
-// CurrencyCode 支持清单内的 ISO 4217 三字母大写代码；清单见 Metadata.currencies
-//
-// Example: CNY
-type CurrencyCode = string
+// AuditEntry defines model for AuditEntry.
+type AuditEntry struct {
+	Action           string                                `json:"action"`
+	ActorAccountId   nullable.Nullable[openapi_types.UUID] `json:"actor_account_id"`
+	Id               openapi_types.UUID                    `json:"id"`
+	OccurredAt       time.Time                             `json:"occurred_at"`
+	RequestId        string                                `json:"request_id"`
+	ResourceId       nullable.Nullable[openapi_types.UUID] `json:"resource_id"`
+	ResourceType     string                                `json:"resource_type"`
+	Result           AuditEntryResult                      `json:"result"`
+	ResultCount      nullable.Nullable[int64]              `json:"result_count"`
+	SourceIp         string                                `json:"source_ip"`
+	SubjectAccountId nullable.Nullable[openapi_types.UUID] `json:"subject_account_id"`
+	Summary          string                                `json:"summary"`
+}
 
-// Date YYYY-MM-DD，不带时区
-//
-// Example: 2026-10-01
-type Date = string
+// AuditEntryResult defines model for AuditEntry.Result.
+type AuditEntryResult string
+
+// AuditPage defines model for AuditPage.
+type AuditPage struct {
+	AsOf     time.Time    `json:"as_of"`
+	Data     []AuditEntry `json:"data"`
+	Page     int          `json:"page"`
+	PageSize int          `json:"page_size"`
+	Total    int64        `json:"total"`
+}
+
+// ComponentStatus defines model for ComponentStatus.
+type ComponentStatus struct {
+	Name    ComponentStatusName   `json:"name"`
+	Status  ComponentStatusStatus `json:"status"`
+	Summary string                `json:"summary"`
+}
+
+// ComponentStatusName defines model for ComponentStatus.Name.
+type ComponentStatusName string
+
+// ComponentStatusStatus defines model for ComponentStatus.Status.
+type ComponentStatusStatus string
+
+// DeletionJob defines model for DeletionJob.
+type DeletionJob struct {
+	CreatedAt      time.Time                             `json:"created_at"`
+	ErrorSummary   string                                `json:"error_summary"`
+	FinishedAt     nullable.Nullable[time.Time]          `json:"finished_at"`
+	Id             openapi_types.UUID                    `json:"id"`
+	OwnerAccountId openapi_types.UUID                    `json:"owner_account_id"`
+	ProcessedItems int64                                 `json:"processed_items"`
+	Scope          DeletionJobScope                      `json:"scope"`
+	Stage          DeletionJobStage                      `json:"stage"`
+	Status         DeletionJobStatus                     `json:"status"`
+	TargetTripId   nullable.Nullable[openapi_types.UUID] `json:"target_trip_id"`
+	TotalItems     nullable.Nullable[int64]              `json:"total_items"`
+}
+
+// DeletionJobScope defines model for DeletionJob.Scope.
+type DeletionJobScope string
+
+// DeletionJobStage defines model for DeletionJob.Stage.
+type DeletionJobStage string
+
+// DeletionJobStatus defines model for DeletionJob.Status.
+type DeletionJobStatus string
+
+// DeletionJobPage defines model for DeletionJobPage.
+type DeletionJobPage struct {
+	Data     []DeletionJob `json:"data"`
+	Page     int           `json:"page"`
+	PageSize int           `json:"page_size"`
+	Total    int64         `json:"total"`
+}
 
 // FieldError defines model for FieldError.
 type FieldError struct {
@@ -406,18 +594,44 @@ type FieldError struct {
 	Message string `json:"message"`
 }
 
-// Instant RFC 3339 UTC 时间点，例如 2026-09-11T08:30:00Z
-type Instant = time.Time
+// Job defines model for Job.
+type Job struct {
+	Attempt      int                          `json:"attempt"`
+	AttemptedAt  nullable.Nullable[time.Time] `json:"attempted_at"`
+	CreatedAt    time.Time                    `json:"created_at"`
+	ErrorSummary string                       `json:"error_summary"`
 
-// ItineraryItem 每日行程项目的规范资源（接口设计 3.3）；同一结构也是同步日志与快照中的表示。
-// currency_code 由旅行派生、只读，与 estimated_amount 成对出现，金额为空时为 null。
-type ItineraryItem = itinerary.Resource
+	// Id 十进制任务编号，使用字符串避免大整数精度丢失
+	Id          string    `json:"id"`
+	Kind        JobKind   `json:"kind"`
+	MaxAttempts int       `json:"max_attempts"`
+	ScheduledAt time.Time `json:"scheduled_at"`
+	State       JobState  `json:"state"`
+}
 
-// ItineraryKind 项目类型；取值清单见 Metadata.itinerary_kinds
-type ItineraryKind string
+// JobKind defines model for Job.Kind.
+type JobKind string
 
-// ItineraryStatus 项目状态；取值清单见 Metadata.itinerary_statuses
-type ItineraryStatus string
+// JobState defines model for Job.State.
+type JobState string
+
+// JobCounts defines model for JobCounts.
+type JobCounts struct {
+	DeletionFailed  int64 `json:"deletion_failed"`
+	DeletionPending int64 `json:"deletion_pending"`
+	Discarded       int64 `json:"discarded"`
+	Pending         int64 `json:"pending"`
+	Retryable       int64 `json:"retryable"`
+	Running         int64 `json:"running"`
+}
+
+// JobPage defines model for JobPage.
+type JobPage struct {
+	Data     []Job `json:"data"`
+	Page     int   `json:"page"`
+	PageSize int   `json:"page_size"`
+	Total    int64 `json:"total"`
+}
 
 // LoginRequest defines model for LoginRequest.
 type LoginRequest struct {
@@ -439,7 +653,6 @@ type ManagedSession struct {
 // Overview defines model for Overview.
 type Overview struct {
 	AsOf          time.Time `json:"as_of"`
-	AssetBytes    int64     `json:"asset_bytes"`
 	FailedJobs    int64     `json:"failed_jobs"`
 	NewUsersToday int64     `json:"new_users_today"`
 	Signups       []struct {
@@ -449,15 +662,6 @@ type Overview struct {
 	Trips int64 `json:"trips"`
 	Users int64 `json:"users"`
 }
-
-// PackingCategory 物资分类；取值清单见 Metadata.packing_categories
-type PackingCategory string
-
-// PackingItem 行李清单物品的规范资源（接口设计 3.4）；同一结构也是同步日志与快照中的表示
-type PackingItem = packing.Resource
-
-// PackingStatus 物品状态；取值清单见 Metadata.packing_statuses
-type PackingStatus string
 
 // PasswordRequest defines model for PasswordRequest.
 type PasswordRequest struct {
@@ -493,27 +697,25 @@ type Problem struct {
 	Type string `json:"type"`
 }
 
+// RuntimeStatus defines model for RuntimeStatus.
+type RuntimeStatus struct {
+	AsOf       time.Time           `json:"as_of"`
+	Components []ComponentStatus   `json:"components"`
+	Jobs       JobCounts           `json:"jobs"`
+	StartedAt  time.Time           `json:"started_at"`
+	Status     RuntimeStatusStatus `json:"status"`
+}
+
+// RuntimeStatusStatus defines model for RuntimeStatus.Status.
+type RuntimeStatusStatus string
+
 // SessionEnvelope defines model for SessionEnvelope.
 type SessionEnvelope struct {
 	Data AdminIdentity `json:"data"`
 }
 
-// SharePercent 分摊百分比，0–100 的十进制字符串，最多 2 位小数
-type SharePercent = string
-
-// Todo 待办的规范资源（接口设计 3.4）；同一结构也是同步日志与快照中的表示
-type Todo = todo.Resource
-
-// Trip 旅行的规范资源（接口设计 3.2）；同一结构也是同步日志与快照中的表示
-type Trip = trip.Resource
-
-// TripMember 旅行成员的规范资源（接口设计 3.5 TripMember）；同一结构也是同步日志与快照中的表示。is_self 成员由创建旅行时生成，不可删除
-type TripMember = member.Resource
-
 // User defines model for User.
 type User struct {
-	AssetBytes   int64                        `json:"asset_bytes"`
-	AssetCount   int64                        `json:"asset_count"`
 	CreatedAt    time.Time                    `json:"created_at"`
 	Email        string                       `json:"email"`
 	Id           openapi_types.UUID           `json:"id"`
@@ -545,11 +747,6 @@ type UserPage struct {
 	Total    int64  `json:"total"`
 }
 
-// Version 资源版本，正整数十进制字符串
-//
-// Example: 7
-type Version = string
-
 // VersionConflict 412 VERSION_CONFLICT 时附带的冲突上下文
 type VersionConflict struct {
 	// ConflictingFields 本次提交中与基线之后变更相交的字段；因日志过期无法判断时为 null
@@ -578,6 +775,47 @@ type PageSize = int
 
 // TripID defines model for TripID.
 type TripID = openapi_types.UUID
+
+// AdminAuditsParams defines parameters for AdminAudits.
+type AdminAuditsParams struct {
+	// AsOf 首次查询返回的时间，后续翻页复用，避免新审计记录导致重复
+	AsOf             *time.Time               `form:"as_of,omitempty" json:"as_of,omitempty"`
+	ActorAccountId   *openapi_types.UUID      `form:"actor_account_id,omitempty" json:"actor_account_id,omitempty"`
+	SubjectAccountId *openapi_types.UUID      `form:"subject_account_id,omitempty" json:"subject_account_id,omitempty"`
+	Action           *string                  `form:"action,omitempty" json:"action,omitempty"`
+	Result           *AdminAuditsParamsResult `form:"result,omitempty" json:"result,omitempty"`
+
+	// DateFrom 含起始日，按北京时间
+	DateFrom *openapi_types.Date `form:"date_from,omitempty" json:"date_from,omitempty"`
+
+	// DateTo 含结束日，按北京时间
+	DateTo   *openapi_types.Date `form:"date_to,omitempty" json:"date_to,omitempty"`
+	Page     *int                `form:"page,omitempty" json:"page,omitempty"`
+	PageSize *int                `form:"page_size,omitempty" json:"page_size,omitempty"`
+}
+
+// AdminAuditsParamsResult defines parameters for AdminAudits.
+type AdminAuditsParamsResult string
+
+// AdminDeletionJobsParams defines parameters for AdminDeletionJobs.
+type AdminDeletionJobsParams struct {
+	State    *AdminDeletionJobsParamsState `form:"state,omitempty" json:"state,omitempty"`
+	Page     *int                          `form:"page,omitempty" json:"page,omitempty"`
+	PageSize *int                          `form:"page_size,omitempty" json:"page_size,omitempty"`
+}
+
+// AdminDeletionJobsParamsState defines parameters for AdminDeletionJobs.
+type AdminDeletionJobsParamsState string
+
+// AdminJobsParams defines parameters for AdminJobs.
+type AdminJobsParams struct {
+	State    *AdminJobsParamsState `form:"state,omitempty" json:"state,omitempty"`
+	Page     *int                  `form:"page,omitempty" json:"page,omitempty"`
+	PageSize *int                  `form:"page_size,omitempty" json:"page_size,omitempty"`
+}
+
+// AdminJobsParamsState defines parameters for AdminJobs.
+type AdminJobsParamsState string
 
 // AdminReauthenticateParams defines parameters for AdminReauthenticate.
 type AdminReauthenticateParams struct {
@@ -621,16 +859,6 @@ type AdminTripsParamsArchived string
 // AdminTripsParamsTrash defines parameters for AdminTrips.
 type AdminTripsParamsTrash string
 
-// AdminTripContentParams defines parameters for AdminTripContent.
-type AdminTripContentParams struct {
-	Kind     AdminTripContentParamsKind `form:"kind" json:"kind"`
-	Page     *Page                      `form:"page,omitempty" json:"page,omitempty"`
-	PageSize *PageSize                  `form:"page_size,omitempty" json:"page_size,omitempty"`
-}
-
-// AdminTripContentParamsKind defines parameters for AdminTripContent.
-type AdminTripContentParamsKind string
-
 // AdminUsersParams defines parameters for AdminUsers.
 type AdminUsersParams struct {
 	Q      *string                 `form:"q,omitempty" json:"q,omitempty"`
@@ -656,6 +884,15 @@ type AdminReauthenticateJSONRequestBody = PasswordRequest
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// AdminAudits 按操作者、所属账号、操作、结果和北京时间日期查询审计
+	// (GET /audits)
+	AdminAudits(w http.ResponseWriter, r *http.Request, params AdminAuditsParams)
+	// AdminDeletionJobs 分页查询清理任务进度，不提供触发或重试操作
+	// (GET /deletion-jobs)
+	AdminDeletionJobs(w http.ResponseWriter, r *http.Request, params AdminDeletionJobsParams)
+	// AdminJobs 分页查询失败任务，仅返回固定分类错误摘要
+	// (GET /jobs)
+	AdminJobs(w http.ResponseWriter, r *http.Request, params AdminJobsParams)
 	// AdminLogin 使用现有超级管理员账号密码登录
 	// (POST /login)
 	AdminLogin(w http.ResponseWriter, r *http.Request)
@@ -665,6 +902,9 @@ type ServerInterface interface {
 	// AdminReauthenticate 为敏感操作再次验证密码
 	// (POST /reauthenticate)
 	AdminReauthenticate(w http.ResponseWriter, r *http.Request, params AdminReauthenticateParams)
+	// AdminRuntime 服务与依赖状态、失败和清理任务数量
+	// (GET /runtime)
+	AdminRuntime(w http.ResponseWriter, r *http.Request)
 	// AdminLogout 撤销当前后台会话并退出
 	// (DELETE /session)
 	AdminLogout(w http.ResponseWriter, r *http.Request, params AdminLogoutParams)
@@ -680,12 +920,9 @@ type ServerInterface interface {
 	// AdminTrips 分页检索全平台旅行
 	// (GET /trips)
 	AdminTrips(w http.ResponseWriter, r *http.Request, params AdminTripsParams)
-	// AdminTrip 查看旅行基础信息及所属账号
+	// AdminTrip 查看旅行概况及内容数量
 	// (GET /trips/{trip_id})
 	AdminTrip(w http.ResponseWriter, r *http.Request, tripId TripID)
-	// AdminTripContent 分页查看旅行行程、物资、待办或成员
-	// (GET /trips/{trip_id}/content)
-	AdminTripContent(w http.ResponseWriter, r *http.Request, tripId TripID, params AdminTripContentParams)
 	// AdminUsers 分页检索用户
 	// (GET /users)
 	AdminUsers(w http.ResponseWriter, r *http.Request, params AdminUsersParams)
@@ -697,6 +934,24 @@ type ServerInterface interface {
 // Unimplemented server implementation that returns http.StatusNotImplemented for each endpoint.
 
 type Unimplemented struct{}
+
+// AdminAudits 按操作者、所属账号、操作、结果和北京时间日期查询审计
+// (GET /audits)
+func (_ Unimplemented) AdminAudits(w http.ResponseWriter, r *http.Request, params AdminAuditsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// AdminDeletionJobs 分页查询清理任务进度，不提供触发或重试操作
+// (GET /deletion-jobs)
+func (_ Unimplemented) AdminDeletionJobs(w http.ResponseWriter, r *http.Request, params AdminDeletionJobsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// AdminJobs 分页查询失败任务，仅返回固定分类错误摘要
+// (GET /jobs)
+func (_ Unimplemented) AdminJobs(w http.ResponseWriter, r *http.Request, params AdminJobsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
 
 // AdminLogin 使用现有超级管理员账号密码登录
 // (POST /login)
@@ -713,6 +968,12 @@ func (_ Unimplemented) AdminOverview(w http.ResponseWriter, r *http.Request) {
 // AdminReauthenticate 为敏感操作再次验证密码
 // (POST /reauthenticate)
 func (_ Unimplemented) AdminReauthenticate(w http.ResponseWriter, r *http.Request, params AdminReauthenticateParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// AdminRuntime 服务与依赖状态、失败和清理任务数量
+// (GET /runtime)
+func (_ Unimplemented) AdminRuntime(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -746,15 +1007,9 @@ func (_ Unimplemented) AdminTrips(w http.ResponseWriter, r *http.Request, params
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
-// AdminTrip 查看旅行基础信息及所属账号
+// AdminTrip 查看旅行概况及内容数量
 // (GET /trips/{trip_id})
 func (_ Unimplemented) AdminTrip(w http.ResponseWriter, r *http.Request, tripId TripID) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// AdminTripContent 分页查看旅行行程、物资、待办或成员
-// (GET /trips/{trip_id}/content)
-func (_ Unimplemented) AdminTripContent(w http.ResponseWriter, r *http.Request, tripId TripID, params AdminTripContentParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -778,6 +1033,261 @@ type ServerInterfaceWrapper struct {
 }
 
 type MiddlewareFunc func(http.Handler) http.Handler
+
+// AdminAudits operation middleware
+func (siw *ServerInterfaceWrapper) AdminAudits(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params AdminAuditsParams
+
+	// ------------- Optional query parameter "as_of" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "as_of", r.URL.Query(), &params.AsOf, runtime.BindQueryParameterOptions{Type: "string", Format: "date-time"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "as_of"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "as_of", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "actor_account_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "actor_account_id", r.URL.Query(), &params.ActorAccountId, runtime.BindQueryParameterOptions{Type: "string", Format: "uuid"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "actor_account_id"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "actor_account_id", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "subject_account_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "subject_account_id", r.URL.Query(), &params.SubjectAccountId, runtime.BindQueryParameterOptions{Type: "string", Format: "uuid"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "subject_account_id"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "subject_account_id", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "action" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "action", r.URL.Query(), &params.Action, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "action"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "action", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "result" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "result", r.URL.Query(), &params.Result, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "result"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "result", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "date_from" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "date_from", r.URL.Query(), &params.DateFrom, runtime.BindQueryParameterOptions{Type: "string", Format: "date"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "date_from"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "date_from", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "date_to" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "date_to", r.URL.Query(), &params.DateTo, runtime.BindQueryParameterOptions{Type: "string", Format: "date"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "date_to"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "date_to", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "page" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "page", r.URL.Query(), &params.Page, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "page"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "page", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "page_size" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "page_size", r.URL.Query(), &params.PageSize, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "page_size"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "page_size", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AdminAudits(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AdminDeletionJobs operation middleware
+func (siw *ServerInterfaceWrapper) AdminDeletionJobs(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params AdminDeletionJobsParams
+
+	// ------------- Optional query parameter "state" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "state", r.URL.Query(), &params.State, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "state"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "state", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "page" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "page", r.URL.Query(), &params.Page, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "page"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "page", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "page_size" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "page_size", r.URL.Query(), &params.PageSize, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "page_size"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "page_size", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AdminDeletionJobs(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AdminJobs operation middleware
+func (siw *ServerInterfaceWrapper) AdminJobs(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params AdminJobsParams
+
+	// ------------- Optional query parameter "state" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "state", r.URL.Query(), &params.State, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "state"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "state", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "page" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "page", r.URL.Query(), &params.Page, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "page"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "page", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "page_size" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "page_size", r.URL.Query(), &params.PageSize, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "page_size"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "page_size", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AdminJobs(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
 
 // AdminLogin operation middleware
 func (siw *ServerInterfaceWrapper) AdminLogin(w http.ResponseWriter, r *http.Request) {
@@ -843,6 +1353,20 @@ func (siw *ServerInterfaceWrapper) AdminReauthenticate(w http.ResponseWriter, r 
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.AdminReauthenticate(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AdminRuntime operation middleware
+func (siw *ServerInterfaceWrapper) AdminRuntime(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AdminRuntime(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1142,74 +1666,6 @@ func (siw *ServerInterfaceWrapper) AdminTrip(w http.ResponseWriter, r *http.Requ
 	handler.ServeHTTP(w, r)
 }
 
-// AdminTripContent operation middleware
-func (siw *ServerInterfaceWrapper) AdminTripContent(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "trip_id" -------------
-	var tripId TripID
-
-	err = runtime.BindStyledParameterWithOptions("simple", "trip_id", chi.URLParam(r, "trip_id"), &tripId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "trip_id", Err: err})
-		return
-	}
-
-	// Parameter object where we will unmarshal all parameters from the context
-	var params AdminTripContentParams
-
-	// ------------- Required query parameter "kind" -------------
-
-	err = runtime.BindQueryParameterWithOptions("form", true, true, "kind", r.URL.Query(), &params.Kind, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
-	if err != nil {
-		var requiredError *runtime.RequiredParameterError
-		if errors.As(err, &requiredError) {
-			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "kind"})
-		} else {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "kind", Err: err})
-		}
-		return
-	}
-
-	// ------------- Optional query parameter "page" -------------
-
-	err = runtime.BindQueryParameterWithOptions("form", true, false, "page", r.URL.Query(), &params.Page, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
-	if err != nil {
-		var requiredError *runtime.RequiredParameterError
-		if errors.As(err, &requiredError) {
-			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "page"})
-		} else {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "page", Err: err})
-		}
-		return
-	}
-
-	// ------------- Optional query parameter "page_size" -------------
-
-	err = runtime.BindQueryParameterWithOptions("form", true, false, "page_size", r.URL.Query(), &params.PageSize, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
-	if err != nil {
-		var requiredError *runtime.RequiredParameterError
-		if errors.As(err, &requiredError) {
-			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "page_size"})
-		} else {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "page_size", Err: err})
-		}
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.AdminTripContent(w, r, tripId, params)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
 // AdminUsers operation middleware
 func (siw *ServerInterfaceWrapper) AdminUsers(w http.ResponseWriter, r *http.Request) {
 
@@ -1448,13 +1904,22 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	}
 
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/audits", wrapper.AdminAudits)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/runtime", wrapper.AdminRuntime)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/jobs", wrapper.AdminJobs)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/deletion-jobs", wrapper.AdminDeletionJobs)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/trips", wrapper.AdminTrips)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/trips/{trip_id}", wrapper.AdminTrip)
-	})
-	r.Group(func(r chi.Router) {
-		r.Get(options.BaseURL+"/trips/{trip_id}/content", wrapper.AdminTripContent)
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/login", wrapper.AdminLogin)

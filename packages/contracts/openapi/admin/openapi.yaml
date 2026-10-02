@@ -9,21 +9,29 @@ info:
 servers:
   - url: /api/v1/admin
 tags:
+  - name: admin-operations
+    description: 审计中心与运行状态，查询留痕且不返回原始异常或任务参数
   - name: admin-auth
     description: 后台登录与会话
   - name: admin-users
     description: 平台概览与用户查询，私人信息访问留痕
   - name: admin-trips
-    description: 跨账号旅行与内容查询
+    description: 跨账号旅行概况查询
 security:
   - adminSession: []
 paths:
+  /audits:
+    $ref: ./operations.yaml#/AuditPath
+  /runtime:
+    $ref: ./operations.yaml#/RuntimePath
+  /jobs:
+    $ref: ./operations.yaml#/JobsPath
+  /deletion-jobs:
+    $ref: ./operations.yaml#/DeletionJobsPath
   /trips:
     $ref: ./trips.yaml#/TripListPath
   /trips/{trip_id}:
     $ref: ./trips.yaml#/TripPath
-  /trips/{trip_id}/content:
-    $ref: ./trips.yaml#/ContentPath
   /login:
     post:
       tags: [admin-auth]
@@ -243,17 +251,33 @@ components:
           schema:
             $ref: ../v1/schemas/common.yaml#/Problem
   schemas:
+    AuditEntry:
+      $ref: ./operations.yaml#/schemas/AuditEntry
+    AuditPage:
+      $ref: ./operations.yaml#/schemas/AuditPage
+    ComponentStatus:
+      $ref: ./operations.yaml#/schemas/ComponentStatus
+    JobCounts:
+      $ref: ./operations.yaml#/schemas/JobCounts
+    RuntimeStatus:
+      $ref: ./operations.yaml#/schemas/RuntimeStatus
+    Job:
+      $ref: ./operations.yaml#/schemas/Job
+    JobPage:
+      $ref: ./operations.yaml#/schemas/JobPage
+    DeletionJob:
+      $ref: ./operations.yaml#/schemas/DeletionJob
+    DeletionJobPage:
+      $ref: ./operations.yaml#/schemas/DeletionJobPage
     AdminTripSummary:
       $ref: ./trips.yaml#/schemas/AdminTripSummary
     AdminTripPage:
       $ref: ./trips.yaml#/schemas/AdminTripPage
     AdminTripDetail:
       $ref: ./trips.yaml#/schemas/AdminTripDetail
-    AdminContentPage:
-      $ref: ./trips.yaml#/schemas/AdminContentPage
     Overview:
       type: object
-      required: [users, new_users_today, trips, asset_bytes, failed_jobs, signups, as_of]
+      required: [users, new_users_today, trips, failed_jobs, signups, as_of]
       properties:
         users:
           type: integer
@@ -262,9 +286,6 @@ components:
           type: integer
           format: int64
         trips:
-          type: integer
-          format: int64
-        asset_bytes:
           type: integer
           format: int64
         failed_jobs:
@@ -287,19 +308,7 @@ components:
                 format: int64
     User:
       type: object
-      required:
-        [
-          id,
-          email,
-          nickname,
-          status,
-          is_super_admin,
-          created_at,
-          last_seen_at,
-          trip_count,
-          asset_count,
-          asset_bytes,
-        ]
+      required: [id, email, nickname, status, is_super_admin, created_at, last_seen_at, trip_count]
       properties:
         id:
           type: string
@@ -320,12 +329,6 @@ components:
           format: date-time
           nullable: true
         trip_count:
-          type: integer
-          format: int64
-        asset_count:
-          type: integer
-          format: int64
-        asset_bytes:
           type: integer
           format: int64
     UserPage:
