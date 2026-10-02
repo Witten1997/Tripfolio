@@ -89,6 +89,7 @@ type JobPage struct {
 }
 
 type DeletionJob struct {
+	Retryable      bool       `json:"retryable"`
 	ID             uuid.UUID  `json:"id"`
 	OwnerID        uuid.UUID  `json:"owner_account_id"`
 	TripID         *uuid.UUID `json:"target_trip_id"`
@@ -111,7 +112,7 @@ type DeletionJobPage struct {
 
 func auditAction(value string) string {
 	switch value {
-	case "login", "login.rate_limited", "authentication", "request.invalid", "request.origin", "request.csrf",
+	case "trip.edit", "trip.archive", "trip.trash", "trip.restore", "trip.purge", "trip.retry", "trip.purge.start", "trip.purge.complete", "trip.purge.failed", "trip.invalid", "login", "login.rate_limited", "authentication", "request.invalid", "request.origin", "request.csrf",
 		"session.current", "session.list", "session.revoke", "reauthenticate", "reauthenticate.rate_limited",
 		"principal.grant", "principal.revoke", "overview.read", "user.list", "user.read", "trip.list", "trip.read",
 		"audit.list", "runtime.read", "job.list", "deletion_job.list":
@@ -203,6 +204,21 @@ func (s *Service) Runtime(ctx context.Context, sess Session, status RuntimeStatu
 
 // 仅输出固定错误类别，绝不回传原始异常、URL、堆栈或参数。
 func errorSummary(raw string) string {
+	switch raw {
+	case "UPLOAD_AUTHORIZATION_ACTIVE":
+		return "正在等待已有上传授权到期，随后继续清理"
+	case "OBJECTSTORE_UNAVAILABLE":
+		return "对象存储未配置，清理尚未执行"
+	case "OBJECT_LIST_FAILED", "OBJECT_DELETE_FAILED", "OBJECT_VERIFY_FAILED", "OBJECTS_REMAIN":
+		return "对象存储清理或校验失败，可在恢复依赖后重试"
+	case "OBJECT_SCOPE_MISMATCH", "PURGE_SCOPE_MISMATCH":
+		return "清理范围校验失败，需要排查关联关系"
+	case "ADMIN_AUDIT_UNAVAILABLE":
+		return "审计暂不可写，清理未完成"
+	case "PURGE_ROWS_FAILED", "PURGE_PREPARE_FAILED", "PURGE_STATE_UNAVAILABLE":
+		return "数据库清理未完成，可在排查后重试"
+	}
+
 	if raw == "" {
 		return ""
 	}

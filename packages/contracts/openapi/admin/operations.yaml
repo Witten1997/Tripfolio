@@ -402,6 +402,7 @@ schemas:
       - 'finished_at'
       - 'error_summary'
     properties:
+      retryable: { type: boolean }
       id:
         type: 'string'
         format: 'uuid'

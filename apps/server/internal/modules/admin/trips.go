@@ -31,9 +31,9 @@ type TripSummary struct {
 	UpdatedAt   time.Time  `json:"updated_at"`
 }
 type TripFilter struct {
-	AccountID                                       *uuid.UUID
-	Query, Phase, Archived, Trash, DateFrom, DateTo string
-	Page, PageSize                                  int
+	AccountID                                                               *uuid.UUID
+	Query, Phase, Archived, Trash, DateFrom, DateTo, DeletedFrom, DeletedTo string
+	Page, PageSize                                                          int
 }
 type TripPage struct {
 	Data     []TripSummary `json:"data"`
@@ -42,12 +42,16 @@ type TripPage struct {
 	PageSize int           `json:"page_size"`
 }
 type TripDetail struct {
-	Trip   TripOverview `json:"trip"`
-	Owner  Owner        `json:"owner"`
-	Phase  string       `json:"phase"`
-	Counts TripCounts   `json:"counts"`
+	PurgeJob *DeletionJob `json:"purge_job"`
+	Trip     TripOverview `json:"trip"`
+	Owner    Owner        `json:"owner"`
+	Phase    string       `json:"phase"`
+	Counts   TripCounts   `json:"counts"`
 }
 type TripOverview struct {
+	Version          int64      `json:"version"`
+	Timezone         string     `json:"timezone"`
+	PurgeAfterAt     *time.Time `json:"purge_after_at"`
 	ID               uuid.UUID  `json:"id"`
 	Name             string     `json:"name"`
 	Destination      string     `json:"destination"`
@@ -86,7 +90,7 @@ func (s *Service) recordRead(ctx context.Context, a Audit) error {
 }
 func (s *Service) Trips(ctx context.Context, sess Session, f TripFilter, info RequestInfo) (TripPage, error) {
 	f.Query = strings.TrimSpace(f.Query)
-	if !validPage(f.Page, f.PageSize) || utf8.RuneCountInString(f.Query) > 120 || !validDateRange(f.DateFrom, f.DateTo) || (f.Phase != "" && !trip.Phase(f.Phase).Valid()) || !trip.ArchivedFilter(f.Archived).Valid() || (f.Trash != "exclude" && f.Trash != "only" && f.Trash != "all") {
+	if !validPage(f.Page, f.PageSize) || utf8.RuneCountInString(f.Query) > 120 || !validDateRange(f.DateFrom, f.DateTo) || !validDateRange(f.DeletedFrom, f.DeletedTo) || (f.Phase != "" && !trip.Phase(f.Phase).Valid()) || !trip.ArchivedFilter(f.Archived).Valid() || (f.Trash != "exclude" && f.Trash != "only" && f.Trash != "all") {
 		return TripPage{}, apperr.BadRequest("MALFORMED_REQUEST", "旅行筛选条件或分页参数无效")
 	}
 	result, err := s.store.Trips(ctx, f, s.clock.Now())
@@ -101,7 +105,7 @@ func (s *Service) Trips(ctx context.Context, sess Session, f TripFilter, info Re
 	a := s.event(&sess, "trip.list", "success", info)
 	a.ResourceType = "trip"
 	a.SubjectID = f.AccountID
-	a.Details = map[string]any{"query_fingerprint": fmt.Sprintf("%x", sha256.Sum256([]byte(f.Query))), "account_id": f.AccountID, "phase": f.Phase, "archived": f.Archived, "trash": f.Trash, "date_from": f.DateFrom, "date_to": f.DateTo, "page": f.Page, "page_size": f.PageSize, "result_count": len(ids), "resource_ids": ids, "owner_ids": owners}
+	a.Details = map[string]any{"query_fingerprint": fmt.Sprintf("%x", sha256.Sum256([]byte(f.Query))), "account_id": f.AccountID, "phase": f.Phase, "archived": f.Archived, "trash": f.Trash, "date_from": f.DateFrom, "date_to": f.DateTo, "deleted_from": f.DeletedFrom, "deleted_to": f.DeletedTo, "page": f.Page, "page_size": f.PageSize, "result_count": len(ids), "resource_ids": ids, "owner_ids": owners}
 	if err = s.recordRead(ctx, a); err != nil {
 		return TripPage{}, err
 	}
@@ -127,6 +131,9 @@ func (s *Service) Trip(ctx context.Context, sess Session, id uuid.UUID, info Req
 	}
 	if !found {
 		return TripDetail{}, apperr.NotFound()
+	}
+	if result.PurgeJob != nil {
+		result.PurgeJob.ErrorSummary = errorSummary(result.PurgeJob.ErrorSummary)
 	}
 	return result, nil
 }

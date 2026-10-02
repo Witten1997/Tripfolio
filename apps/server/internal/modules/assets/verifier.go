@@ -43,6 +43,7 @@ const (
 // 对象存储与图片处理都在数据库事务之外进行；事务内只复核状态并落库，
 // 避免账号写锁被长 I/O 占用（层级结构设计 7.x）。
 type Verifier struct {
+	guard   VerificationGuard
 	uow     write.UnitOfWork[Repo]
 	reader  Reader
 	keys    ObjectKeys
@@ -55,6 +56,7 @@ type Verifier struct {
 
 // VerifierDeps 是校验器依赖。
 type VerifierDeps struct {
+	Guard      VerificationGuard
 	UnitOfWork write.UnitOfWork[Repo]
 	Reader     Reader
 	Keys       ObjectKeys
@@ -68,7 +70,8 @@ type VerifierDeps struct {
 // NewVerifier 创建校验器。
 func NewVerifier(d VerifierDeps) *Verifier {
 	return &Verifier{
-		uow: d.UnitOfWork, reader: d.Reader, keys: d.Keys, objects: d.Objects,
+		guard: d.Guard,
+		uow:   d.UnitOfWork, reader: d.Reader, keys: d.Keys, objects: d.Objects,
 		images: d.Images, limits: d.Limits, clock: d.Clock, logger: d.Logger,
 	}
 }
@@ -80,6 +83,16 @@ var ErrStaleJob = errors.New("任务对应的上传尝试已过期")
 // Verify 执行一次校验。返回 nil 表示任务已终结（ready、failed 或过期任务）；
 // 返回非 nil 表示暂时性故障（对象存储、数据库不可达），worker 应重试。
 func (v *Verifier) Verify(ctx context.Context, args VerifyJobArgs) error {
+	if v.guard != nil {
+		release, err := v.guard.Acquire(ctx, args)
+		if errors.Is(err, ErrStaleJob) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		defer release()
+	}
 	res, attempt, err := v.loadProcessing(ctx, args)
 	if err != nil {
 		if errors.Is(err, ErrStaleJob) {

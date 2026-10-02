@@ -14,6 +14,7 @@ const snoozeUnconfigured = 5 * time.Minute
 
 // Deps 是各任务处理器需要的应用服务。为 nil 的能力对应的任务会被推迟而不是失败。
 type Deps struct {
+	TripPurger        TripPurger
 	Logger            *slog.Logger
 	AssetVerifier     AssetVerifier
 	RouteRecalculator RouteRecalculator
@@ -22,7 +23,7 @@ type Deps struct {
 // RegisterWorkers 把全部任务处理器注册到 workers。新增任务类型在此追加一行。
 func RegisterWorkers(workers *river.Workers, d Deps) {
 	river.AddWorker(workers, &PingWorker{logger: d.Logger})
-	river.AddWorker(workers, &PurgeTripWorker{logger: d.Logger})
+	river.AddWorker(workers, &PurgeTripWorker{logger: d.Logger, service: d.TripPurger})
 	river.AddWorker(workers, &VerifyAssetWorker{verifier: d.AssetVerifier, logger: d.Logger})
 	river.AddWorker(workers, &RouteRecalculateWorker{service: d.RouteRecalculator, logger: d.Logger})
 }

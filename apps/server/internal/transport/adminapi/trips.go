@@ -27,6 +27,12 @@ func (h *Handler) AdminTrips(w http.ResponseWriter, r *http.Request, p generated
 	if p.DateTo != nil {
 		f.DateTo = p.DateTo.Format("2006-01-02")
 	}
+	if p.DeletedFrom != nil {
+		f.DeletedFrom = p.DeletedFrom.Format("2006-01-02")
+	}
+	if p.DeletedTo != nil {
+		f.DeletedTo = p.DeletedTo.Format("2006-01-02")
+	}
 	if p.Page != nil {
 		f.Page = *p.Page
 	}

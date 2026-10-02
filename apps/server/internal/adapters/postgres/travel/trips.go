@@ -80,6 +80,9 @@ type tripRepo struct {
 	scope *pgcore.TxScope
 }
 
+// NewTripRepository binds the shared travel rules to an already authorized transaction.
+func NewTripRepository(scope *pgcore.TxScope) trip.Repo { return &tripRepo{scope: scope} }
+
 var _ trip.Repo = (*tripRepo)(nil)
 
 // NewTripUnitOfWork 创建旅行写事务入口。

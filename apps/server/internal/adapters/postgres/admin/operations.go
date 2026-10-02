@@ -98,13 +98,13 @@ func (s *Store) DeletionJobs(ctx context.Context, f admin.JobFilter) (admin.Dele
 	if err = tx.QueryRow(ctx, `SELECT count(*)`+source, f.State).Scan(&out.Total); err != nil {
 		return out, err
 	}
-	rows, err := tx.Query(ctx, `SELECT id,owner_account_id,target_trip_id,scope,status,stage,processed_items,total_items,created_at,finished_at,coalesce(error_code,'')`+source+` ORDER BY created_at DESC,id DESC LIMIT $2 OFFSET $3`, f.State, f.PageSize, (f.Page-1)*f.PageSize)
+	rows, err := tx.Query(ctx, `SELECT id,owner_account_id,target_trip_id,scope,status,stage,processed_items,total_items,created_at,finished_at,coalesce(error_code,''),(status='failed' OR (status IN ('queued','running') AND NOT EXISTS(SELECT 1 FROM river_job r WHERE r.kind='trip_purge' AND r.args->>'job_id'=deletion_jobs.id::text AND r.state IN ('available','pending','running','retryable','scheduled'))))`+source+` ORDER BY created_at DESC,id DESC LIMIT $2 OFFSET $3`, f.State, f.PageSize, (f.Page-1)*f.PageSize)
 	if err != nil {
 		return out, err
 	}
 	for rows.Next() {
 		var v admin.DeletionJob
-		if err = rows.Scan(&v.ID, &v.OwnerID, &v.TripID, &v.Scope, &v.Status, &v.Stage, &v.ProcessedItems, &v.TotalItems, &v.CreatedAt, &v.FinishedAt, &v.ErrorSummary); err != nil {
+		if err = rows.Scan(&v.ID, &v.OwnerID, &v.TripID, &v.Scope, &v.Status, &v.Stage, &v.ProcessedItems, &v.TotalItems, &v.CreatedAt, &v.FinishedAt, &v.ErrorSummary, &v.Retryable); err != nil {
 			rows.Close()
 			return out, err
 		}

@@ -9,6 +9,11 @@ export type UserPage = components['schemas']['UserPage']
 export type UserDetail = components['schemas']['UserDetail']
 export type AdminTripPage = components['schemas']['AdminTripPage']
 export type AdminTripDetail = components['schemas']['AdminTripDetail']
+export type AdminTripMutation = components['schemas']['AdminTripMutation']
+
+export async function mutateTrip(id: string, body: AdminTripMutation) {
+  return (await request<{ data: components['schemas']['AdminTripMutationResult'] }>(`/trips/${encodeURIComponent(id)}/lifecycle`, { method: 'POST', body: JSON.stringify(body) })).data
+}
 export type AuditEntry = components['schemas']['AuditEntry']
 export type AuditPage = components['schemas']['AuditPage']
 export type RuntimeStatus = components['schemas']['RuntimeStatus']

@@ -163,5 +163,9 @@ type VerifyJobArgs struct {
 	UploadAttempt int32     `json:"upload_attempt"`
 }
 
+type VerificationGuard interface {
+	Acquire(context.Context, VerifyJobArgs) (func(), error)
+}
+
 // Kind 实现 write.JobArgs 与 river.JobArgs。
 func (VerifyJobArgs) Kind() string { return "asset_verify" }

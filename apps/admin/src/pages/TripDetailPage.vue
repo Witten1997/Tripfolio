@@ -3,12 +3,15 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { loadTrip, type AdminTripDetail } from '../api'
 import { formatTime, phaseLabel } from '../format'
+import TripLifecycleControls from '../components/TripLifecycleControls.vue'
+import TripPurgeControls from '../components/TripPurgeControls.vue'
 
 const route = useRoute()
 const id = computed(() => String(route.params.id))
 const detail = ref<AdminTripDetail | null>(null)
 const loading = ref(false)
 const errorMessage = ref('')
+const operationNotice = ref('')
 const countLabels: Record<keyof AdminTripDetail['counts'], string> = {
   itinerary: '行程',
   packing: '物资',
@@ -58,6 +61,7 @@ onBeforeUnmount(() => {
       {{ errorMessage }}<el-button text @click="refresh">重试</el-button>
     </div>
     <div v-if="!detail && loading" class="empty-state" role="status">正在加载旅行…</div>
+    <div v-if="operationNotice" class="notice-strip" role="status">{{ operationNotice }}</div>
     <template v-if="detail">
       <div v-if="detail.trip.deleted_at" class="notice-strip">
         此旅行已于 {{ formatTime(detail.trip.deleted_at) }} 移入回收站。{{
@@ -71,6 +75,7 @@ onBeforeUnmount(() => {
           <dt>日期</dt>
           <dd>{{ detail.trip.start_date }} 至 {{ detail.trip.end_date }}</dd>
           <dt>状态</dt>
+
           <dd>
             {{ phaseLabel(detail.phase) }} · {{ detail.trip.archived_at ? '已归档' : '未归档' }}
           </dd>
@@ -92,6 +97,25 @@ onBeforeUnmount(() => {
           </div>
         </dl>
       </section>
+      <TripLifecycleControls
+        :trip="detail.trip"
+        @changed="
+          (message) => {
+            operationNotice = message
+            refresh()
+          }
+        "
+      />
+      <TripPurgeControls
+        :trip="detail.trip"
+        :job="detail.purge_job"
+        @changed="
+          (message) => {
+            operationNotice = message
+            refresh()
+          }
+        "
+      />
     </template>
   </section>
 </template>

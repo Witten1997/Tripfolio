@@ -26,6 +26,14 @@ TripListPath:
       - name: date_to
         in: query
         schema: { type: string, format: date }
+      - name: deleted_from
+        in: query
+        description: 移入回收站的北京时间起始日
+        schema: { type: string, format: date }
+      - name: deleted_to
+        in: query
+        description: 移入回收站的北京时间结束日，包含当日
+        schema: { type: string, format: date }
       - $ref: '#/parameters/Page'
       - $ref: '#/parameters/PageSize'
     responses:
@@ -115,8 +123,13 @@ schemas:
       page_size: { type: integer }
   AdminTripDetail:
     type: object
-    required: [trip, owner, phase, counts]
+    required: [trip, owner, phase, counts, purge_job]
     properties:
+      purge_job:
+        type: object
+        nullable: true
+        allOf:
+          - $ref: ./operations.yaml#/schemas/DeletionJob
       trip: { $ref: '#/schemas/AdminTripOverview' }
       owner: { $ref: '#/schemas/AdminOwner' }
       phase: { type: string, enum: [planned, ongoing, ended] }
@@ -126,6 +139,9 @@ schemas:
     required:
       [
         id,
+        version,
+        timezone,
+        purge_after_at,
         name,
         destination,
         start_date,
@@ -138,6 +154,9 @@ schemas:
         updated_at,
       ]
     properties:
+      version: { type: integer, format: int64, minimum: 1 }
+      timezone: { type: string }
+      purge_after_at: { type: string, format: date-time, nullable: true }
       id: { type: string, format: uuid }
       name: { type: string }
       destination: { type: string }

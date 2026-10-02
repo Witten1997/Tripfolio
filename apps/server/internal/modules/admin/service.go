@@ -18,10 +18,11 @@ import (
 )
 
 type Service struct {
-	store   Store
-	hasher  *security.PasswordHasher
-	limiter *ratelimit.Limiter
-	clock   clock.Clock
+	tripLifecycle TripLifecycleStore
+	store         Store
+	hasher        *security.PasswordHasher
+	limiter       *ratelimit.Limiter
+	clock         clock.Clock
 }
 
 func NewService(store Store, hasher *security.PasswordHasher, clk clock.Clock) *Service {

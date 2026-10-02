@@ -20,6 +20,8 @@ tags:
 security:
   - adminSession: []
 paths:
+  /trips/{trip_id}/lifecycle:
+    $ref: ./trip-lifecycle.yaml#/LifecyclePath
   /audits:
     $ref: ./operations.yaml#/AuditPath
   /runtime:

@@ -209,6 +209,23 @@ export type paths = {
         patch?: never;
         trace?: never;
     };
+    "/trips/{trip_id}/lifecycle": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 管理旅行基础信息、归档和回收站生命周期 */
+        post: operations["adminMutateTrip"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/users": {
         parameters: {
             query?: never;
@@ -282,7 +299,38 @@ export type components = {
             owner: components["schemas"]["AdminOwner"];
             /** @enum {string} */
             phase: "planned" | "ongoing" | "ended";
+            purge_job: components["schemas"]["DeletionJob"] | null;
             trip: components["schemas"]["AdminTripOverview"];
+        };
+        AdminTripEdits: {
+            budget_amount?: string | null;
+            /** @default false */
+            budget_set: boolean;
+            currency_code?: string;
+            destination?: string;
+            /** Format: date */
+            end_date?: string;
+            name?: string;
+            /** Format: date */
+            start_date?: string;
+            timezone?: string;
+        };
+        AdminTripMutation: {
+            /** @enum {string} */
+            action: "edit" | "archive" | "trash" | "restore" | "purge" | "retry";
+            archived?: boolean;
+            changes?: components["schemas"]["AdminTripEdits"];
+            /** @default false */
+            confirm: boolean;
+            reason: string;
+            /** Format: int64 */
+            version: number;
+        };
+        AdminTripMutationResult: {
+            /** Format: uuid */
+            job_id: string | null;
+            trip: components["schemas"]["AdminTripOverview"];
+            warnings: string[];
         };
         AdminTripOverview: {
             /** Format: date-time */
@@ -299,11 +347,16 @@ export type components = {
             id: string;
             name: string;
             /** Format: date-time */
+            purge_after_at: string | null;
+            /** Format: date-time */
             purge_requested_at: string | null;
             /** Format: date */
             start_date: string;
+            timezone: string;
             /** Format: date-time */
             updated_at: string;
+            /** Format: int64 */
+            version: number;
         };
         AdminTripPage: {
             data: components["schemas"]["AdminTripSummary"][];
@@ -380,6 +433,7 @@ export type components = {
             owner_account_id: string;
             /** Format: int64 */
             processed_items: number;
+            retryable?: boolean;
             /** @enum {string} */
             scope: "trip" | "account";
             /** @enum {string} */
@@ -876,6 +930,10 @@ export interface operations {
                 /** @description 旅行日期范围与筛选区间有交集即匹配，起止日均包含 */
                 date_from?: string;
                 date_to?: string;
+                /** @description 移入回收站的北京时间起始日 */
+                deleted_from?: string;
+                /** @description 移入回收站的北京时间结束日，包含当日 */
+                deleted_to?: string;
                 page?: components["parameters"]["Page"];
                 page_size?: components["parameters"]["PageSize"];
                 phase?: "planned" | "ongoing" | "ended";
@@ -919,6 +977,38 @@ export interface operations {
                 content: {
                     "application/json": {
                         data: components["schemas"]["AdminTripDetail"];
+                    };
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    adminMutateTrip: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 登录或当前身份响应返回的后台请求防伪令牌 */
+                "X-Admin-CSRF": components["parameters"]["CSRF"];
+            };
+            path: {
+                trip_id: components["parameters"]["TripID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminTripMutation"];
+            };
+        };
+        responses: {
+            /** @description 操作完成；清理申请仅表示入队，以任务完成状态为准 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["AdminTripMutationResult"];
                     };
                 };
             };

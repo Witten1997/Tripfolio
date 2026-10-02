@@ -3,7 +3,7 @@ import { reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Search, RefreshCw } from '@lucide/vue'
 import { listTrips, type AdminTripPage } from '../api'
-import { phaseLabel } from '../format'
+import { phaseLabel, formatTime } from '../format'
 
 const route = useRoute()
 const router = useRouter()
@@ -15,6 +15,8 @@ const filters = reactive({
   trash: 'exclude',
   date_from: '',
   date_to: '',
+  deleted_from: '',
+  deleted_to: '',
 })
 const result = ref<AdminTripPage | null>(null)
 const loading = ref(false)
@@ -53,6 +55,8 @@ watch(
       trash: 'exclude',
       date_from: '',
       date_to: '',
+  deleted_from: '',
+  deleted_to: '',
     }
     for (const key of Object.keys(defaults) as (keyof typeof filters)[])
       filters[key] = typeof route.query[key] === 'string' ? route.query[key] : defaults[key]
@@ -139,6 +143,8 @@ watch(
           :min="filters.date_from || undefined"
         />
       </div>
+      <div class="date-field"><label for="deleted-from" class="small-label">删除日期起（北京时间）</label><input id="deleted-from" type="date" v-model="filters.deleted_from" :max="filters.deleted_to || undefined" /></div>
+      <div class="date-field"><label for="deleted-to" class="small-label">删除日期止（北京时间）</label><input id="deleted-to" type="date" v-model="filters.deleted_to" :min="filters.deleted_from || undefined" /></div>
       <el-button native-type="submit" type="primary" :loading="loading"
         ><Search v-if="!loading" :size="15" />查询</el-button
       >
@@ -179,6 +185,7 @@ watch(
             <span v-if="row.deleted_at" class="status-pill muted-status">回收站</span></template
           ></el-table-column
         >
+        <el-table-column label="删除时间" min-width="180"><template #default="{ row }">{{ formatTime(row.deleted_at) }}</template></el-table-column>
         <el-table-column label="操作" width="95" fixed="right"
           ><template #default="{ row }"
             ><RouterLink class="text-link" :to="{ name: 'trip', params: { id: row.id } }"

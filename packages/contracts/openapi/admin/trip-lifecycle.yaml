@@ -1,0 +1,58 @@
+LifecyclePath:
+  post:
+    tags: [admin-trips]
+    operationId: adminMutateTrip
+    summary: 管理旅行基础信息、归档和回收站生命周期
+    parameters:
+      - $ref: ./trips.yaml#/parameters/TripID
+      - $ref: ./openapi.yaml#/components/parameters/CSRF
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/schemas/AdminTripMutation' }
+    responses:
+      '200':
+        description: 操作完成；清理申请仅表示入队，以任务完成状态为准
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [data]
+              properties:
+                data: { $ref: '#/schemas/AdminTripMutationResult' }
+      default:
+        $ref: ./openapi.yaml#/components/responses/Problem
+schemas:
+  AdminTripEdits:
+    type: object
+    additionalProperties: false
+    properties:
+      name: { type: string, minLength: 1, maxLength: 120 }
+      destination: { type: string, maxLength: 300 }
+      start_date: { type: string, format: date }
+      end_date: { type: string, format: date }
+      timezone: { type: string, maxLength: 64 }
+      currency_code: { type: string, minLength: 3, maxLength: 3 }
+      budget_set: { type: boolean, default: false }
+      budget_amount: { type: string, nullable: true }
+  AdminTripMutation:
+    type: object
+    additionalProperties: false
+    required: [action, version, reason]
+    properties:
+      action: { type: string, enum: [edit, archive, trash, restore, purge, retry] }
+      version: { type: integer, format: int64, minimum: 1 }
+      reason: { type: string, minLength: 1, maxLength: 500 }
+      changes: { $ref: '#/schemas/AdminTripEdits' }
+      archived: { type: boolean }
+      confirm: { type: boolean, default: false }
+  AdminTripMutationResult:
+    type: object
+    required: [trip, warnings, job_id]
+    properties:
+      trip: { $ref: ./trips.yaml#/schemas/AdminTripOverview }
+      warnings:
+        type: array
+        items: { type: string }
+      job_id: { type: string, format: uuid, nullable: true }

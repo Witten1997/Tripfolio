@@ -51,6 +51,36 @@ func (e AdminTripDetailPhase) Valid() bool {
 	}
 }
 
+// Defines values for AdminTripMutationAction.
+const (
+	Archive AdminTripMutationAction = "archive"
+	Edit    AdminTripMutationAction = "edit"
+	Purge   AdminTripMutationAction = "purge"
+	Restore AdminTripMutationAction = "restore"
+	Retry   AdminTripMutationAction = "retry"
+	Trash   AdminTripMutationAction = "trash"
+)
+
+// Valid indicates whether the value is a known member of the AdminTripMutationAction enum.
+func (e AdminTripMutationAction) Valid() bool {
+	switch e {
+	case Archive:
+		return true
+	case Edit:
+		return true
+	case Purge:
+		return true
+	case Restore:
+		return true
+	case Retry:
+		return true
+	case Trash:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for AdminTripSummaryPhase.
 const (
 	AdminTripSummaryPhaseEnded   AdminTripSummaryPhase = "ended"
@@ -458,14 +488,47 @@ type AdminTripCounts struct {
 // AdminTripDetail defines model for AdminTripDetail.
 type AdminTripDetail struct {
 	// Counts 仅统计未单独删除的内容数量，不返回内容明细；旅行在回收站时仍可查看数量。
-	Counts AdminTripCounts      `json:"counts"`
-	Owner  AdminOwner           `json:"owner"`
-	Phase  AdminTripDetailPhase `json:"phase"`
-	Trip   AdminTripOverview    `json:"trip"`
+	Counts   AdminTripCounts                `json:"counts"`
+	Owner    AdminOwner                     `json:"owner"`
+	Phase    AdminTripDetailPhase           `json:"phase"`
+	PurgeJob nullable.Nullable[DeletionJob] `json:"purge_job"`
+	Trip     AdminTripOverview              `json:"trip"`
 }
 
 // AdminTripDetailPhase defines model for AdminTripDetail.Phase.
 type AdminTripDetailPhase string
+
+// AdminTripEdits defines model for AdminTripEdits.
+type AdminTripEdits struct {
+	BudgetAmount nullable.Nullable[string] `json:"budget_amount,omitempty"`
+	BudgetSet    *bool                     `json:"budget_set,omitempty"`
+	CurrencyCode *string                   `json:"currency_code,omitempty"`
+	Destination  *string                   `json:"destination,omitempty"`
+	EndDate      *openapi_types.Date       `json:"end_date,omitempty"`
+	Name         *string                   `json:"name,omitempty"`
+	StartDate    *openapi_types.Date       `json:"start_date,omitempty"`
+	Timezone     *string                   `json:"timezone,omitempty"`
+}
+
+// AdminTripMutation defines model for AdminTripMutation.
+type AdminTripMutation struct {
+	Action   AdminTripMutationAction `json:"action"`
+	Archived *bool                   `json:"archived,omitempty"`
+	Changes  *AdminTripEdits         `json:"changes,omitempty"`
+	Confirm  *bool                   `json:"confirm,omitempty"`
+	Reason   string                  `json:"reason"`
+	Version  int64                   `json:"version"`
+}
+
+// AdminTripMutationAction defines model for AdminTripMutation.Action.
+type AdminTripMutationAction string
+
+// AdminTripMutationResult defines model for AdminTripMutationResult.
+type AdminTripMutationResult struct {
+	JobId    nullable.Nullable[openapi_types.UUID] `json:"job_id"`
+	Trip     AdminTripOverview                     `json:"trip"`
+	Warnings []string                              `json:"warnings"`
+}
 
 // AdminTripOverview defines model for AdminTripOverview.
 type AdminTripOverview struct {
@@ -479,9 +542,12 @@ type AdminTripOverview struct {
 	EndDate          openapi_types.Date           `json:"end_date"`
 	Id               openapi_types.UUID           `json:"id"`
 	Name             string                       `json:"name"`
+	PurgeAfterAt     nullable.Nullable[time.Time] `json:"purge_after_at"`
 	PurgeRequestedAt nullable.Nullable[time.Time] `json:"purge_requested_at"`
 	StartDate        openapi_types.Date           `json:"start_date"`
+	Timezone         string                       `json:"timezone"`
 	UpdatedAt        time.Time                    `json:"updated_at"`
+	Version          int64                        `json:"version"`
 }
 
 // AdminTripPage defines model for AdminTripPage.
@@ -558,6 +624,7 @@ type DeletionJob struct {
 	Id             openapi_types.UUID                    `json:"id"`
 	OwnerAccountId openapi_types.UUID                    `json:"owner_account_id"`
 	ProcessedItems int64                                 `json:"processed_items"`
+	Retryable      *bool                                 `json:"retryable,omitempty"`
 	Scope          DeletionJobScope                      `json:"scope"`
 	Stage          DeletionJobStage                      `json:"stage"`
 	Status         DeletionJobStatus                     `json:"status"`
@@ -846,8 +913,14 @@ type AdminTripsParams struct {
 	// DateFrom 旅行日期范围与筛选区间有交集即匹配，起止日均包含
 	DateFrom *openapi_types.Date `form:"date_from,omitempty" json:"date_from,omitempty"`
 	DateTo   *openapi_types.Date `form:"date_to,omitempty" json:"date_to,omitempty"`
-	Page     *Page               `form:"page,omitempty" json:"page,omitempty"`
-	PageSize *PageSize           `form:"page_size,omitempty" json:"page_size,omitempty"`
+
+	// DeletedFrom 移入回收站的北京时间起始日
+	DeletedFrom *openapi_types.Date `form:"deleted_from,omitempty" json:"deleted_from,omitempty"`
+
+	// DeletedTo 移入回收站的北京时间结束日，包含当日
+	DeletedTo *openapi_types.Date `form:"deleted_to,omitempty" json:"deleted_to,omitempty"`
+	Page      *Page               `form:"page,omitempty" json:"page,omitempty"`
+	PageSize  *PageSize           `form:"page_size,omitempty" json:"page_size,omitempty"`
 }
 
 // AdminTripsParamsPhase defines parameters for AdminTrips.
@@ -858,6 +931,12 @@ type AdminTripsParamsArchived string
 
 // AdminTripsParamsTrash defines parameters for AdminTrips.
 type AdminTripsParamsTrash string
+
+// AdminMutateTripParams defines parameters for AdminMutateTrip.
+type AdminMutateTripParams struct {
+	// XAdminCSRF 登录或当前身份响应返回的后台请求防伪令牌
+	XAdminCSRF CSRF `json:"X-Admin-CSRF"`
+}
 
 // AdminUsersParams defines parameters for AdminUsers.
 type AdminUsersParams struct {
@@ -881,6 +960,9 @@ type AdminLoginJSONRequestBody = LoginRequest
 
 // AdminReauthenticateJSONRequestBody defines body for AdminReauthenticate for application/json ContentType.
 type AdminReauthenticateJSONRequestBody = PasswordRequest
+
+// AdminMutateTripJSONRequestBody defines body for AdminMutateTrip for application/json ContentType.
+type AdminMutateTripJSONRequestBody = AdminTripMutation
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
@@ -923,6 +1005,9 @@ type ServerInterface interface {
 	// AdminTrip 查看旅行概况及内容数量
 	// (GET /trips/{trip_id})
 	AdminTrip(w http.ResponseWriter, r *http.Request, tripId TripID)
+	// AdminMutateTrip 管理旅行基础信息、归档和回收站生命周期
+	// (POST /trips/{trip_id}/lifecycle)
+	AdminMutateTrip(w http.ResponseWriter, r *http.Request, tripId TripID, params AdminMutateTripParams)
 	// AdminUsers 分页检索用户
 	// (GET /users)
 	AdminUsers(w http.ResponseWriter, r *http.Request, params AdminUsersParams)
@@ -1010,6 +1095,12 @@ func (_ Unimplemented) AdminTrips(w http.ResponseWriter, r *http.Request, params
 // AdminTrip 查看旅行概况及内容数量
 // (GET /trips/{trip_id})
 func (_ Unimplemented) AdminTrip(w http.ResponseWriter, r *http.Request, tripId TripID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// AdminMutateTrip 管理旅行基础信息、归档和回收站生命周期
+// (POST /trips/{trip_id}/lifecycle)
+func (_ Unimplemented) AdminMutateTrip(w http.ResponseWriter, r *http.Request, tripId TripID, params AdminMutateTripParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -1603,6 +1694,32 @@ func (siw *ServerInterfaceWrapper) AdminTrips(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	// ------------- Optional query parameter "deleted_from" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "deleted_from", r.URL.Query(), &params.DeletedFrom, runtime.BindQueryParameterOptions{Type: "string", Format: "date"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "deleted_from"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "deleted_from", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "deleted_to" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "deleted_to", r.URL.Query(), &params.DeletedTo, runtime.BindQueryParameterOptions{Type: "string", Format: "date"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "deleted_to"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "deleted_to", Err: err})
+		}
+		return
+	}
+
 	// ------------- Optional query parameter "page" -------------
 
 	err = runtime.BindQueryParameterWithOptions("form", true, false, "page", r.URL.Query(), &params.Page, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
@@ -1657,6 +1774,60 @@ func (siw *ServerInterfaceWrapper) AdminTrip(w http.ResponseWriter, r *http.Requ
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.AdminTrip(w, r, tripId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AdminMutateTrip operation middleware
+func (siw *ServerInterfaceWrapper) AdminMutateTrip(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "trip_id" -------------
+	var tripId TripID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "trip_id", chi.URLParam(r, "trip_id"), &tripId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "trip_id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params AdminMutateTripParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-Admin-CSRF" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Admin-CSRF")]; found {
+		var XAdminCSRF CSRF
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-Admin-CSRF", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Admin-CSRF", valueList[0], &XAdminCSRF, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-Admin-CSRF", Err: err})
+			return
+		}
+
+		params.XAdminCSRF = XAdminCSRF
+
+	} else {
+		err := fmt.Errorf("Header parameter X-Admin-CSRF is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-Admin-CSRF", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AdminMutateTrip(w, r, tripId, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1903,6 +2074,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		ErrorHandlerFunc:   options.ErrorHandlerFunc,
 	}
 
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/trips/{trip_id}/lifecycle", wrapper.AdminMutateTrip)
+	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/audits", wrapper.AdminAudits)
 	})

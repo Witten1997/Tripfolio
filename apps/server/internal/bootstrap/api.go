@@ -42,6 +42,7 @@ import (
 
 // Services 是 API 用到的全部业务服务；测试也用它在内存或真实数据库上组装。
 type Services struct {
+	TripPurger *trip.Purger
 	Admin      *admin.Service
 	Dashboard  *dashboard.Service
 	Identity   *account.IdentityService
@@ -136,6 +137,7 @@ func BuildServices(pool *pgxpool.Pool, cfg config.Config, logger *slog.Logger, m
 		adapted := objectstore.NewAssetsStore(objects)
 		assetDeps.Keys, assetDeps.Objects = adapted, adapted
 		verifier = assets.NewVerifier(assets.VerifierDeps{
+			Guard:      assetspg.NewVerificationGuard(pool),
 			UnitOfWork: assetDeps.UnitOfWork, Reader: assetDeps.Reader, Keys: adapted, Objects: adapted,
 			Images: imaging.AssetsProcessor{}, Limits: limits, Clock: clk, Logger: logger,
 		})
@@ -144,10 +146,15 @@ func BuildServices(pool *pgxpool.Pool, cfg config.Config, logger *slog.Logger, m
 	// 头像校验由 assets 提供：资料服务必须在资产服务之后装配。
 	profile := account.NewProfileService(store, assetSvc, clk)
 
+	var purgeObjects trip.PurgeObjects
+	if objects != nil {
+		purgeObjects = objects
+	}
 	return Services{
-		Admin:     admin.NewService(adminpg.NewStore(pool), hasher, clk),
-		Dashboard: dashboardSvc,
-		Identity:  identity, Sessions: sessions, Profile: profile, Categories: categories,
+		TripPurger: trip.NewPurger(adminpg.NewTripPurgeStore(pool), purgeObjects),
+		Admin:      admin.NewService(adminpg.NewStore(pool), hasher, clk).WithTripLifecycle(adminpg.NewTripLifecycleStore(pool, insertOnly, clk)),
+		Dashboard:  dashboardSvc,
+		Identity:   identity, Sessions: sessions, Profile: profile, Categories: categories,
 		Trips: trips, Itinerary: itineraries, RoutePlans: routePlans, Packing: packings, Todos: todos, Members: members, Ledger: ledger, Statistics: statistics, Settlement: settlement,
 		Assets: assetSvc, AssetVerifier: verifier, ObjectStore: objects, Geo: geoSvc, Shares: shares,
 	}, nil
