@@ -115,6 +115,7 @@ func auditAction(value string) string {
 	case "trip.edit", "trip.archive", "trip.trash", "trip.restore", "trip.purge", "trip.retry", "trip.purge.start", "trip.purge.complete", "trip.purge.failed", "trip.invalid", "login", "login.rate_limited", "authentication", "request.invalid", "request.origin", "request.csrf",
 		"session.current", "session.list", "session.revoke", "reauthenticate", "reauthenticate.rate_limited",
 		"principal.grant", "principal.revoke", "overview.read", "user.list", "user.read", "trip.list", "trip.read",
+		"user.ban", "user.unban", "user.force-logout", "trip.sharing.read", "trip.sharing.restrict", "trip.sharing.release",
 		"audit.list", "runtime.read", "job.list", "deletion_job.list":
 		return value
 	default:

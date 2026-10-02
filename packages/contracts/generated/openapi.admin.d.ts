@@ -226,6 +226,29 @@ export type paths = {
         patch?: never;
         trace?: never;
     };
+    "/trips/{trip_id}/sharing-restriction": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        /** 查询旅行的管理分享限制 */
+        get: operations["adminSharingRestriction"];
+        /**
+         * 限制或解除旅行分享
+         * @description 独立于用户分享开关；两种操作都删除旧链接。原因、当前限制版本和近期密码复验必填。
+         */
+        put: operations["adminControlSharing"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/users": {
         parameters: {
             query?: never;
@@ -254,6 +277,66 @@ export type paths = {
         get: operations["adminUser"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/{account_id}/ban": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 封禁用户并撤销全部会话与分享
+         * @description 原因必填，需五分钟内密码复验；审计与操作同事务，最后可用管理员不能封禁。
+         */
+        post: operations["adminBanUser"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/{account_id}/force-logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 撤销用户端和后台全部会话
+         * @description 原因必填，需五分钟内密码复验；审计与操作同事务，最后可用管理员不能封禁。
+         */
+        post: operations["adminForceLogoutUser"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/{account_id}/unban": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 解除封禁，旧会话与旧分享不恢复
+         * @description 原因必填，需五分钟内密码复验；审计与操作同事务，最后可用管理员不能封禁。
+         */
+        post: operations["adminUnbanUser"];
         delete?: never;
         options?: never;
         head?: never;
@@ -421,6 +504,9 @@ export type components = {
             status: "ok" | "unavailable" | "configured" | "disabled";
             summary: string;
         };
+        ControlReason: {
+            reason: string;
+        };
         DeletionJob: {
             /** Format: date-time */
             created_at: string;
@@ -574,6 +660,24 @@ export type components = {
         SessionEnvelope: {
             data: components["schemas"]["AdminIdentity"];
         };
+        SharingControl: {
+            reason: string;
+            restricted: boolean;
+            /** Format: int64 */
+            version: number;
+        };
+        SharingRestriction: {
+            /** Format: uuid */
+            account_id: string;
+            /** Format: date-time */
+            changed_at: string | null;
+            reason: string;
+            restricted: boolean;
+            /** Format: uuid */
+            trip_id: string;
+            /** Format: int64 */
+            version: number;
+        };
         User: {
             /** Format: date-time */
             created_at: string;
@@ -637,8 +741,20 @@ export type components = {
                 "application/problem+json": components["schemas"]["Problem"];
             };
         };
+        /** @description 管理分享限制；version=0 表示从未设置 */
+        SharingResponse: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": {
+                    data: components["schemas"]["SharingRestriction"];
+                };
+            };
+        };
     };
     parameters: {
+        AccountID: string;
         /** @description 登录或当前身份响应返回的后台请求防伪令牌 */
         CSRF: string;
         Page: number;
@@ -1015,6 +1131,43 @@ export interface operations {
             default: components["responses"]["Problem"];
         };
     };
+    adminSharingRestriction: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: components["responses"]["SharingResponse"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    adminControlSharing: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 登录或当前身份响应返回的后台请求防伪令牌 */
+                "X-Admin-CSRF": components["parameters"]["CSRF"];
+            };
+            path: {
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SharingControl"];
+            };
+        };
+        responses: {
+            200: components["responses"]["SharingResponse"];
+            default: components["responses"]["Problem"];
+        };
+    };
     adminUsers: {
         parameters: {
             query?: {
@@ -1025,7 +1178,7 @@ export interface operations {
                 registered_from?: string;
                 /** @description 注册日期止，含当日，按北京时间 */
                 registered_to?: string;
-                status?: "active" | "deleting";
+                status?: "active" | "banned" | "deleting";
             };
             header?: never;
             path?: never;
@@ -1066,6 +1219,90 @@ export interface operations {
                         data: components["schemas"]["UserDetail"];
                     };
                 };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    adminBanUser: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 登录或当前身份响应返回的后台请求防伪令牌 */
+                "X-Admin-CSRF": components["parameters"]["CSRF"];
+            };
+            path: {
+                account_id: components["parameters"]["AccountID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ControlReason"];
+            };
+        };
+        responses: {
+            /** @description 操作已完成 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    adminForceLogoutUser: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 登录或当前身份响应返回的后台请求防伪令牌 */
+                "X-Admin-CSRF": components["parameters"]["CSRF"];
+            };
+            path: {
+                account_id: components["parameters"]["AccountID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ControlReason"];
+            };
+        };
+        responses: {
+            /** @description 操作已完成 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    adminUnbanUser: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 登录或当前身份响应返回的后台请求防伪令牌 */
+                "X-Admin-CSRF": components["parameters"]["CSRF"];
+            };
+            path: {
+                account_id: components["parameters"]["AccountID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ControlReason"];
+            };
+        };
+        responses: {
+            /** @description 操作已完成 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             default: components["responses"]["Problem"];
         };

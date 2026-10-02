@@ -23,6 +23,10 @@ func (w *PurgeTripWorker) Work(ctx context.Context, job *river.Job[trip.PurgeJob
 		return river.JobSnooze(snoozeUnconfigured)
 	}
 	err := w.service.Purge(ctx, job.Args)
+	var busy *trip.PurgeBusy
+	if errors.As(err, &busy) {
+		return river.JobSnooze(5 * time.Second)
+	}
 	var waiting *trip.PurgeWaiting
 	if errors.As(err, &waiting) {
 		return river.JobSnooze(max(time.Until(waiting.Until), time.Second))

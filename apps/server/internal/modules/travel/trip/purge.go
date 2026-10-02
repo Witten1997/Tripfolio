@@ -40,6 +40,10 @@ type PurgeWaiting struct{ Until time.Time }
 
 func (e *PurgeWaiting) Error() string { return "UPLOAD_AUTHORIZATION_ACTIVE" }
 
+type PurgeBusy struct{}
+
+func (*PurgeBusy) Error() string { return "PURGE_BUSY" }
+
 type Purger struct {
 	store   PurgeStore
 	objects PurgeObjects

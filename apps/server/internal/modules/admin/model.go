@@ -38,19 +38,23 @@ type Audit struct {
 }
 
 type Session struct {
-	ID                uuid.UUID
-	AccountID         uuid.UUID
-	Email             string
-	Nickname          string
-	CreatedAt         time.Time
-	LastSeenAt        time.Time
-	ExpiresAt         time.Time
-	ReauthenticatedAt *time.Time
-	IP                string
-	UserAgent         string
+	ExpectedAccountVersion int64
+	ID                     uuid.UUID
+	AccountID              uuid.UUID
+	Email                  string
+	Nickname               string
+	CreatedAt              time.Time
+	LastSeenAt             time.Time
+	ExpiresAt              time.Time
+	ReauthenticatedAt      *time.Time
+	IP                     string
+	UserAgent              string
 }
 
 type Store interface {
+	ControlUser(context.Context, Session, uuid.UUID, string, Audit) error
+	SharingRestriction(context.Context, Session, uuid.UUID, Audit) (SharingRestriction, error)
+	ControlSharing(context.Context, Session, uuid.UUID, SharingControl, Audit) (SharingRestriction, error)
 	Audits(context.Context, AuditFilter) (AuditPage, error)
 	JobCounts(context.Context) (JobCounts, error)
 	Jobs(context.Context, JobFilter) (JobPage, error)

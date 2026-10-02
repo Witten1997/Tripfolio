@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"tripfolio/server/internal/adapters/postgres/dbgen"
 	"tripfolio/server/internal/adapters/postgres/pgcore"
@@ -41,6 +42,10 @@ func (s *TripPurgeStore) Acquire(ctx context.Context, a trip.PurgeJobArgs) (trip
 	}
 	conn, release, err := pgcore.LockTripObjects(ctx, s.pool, a.AccountID, a.TripID)
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "55P03" {
+			return nil, &trip.PurgeBusy{}
+		}
 		return nil, err
 	}
 	return &tripPurgeRun{conn: conn, release: release, args: a, explicit: map[string]bool{}}, nil

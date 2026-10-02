@@ -130,7 +130,7 @@ func (s *Store) OpenSession(ctx context.Context, sess admin.Session, hash []byte
 	var version int64
 	var changed time.Time
 	err = tx.QueryRow(ctx, `SELECT p.version,a.password_changed_at FROM admin_principals p JOIN accounts a ON a.id=p.account_id
-		WHERE a.id=$1 AND a.password_hash=$2 AND a.status='active' AND p.revoked_at IS NULL FOR SHARE OF p,a`, sess.AccountID, passwordHash).Scan(&version, &changed)
+		WHERE a.id=$1 AND a.password_hash=$2 AND a.status='active' AND a.version=$3 AND p.revoked_at IS NULL FOR SHARE OF p,a`, sess.AccountID, passwordHash, sess.ExpectedAccountVersion).Scan(&version, &changed)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return false, nil
 	}

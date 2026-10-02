@@ -50,6 +50,51 @@ type AccountSyncState struct {
 	UpdatedAt        time.Time
 }
 
+type AdminAuditEvent struct {
+	ID               uuid.UUID
+	ActorAccountID   uuid.NullUUID
+	SubjectAccountID uuid.NullUUID
+	SessionID        uuid.NullUUID
+	Action           string
+	ResourceType     string
+	ResourceID       uuid.NullUUID
+	Result           string
+	Reason           string
+	RequestID        string
+	SourceIp         string
+	UserAgent        string
+	Details          []byte
+	OccurredAt       time.Time
+}
+
+type AdminAvailabilityGuard struct {
+	ID      int32
+	Version int64
+}
+
+type AdminPrincipal struct {
+	AccountID uuid.UUID
+	Version   int64
+	GrantedAt time.Time
+	RevokedAt *time.Time
+	Reason    string
+}
+
+type AdminSession struct {
+	ID                uuid.UUID
+	AccountID         uuid.UUID
+	PrincipalVersion  int64
+	TokenHash         []byte
+	PasswordChangedAt time.Time
+	CreatedAt         time.Time
+	LastSeenAt        time.Time
+	ExpiresAt         time.Time
+	ReauthenticatedAt *time.Time
+	RevokedAt         *time.Time
+	SourceIp          string
+	UserAgent         string
+}
+
 type Asset struct {
 	ID                 uuid.UUID
 	AccountID          uuid.UUID
@@ -435,6 +480,14 @@ type TripMember struct {
 	IsSelf       bool
 }
 
+type TripPurgeObject struct {
+	JobID     uuid.UUID
+	AccountID uuid.UUID
+	TripID    uuid.UUID
+	ObjectKey string
+	RemovedAt *time.Time
+}
+
 type TripRouteSummary struct {
 	AccountID            uuid.UUID
 	TripID               uuid.UUID
@@ -458,4 +511,14 @@ type TripShare struct {
 	RotatedAt    *time.Time
 	LastViewedAt *time.Time
 	ViewCount    int64
+}
+
+type TripSharingRestriction struct {
+	AccountID  uuid.UUID
+	TripID     uuid.UUID
+	Restricted bool
+	Reason     string
+	ChangedBy  uuid.UUID
+	ChangedAt  time.Time
+	Version    int64
 }

@@ -77,6 +77,9 @@ func (s *TripLifecycleStore) MutateTrip(ctx context.Context, sess admin.Session,
 	}
 	audit.SubjectID = &owner
 	// This order matches account controls and the user writer.
+	if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(781241,18)`); err != nil {
+		return out, err
+	}
 	rows, err := tx.Query(ctx, `SELECT id FROM accounts WHERE id=ANY($1::uuid[]) ORDER BY id FOR UPDATE`, []uuid.UUID{owner, sess.AccountID})
 	if err != nil {
 		return out, err

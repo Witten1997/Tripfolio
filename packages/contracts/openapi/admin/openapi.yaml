@@ -22,6 +22,14 @@ security:
 paths:
   /trips/{trip_id}/lifecycle:
     $ref: ./trip-lifecycle.yaml#/LifecyclePath
+  /users/{account_id}/ban:
+    $ref: ./controls.yaml#/BanPath
+  /users/{account_id}/unban:
+    $ref: ./controls.yaml#/UnbanPath
+  /users/{account_id}/force-logout:
+    $ref: ./controls.yaml#/ForceLogoutPath
+  /trips/{trip_id}/sharing-restriction:
+    $ref: ./controls.yaml#/SharingPath
   /audits:
     $ref: ./operations.yaml#/AuditPath
   /runtime:
@@ -169,7 +177,7 @@ paths:
           in: query
           schema:
             type: string
-            enum: [active, deleting]
+            enum: [active, banned, deleting]
         - name: registered_from
           in: query
           description: 注册日期起，含当日，按北京时间
@@ -253,6 +261,12 @@ components:
           schema:
             $ref: ../v1/schemas/common.yaml#/Problem
   schemas:
+    SharingRestriction:
+      $ref: ./controls.yaml#/SharingRestriction
+    SharingControl:
+      $ref: ./controls.yaml#/SharingControl
+    ControlReason:
+      $ref: ./controls.yaml#/ControlReason
     AuditEntry:
       $ref: ./operations.yaml#/schemas/AuditEntry
     AuditPage:

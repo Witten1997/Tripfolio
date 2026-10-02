@@ -5,6 +5,7 @@ import { loadTrip, type AdminTripDetail } from '../api'
 import { formatTime, phaseLabel } from '../format'
 import TripLifecycleControls from '../components/TripLifecycleControls.vue'
 import TripPurgeControls from '../components/TripPurgeControls.vue'
+import TripSharingControls from '../components/TripSharingControls.vue'
 
 const route = useRoute()
 const id = computed(() => String(route.params.id))
@@ -103,6 +104,17 @@ onBeforeUnmount(() => {
           (message) => {
             operationNotice = message
             refresh()
+          }
+        "
+      />
+      <TripSharingControls
+        :trip-id="detail.trip.id"
+        :disabled="!!detail.trip.deleted_at || !!detail.trip.purge_requested_at"
+        @changed="
+          (state) => {
+            operationNotice = state.restricted
+              ? '已限制分享，旧链接已失效。'
+              : '已解除限制，用户需重新生成链接。'
           }
         "
       />

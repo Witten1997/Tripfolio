@@ -82,7 +82,7 @@ func (s *Service) Login(ctx context.Context, email, password string, info Reques
 		return Session{}, "", apperr.Internal(err)
 	}
 	now := s.clock.Now()
-	sess := Session{ID: uuid.New(), AccountID: acc.ID, Email: acc.Email, Nickname: acc.Nickname, CreatedAt: now, LastSeenAt: now, ExpiresAt: now.Add(SessionLifetime), ReauthenticatedAt: &now, IP: info.IP, UserAgent: info.UserAgent}
+	sess := Session{ExpectedAccountVersion: acc.Version, ID: uuid.New(), AccountID: acc.ID, Email: acc.Email, Nickname: acc.Nickname, CreatedAt: now, LastSeenAt: now, ExpiresAt: now.Add(SessionLifetime), ReauthenticatedAt: &now, IP: info.IP, UserAgent: info.UserAgent}
 	created, err := s.store.OpenSession(ctx, sess, security.Digest(secret), hash, s.event(&sess, "login", "success", info))
 	if err != nil {
 		return Session{}, "", apperr.Internal(err)

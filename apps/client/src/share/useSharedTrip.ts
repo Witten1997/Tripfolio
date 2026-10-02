@@ -35,6 +35,8 @@ export function classifySharedError(cause: unknown): SharedTripError {
     case 'TRIP_DELETED':
       return 'deleted'
     case 'SHARE_NOT_FOUND':
+    case 'ACCOUNT_BANNED':
+    case 'SHARING_RESTRICTED':
     case 'ACCOUNT_DELETING':
     case 'AUTH_REQUIRED':
       return 'invalid'

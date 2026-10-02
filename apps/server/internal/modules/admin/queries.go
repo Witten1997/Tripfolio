@@ -75,7 +75,7 @@ func (s *Service) Overview(ctx context.Context, sess Session, info RequestInfo) 
 
 func (s *Service) Users(ctx context.Context, sess Session, filter UserFilter, info RequestInfo) (UserPage, error) {
 	filter.Query = strings.TrimSpace(filter.Query)
-	if filter.Page < 1 || filter.Page > 10000 || filter.PageSize < 1 || filter.PageSize > 100 || utf8.RuneCountInString(filter.Query) > 254 || (filter.Status != "" && filter.Status != "active" && filter.Status != "deleting") {
+	if filter.Page < 1 || filter.Page > 10000 || filter.PageSize < 1 || filter.PageSize > 100 || utf8.RuneCountInString(filter.Query) > 254 || (filter.Status != "" && filter.Status != "active" && filter.Status != "deleting" && filter.Status != "banned") {
 		return UserPage{}, apperr.BadRequest("MALFORMED_REQUEST", "用户筛选条件或分页参数无效")
 	}
 	for _, date := range []string{filter.RegisteredFrom, filter.RegisteredTo} {
