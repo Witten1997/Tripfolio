@@ -50,6 +50,10 @@ func Auth(auth Authenticator, policy AuthPolicy) func(http.Handler) http.Handler
 				problem.Write(w, e.Status, e.Code, e.Detail, RequestIDFrom(r.Context()))
 				return
 			}
+			if a.AccountStatus == "banned" && required {
+				problem.Write(w, http.StatusForbidden, "ACCOUNT_BANNED", "账号已被封禁，暂时无法使用", RequestIDFrom(r.Context()))
+				return
+			}
 			if a.AccountStatus != "active" && required && (policy.AllowWhileDeleting == nil || !policy.AllowWhileDeleting(r)) {
 				problem.Write(w, http.StatusForbidden, "ACCOUNT_DELETING", "账号正在注销", RequestIDFrom(r.Context()))
 				return

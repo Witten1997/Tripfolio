@@ -47,6 +47,8 @@ var titles = map[string]string{
 	"AUTH_REQUIRED":          "需要登录",
 	"INVALID_CREDENTIALS":    "邮箱或密码不正确",
 	"SESSION_EXPIRED":        "登录已失效",
+	"ACCOUNT_BANNED":         "账号已被封禁",
+	"SHARING_RESTRICTED":     "旅行分享已受限",
 	"ACCOUNT_DELETING":       "账号正在注销",
 	"REAUTH_REQUIRED":        "需要重新验证密码",
 	"CSRF_FAILED":            "跨站请求校验失败",

@@ -1,5 +1,9 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
+import { ElMessage } from 'element-plus'
+import AdminControlDialog from '../components/AdminControlDialog.vue'
+import { controlUser, type UserControl } from '../controls-api'
+import { identity } from '../api'
 import { Search, RefreshCw } from '@lucide/vue'
 import { listUsers, loadUser, type UserPage, type UserDetail } from '../api'
 import { formatTime, statusLabel, clientLabel } from '../format'
@@ -17,6 +21,37 @@ const detail = ref<UserDetail | null>(null)
 const detailError = ref('')
 const detailLoading = ref(false)
 const selectedID = ref('')
+const controlDialog = ref(false)
+const controlTarget = ref<{ id: string; action: UserControl; nickname: string } | null>(null)
+const controlTitles: Record<UserControl, string> = {
+  ban: '封禁用户',
+  unban: '解封用户',
+  'force-logout': '强制下线',
+}
+const controlDescriptions: Record<UserControl, string> = {
+  ban: '封禁后无法登录、刷新或继续访问，全部用户端及后台会话和分享链接将失效。',
+  unban: '解封后必须重新登录，旧会话与旧分享链接不会恢复。',
+  'force-logout': '撤销该用户所有用户端和后台会话，该用户需要重新登录。',
+}
+function openControl(action: UserControl) {
+  if (!detail.value) return
+  controlTarget.value = {
+    id: detail.value.account.id,
+    nickname: detail.value.account.nickname,
+    action,
+  }
+  controlDialog.value = true
+}
+async function executeControl(reason: string) {
+  if (!controlTarget.value) return
+  await controlUser(controlTarget.value.id, controlTarget.value.action, reason)
+}
+async function controlCompleted() {
+  ElMessage.success('用户管控已生效')
+  if (!identity.value) return
+  if (controlTarget.value?.id === selectedID.value) await showUser(selectedID.value)
+  await refresh()
+}
 let listRequest = 0
 let detailRequest = 0
 async function refresh() {
@@ -102,7 +137,9 @@ onMounted(refresh)
           @change="search"
           ><el-option label="全部状态" value="" /><el-option
             label="正常"
-            value="active" /><el-option label="注销中" value="deleting"
+            value="active" /><el-option label="已封禁" value="banned" /><el-option
+            label="注销中"
+            value="deleting"
         /></el-select>
       </div>
       <div class="date-field">
@@ -208,6 +245,22 @@ onMounted(refresh)
           :to="{ name: 'trips', query: { account_id: detail.account.id } }"
           >查看该用户的旅行 →</RouterLink
         >
+        <h3 class="detail-section-title">用户管控</h3>
+        <div class="control-actions">
+          <el-button
+            v-if="detail.account.status === 'active'"
+            type="danger"
+            @click="openControl('ban')"
+            >封禁用户</el-button
+          >
+          <el-button
+            v-if="detail.account.status === 'banned'"
+            type="primary"
+            @click="openControl('unban')"
+            >解封用户</el-button
+          >
+          <el-button @click="openControl('force-logout')">强制下线</el-button>
+        </div>
         <h3 class="detail-section-title">有效用户端会话</h3>
         <p v-if="!detail.sessions.length" class="muted">暂无有效的用户端登录会话。</p>
         <ul v-else class="user-session-list">
@@ -219,5 +272,24 @@ onMounted(refresh)
         </ul>
       </template>
     </el-drawer>
+    <AdminControlDialog
+      v-model="controlDialog"
+      :title="controlTarget ? controlTitles[controlTarget.action] : ''"
+      :description="
+        controlTarget
+          ? `${controlTarget.nickname}：${controlDescriptions[controlTarget.action]}`
+          : ''
+      "
+      :execute="executeControl"
+      @completed="controlCompleted"
+    />
   </section>
 </template>
+
+<style scoped>
+.control-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+</style>

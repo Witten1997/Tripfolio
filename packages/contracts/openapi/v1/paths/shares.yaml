@@ -17,6 +17,8 @@ share:
           application/json:
             schema:
               $ref: ../openapi.yaml#/components/schemas/TripShareResponse
+      '403':
+        $ref: ../openapi.yaml#/components/responses/Forbidden
       '401':
         $ref: ../openapi.yaml#/components/responses/Unauthorized
       '404':
@@ -34,6 +36,8 @@ share:
           application/json:
             schema:
               $ref: ../openapi.yaml#/components/schemas/TripShareResponse
+      '403':
+        $ref: ../openapi.yaml#/components/responses/Forbidden
       '401':
         $ref: ../openapi.yaml#/components/responses/Unauthorized
       '404':
@@ -47,6 +51,8 @@ share:
     responses:
       '204':
         description: 已关闭
+      '403':
+        $ref: ../openapi.yaml#/components/responses/Forbidden
       '401':
         $ref: ../openapi.yaml#/components/responses/Unauthorized
       '404':
@@ -73,6 +79,8 @@ share-rotate:
           application/json:
             schema:
               $ref: ../openapi.yaml#/components/schemas/TripShareResponse
+      '403':
+        $ref: ../openapi.yaml#/components/responses/Forbidden
       '401':
         $ref: ../openapi.yaml#/components/responses/Unauthorized
       '404':

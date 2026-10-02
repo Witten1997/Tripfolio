@@ -59,6 +59,13 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
     async onResponse({ response, id, schemaPath, options: merged }) {
       const original = pending.get(id)
       pending.delete(id)
+      if (response.status === 403) {
+        const problem = await response
+          .clone()
+          .json()
+          .catch(() => null)
+        if (problem?.code === 'ACCOUNT_BANNED') useSessionStore().clear()
+      }
       if (response.status !== 401 || !original) return response
       if (schemaPath === '/auth/reauthenticate') {
         // 密码错误不代表会话失效；读取副本，保留原问题响应供调用方展示。

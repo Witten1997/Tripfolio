@@ -166,7 +166,7 @@ Account:
       type: string
     status:
       type: string
-      enum: [active, deleting]
+      enum: [active, banned, deleting]
     version:
       $ref: ./write.yaml#/Version
     created_at:

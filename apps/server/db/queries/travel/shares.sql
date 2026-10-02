@@ -9,7 +9,8 @@ SELECT s.*, a.status AS owner_status, t.deleted_at AS trip_deleted_at
 FROM trip_shares s
 JOIN accounts a ON a.id = s.account_id
 JOIN trips t ON t.account_id = s.account_id AND t.id = s.trip_id
-WHERE s.token = sqlc.arg(token);
+WHERE s.token = sqlc.arg(token)
+AND NOT EXISTS (SELECT 1 FROM trip_sharing_restrictions r WHERE r.account_id=s.account_id AND r.trip_id=s.trip_id AND r.restricted);
 
 -- name: InsertTripShare :one
 INSERT INTO trip_shares (id, account_id, trip_id, token, created_at)

@@ -93,7 +93,7 @@ func (s *Service) resource(r Record) Resource {
 func (s *Service) ownerTrip(ctx context.Context, a actor.Actor, tripID uuid.UUID) error {
 	t, ok, err := s.d.Trips.Get(ctx, a.AccountID, tripID)
 	if err != nil {
-		return apperr.Internal(err)
+		return shareError(err)
 	}
 	if !ok {
 		return apperr.NotFound()
@@ -111,7 +111,7 @@ func (s *Service) Get(ctx context.Context, a actor.Actor, tripID uuid.UUID) (Res
 	}
 	r, ok, err := s.d.Store.GetByTrip(ctx, a.AccountID, tripID)
 	if err != nil {
-		return Resource{}, apperr.Internal(err)
+		return Resource{}, shareError(err)
 	}
 	if !ok {
 		return Resource{}, shareNotFound()
@@ -125,21 +125,21 @@ func (s *Service) Enable(ctx context.Context, a actor.Actor, tripID uuid.UUID) (
 		return Resource{}, err
 	}
 	if r, ok, err := s.d.Store.GetByTrip(ctx, a.AccountID, tripID); err != nil {
-		return Resource{}, apperr.Internal(err)
+		return Resource{}, shareError(err)
 	} else if ok {
 		return s.resource(r), nil
 	}
 	token, err := s.d.Tokens()
 	if err != nil {
-		return Resource{}, apperr.Internal(err)
+		return Resource{}, shareError(err)
 	}
 	r, inserted, err := s.d.Store.Insert(ctx, Record{ID: uuid.New(), AccountID: a.AccountID, TripID: tripID, Token: token, CreatedAt: s.d.Clock.Now()})
 	if err != nil {
-		return Resource{}, apperr.Internal(err)
+		return Resource{}, shareError(err)
 	}
 	if !inserted {
 		if r, _, err = s.d.Store.GetByTrip(ctx, a.AccountID, tripID); err != nil {
-			return Resource{}, apperr.Internal(err)
+			return Resource{}, shareError(err)
 		}
 	}
 	return s.resource(r), nil
@@ -152,11 +152,11 @@ func (s *Service) Rotate(ctx context.Context, a actor.Actor, tripID uuid.UUID) (
 	}
 	token, err := s.d.Tokens()
 	if err != nil {
-		return Resource{}, apperr.Internal(err)
+		return Resource{}, shareError(err)
 	}
 	r, ok, err := s.d.Store.Rotate(ctx, a.AccountID, tripID, token, s.d.Clock.Now())
 	if err != nil {
-		return Resource{}, apperr.Internal(err)
+		return Resource{}, shareError(err)
 	}
 	if !ok {
 		return Resource{}, shareNotFound()
@@ -170,7 +170,7 @@ func (s *Service) Disable(ctx context.Context, a actor.Actor, tripID uuid.UUID) 
 		return err
 	}
 	if err := s.d.Store.Delete(ctx, a.AccountID, tripID); err != nil {
-		return apperr.Internal(err)
+		return shareError(err)
 	}
 	return nil
 }
@@ -185,12 +185,15 @@ func (s *Service) Resolve(ctx context.Context, token, clientIP string) (Viewer, 
 	}
 	res, ok, err := s.d.Store.ResolveToken(ctx, token)
 	if err != nil {
-		return Viewer{}, apperr.Internal(err)
+		return Viewer{}, shareError(err)
 	}
 	if !ok {
 		return Viewer{}, shareNotFound()
 	}
 	if res.OwnerStatus != "active" {
+		if res.OwnerStatus == "banned" {
+			return Viewer{}, apperr.Forbidden("ACCOUNT_BANNED", "账号已被封禁，暂时无法访问分享")
+		}
 		return Viewer{}, apperr.Forbidden(codeAccountDeleting, "账号正在注销")
 	}
 	if res.TripDeletedAt != nil {
@@ -203,7 +206,7 @@ func (s *Service) Resolve(ctx context.Context, token, clientIP string) (Viewer, 
 func (s *Service) ViewTrip(ctx context.Context, v Viewer) (PublicTrip, error) {
 	t, ok, err := s.d.Trips.Get(ctx, v.AccountID, v.TripID)
 	if err != nil {
-		return PublicTrip{}, apperr.Internal(err)
+		return PublicTrip{}, shareError(err)
 	}
 	if !ok {
 		return PublicTrip{}, shareNotFound()
@@ -240,13 +243,13 @@ func (s *Service) ListItems(ctx context.Context, v Viewer, f ListFilters) (pagin
 	}
 	items, err := s.d.Itinerary.List(ctx, v.AccountID, v.TripID, itinerary.ListQuery{Limit: limit + 1, After: after})
 	if err != nil {
-		return page, apperr.Internal(err)
+		return page, shareError(err)
 	}
 	if len(items) > limit {
 		last := items[limit-1]
 		token, err := s.d.Cursors.Encode(v.AccountID, listScope(v), itinerary.Position{ScheduledOn: last.ScheduledOn, SortOrder: last.SortOrder, ID: last.ID})
 		if err != nil {
-			return page, apperr.Internal(err)
+			return page, shareError(err)
 		}
 		page.NextCursor = &token
 		items = items[:limit]
@@ -256,4 +259,11 @@ func (s *Service) ListItems(ctx context.Context, v Viewer, f ListFilters) (pagin
 		page.Items = append(page.Items, ToPublicItem(it))
 	}
 	return page, nil
+}
+
+func shareError(err error) error {
+	if _, ok := apperr.As(err); ok {
+		return err
+	}
+	return apperr.Internal(err)
 }

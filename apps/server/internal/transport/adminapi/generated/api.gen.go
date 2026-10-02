@@ -411,6 +411,7 @@ func (e AdminTripsParamsTrash) Valid() bool {
 // Defines values for AdminUsersParamsStatus.
 const (
 	Active   AdminUsersParamsStatus = "active"
+	Banned   AdminUsersParamsStatus = "banned"
 	Deleting AdminUsersParamsStatus = "deleting"
 )
 
@@ -418,6 +419,8 @@ const (
 func (e AdminUsersParamsStatus) Valid() bool {
 	switch e {
 	case Active:
+		return true
+	case Banned:
 		return true
 	case Deleting:
 		return true
@@ -549,6 +552,11 @@ type ComponentStatusName string
 
 // ComponentStatusStatus defines model for ComponentStatus.Status.
 type ComponentStatusStatus string
+
+// ControlReason defines model for ControlReason.
+type ControlReason struct {
+	Reason string `json:"reason"`
+}
 
 // DeletionJob defines model for DeletionJob.
 type DeletionJob struct {
@@ -714,6 +722,23 @@ type SessionEnvelope struct {
 	Data AdminIdentity `json:"data"`
 }
 
+// SharingControl defines model for SharingControl.
+type SharingControl struct {
+	Reason     string `json:"reason"`
+	Restricted bool   `json:"restricted"`
+	Version    int64  `json:"version"`
+}
+
+// SharingRestriction defines model for SharingRestriction.
+type SharingRestriction struct {
+	AccountId  openapi_types.UUID           `json:"account_id"`
+	ChangedAt  nullable.Nullable[time.Time] `json:"changed_at"`
+	Reason     string                       `json:"reason"`
+	Restricted bool                         `json:"restricted"`
+	TripId     openapi_types.UUID           `json:"trip_id"`
+	Version    int64                        `json:"version"`
+}
+
 // User defines model for User.
 type User struct {
 	CreatedAt    time.Time                    `json:"created_at"`
@@ -764,6 +789,9 @@ type VersionConflict struct {
 	ExpectedVersion string `json:"expected_version"`
 }
 
+// AccountID defines model for AccountID.
+type AccountID = openapi_types.UUID
+
 // CSRF defines model for CSRF.
 type CSRF = string
 
@@ -775,6 +803,11 @@ type PageSize = int
 
 // TripID defines model for TripID.
 type TripID = openapi_types.UUID
+
+// SharingResponse defines model for SharingResponse.
+type SharingResponse struct {
+	Data SharingRestriction `json:"data"`
+}
 
 // AdminAuditsParams defines parameters for AdminAudits.
 type AdminAuditsParams struct {
@@ -859,6 +892,12 @@ type AdminTripsParamsArchived string
 // AdminTripsParamsTrash defines parameters for AdminTrips.
 type AdminTripsParamsTrash string
 
+// AdminControlSharingParams defines parameters for AdminControlSharing.
+type AdminControlSharingParams struct {
+	// XAdminCSRF 登录或当前身份响应返回的后台请求防伪令牌
+	XAdminCSRF CSRF `json:"X-Admin-CSRF"`
+}
+
 // AdminUsersParams defines parameters for AdminUsers.
 type AdminUsersParams struct {
 	Q      *string                 `form:"q,omitempty" json:"q,omitempty"`
@@ -876,11 +915,41 @@ type AdminUsersParams struct {
 // AdminUsersParamsStatus defines parameters for AdminUsers.
 type AdminUsersParamsStatus string
 
+// AdminBanUserParams defines parameters for AdminBanUser.
+type AdminBanUserParams struct {
+	// XAdminCSRF 登录或当前身份响应返回的后台请求防伪令牌
+	XAdminCSRF CSRF `json:"X-Admin-CSRF"`
+}
+
+// AdminForceLogoutUserParams defines parameters for AdminForceLogoutUser.
+type AdminForceLogoutUserParams struct {
+	// XAdminCSRF 登录或当前身份响应返回的后台请求防伪令牌
+	XAdminCSRF CSRF `json:"X-Admin-CSRF"`
+}
+
+// AdminUnbanUserParams defines parameters for AdminUnbanUser.
+type AdminUnbanUserParams struct {
+	// XAdminCSRF 登录或当前身份响应返回的后台请求防伪令牌
+	XAdminCSRF CSRF `json:"X-Admin-CSRF"`
+}
+
 // AdminLoginJSONRequestBody defines body for AdminLogin for application/json ContentType.
 type AdminLoginJSONRequestBody = LoginRequest
 
 // AdminReauthenticateJSONRequestBody defines body for AdminReauthenticate for application/json ContentType.
 type AdminReauthenticateJSONRequestBody = PasswordRequest
+
+// AdminControlSharingJSONRequestBody defines body for AdminControlSharing for application/json ContentType.
+type AdminControlSharingJSONRequestBody = SharingControl
+
+// AdminBanUserJSONRequestBody defines body for AdminBanUser for application/json ContentType.
+type AdminBanUserJSONRequestBody = ControlReason
+
+// AdminForceLogoutUserJSONRequestBody defines body for AdminForceLogoutUser for application/json ContentType.
+type AdminForceLogoutUserJSONRequestBody = ControlReason
+
+// AdminUnbanUserJSONRequestBody defines body for AdminUnbanUser for application/json ContentType.
+type AdminUnbanUserJSONRequestBody = ControlReason
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
@@ -923,12 +992,27 @@ type ServerInterface interface {
 	// AdminTrip 查看旅行概况及内容数量
 	// (GET /trips/{trip_id})
 	AdminTrip(w http.ResponseWriter, r *http.Request, tripId TripID)
+	// AdminSharingRestriction 查询旅行的管理分享限制
+	// (GET /trips/{trip_id}/sharing-restriction)
+	AdminSharingRestriction(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID)
+	// AdminControlSharing 限制或解除旅行分享
+	// (PUT /trips/{trip_id}/sharing-restriction)
+	AdminControlSharing(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, params AdminControlSharingParams)
 	// AdminUsers 分页检索用户
 	// (GET /users)
 	AdminUsers(w http.ResponseWriter, r *http.Request, params AdminUsersParams)
 	// AdminUser 查看指定用户的资料、资源数量与有效用户端会话
 	// (GET /users/{account_id})
 	AdminUser(w http.ResponseWriter, r *http.Request, accountId openapi_types.UUID)
+	// AdminBanUser 封禁用户并撤销全部会话与分享
+	// (POST /users/{account_id}/ban)
+	AdminBanUser(w http.ResponseWriter, r *http.Request, accountId AccountID, params AdminBanUserParams)
+	// AdminForceLogoutUser 撤销用户端和后台全部会话
+	// (POST /users/{account_id}/force-logout)
+	AdminForceLogoutUser(w http.ResponseWriter, r *http.Request, accountId AccountID, params AdminForceLogoutUserParams)
+	// AdminUnbanUser 解除封禁，旧会话与旧分享不恢复
+	// (POST /users/{account_id}/unban)
+	AdminUnbanUser(w http.ResponseWriter, r *http.Request, accountId AccountID, params AdminUnbanUserParams)
 }
 
 // Unimplemented server implementation that returns http.StatusNotImplemented for each endpoint.
@@ -1013,6 +1097,18 @@ func (_ Unimplemented) AdminTrip(w http.ResponseWriter, r *http.Request, tripId 
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// AdminSharingRestriction 查询旅行的管理分享限制
+// (GET /trips/{trip_id}/sharing-restriction)
+func (_ Unimplemented) AdminSharingRestriction(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// AdminControlSharing 限制或解除旅行分享
+// (PUT /trips/{trip_id}/sharing-restriction)
+func (_ Unimplemented) AdminControlSharing(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, params AdminControlSharingParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // AdminUsers 分页检索用户
 // (GET /users)
 func (_ Unimplemented) AdminUsers(w http.ResponseWriter, r *http.Request, params AdminUsersParams) {
@@ -1022,6 +1118,24 @@ func (_ Unimplemented) AdminUsers(w http.ResponseWriter, r *http.Request, params
 // AdminUser 查看指定用户的资料、资源数量与有效用户端会话
 // (GET /users/{account_id})
 func (_ Unimplemented) AdminUser(w http.ResponseWriter, r *http.Request, accountId openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// AdminBanUser 封禁用户并撤销全部会话与分享
+// (POST /users/{account_id}/ban)
+func (_ Unimplemented) AdminBanUser(w http.ResponseWriter, r *http.Request, accountId AccountID, params AdminBanUserParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// AdminForceLogoutUser 撤销用户端和后台全部会话
+// (POST /users/{account_id}/force-logout)
+func (_ Unimplemented) AdminForceLogoutUser(w http.ResponseWriter, r *http.Request, accountId AccountID, params AdminForceLogoutUserParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// AdminUnbanUser 解除封禁，旧会话与旧分享不恢复
+// (POST /users/{account_id}/unban)
+func (_ Unimplemented) AdminUnbanUser(w http.ResponseWriter, r *http.Request, accountId AccountID, params AdminUnbanUserParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -1666,6 +1780,86 @@ func (siw *ServerInterfaceWrapper) AdminTrip(w http.ResponseWriter, r *http.Requ
 	handler.ServeHTTP(w, r)
 }
 
+// AdminSharingRestriction operation middleware
+func (siw *ServerInterfaceWrapper) AdminSharingRestriction(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "trip_id" -------------
+	var tripId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "trip_id", chi.URLParam(r, "trip_id"), &tripId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "trip_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AdminSharingRestriction(w, r, tripId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AdminControlSharing operation middleware
+func (siw *ServerInterfaceWrapper) AdminControlSharing(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "trip_id" -------------
+	var tripId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "trip_id", chi.URLParam(r, "trip_id"), &tripId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "trip_id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params AdminControlSharingParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-Admin-CSRF" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Admin-CSRF")]; found {
+		var XAdminCSRF CSRF
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-Admin-CSRF", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Admin-CSRF", valueList[0], &XAdminCSRF, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-Admin-CSRF", Err: err})
+			return
+		}
+
+		params.XAdminCSRF = XAdminCSRF
+
+	} else {
+		err := fmt.Errorf("Header parameter X-Admin-CSRF is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-Admin-CSRF", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AdminControlSharing(w, r, tripId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // AdminUsers operation middleware
 func (siw *ServerInterfaceWrapper) AdminUsers(w http.ResponseWriter, r *http.Request) {
 
@@ -1790,6 +1984,168 @@ func (siw *ServerInterfaceWrapper) AdminUser(w http.ResponseWriter, r *http.Requ
 	handler.ServeHTTP(w, r)
 }
 
+// AdminBanUser operation middleware
+func (siw *ServerInterfaceWrapper) AdminBanUser(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "account_id" -------------
+	var accountId AccountID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "account_id", chi.URLParam(r, "account_id"), &accountId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "account_id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params AdminBanUserParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-Admin-CSRF" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Admin-CSRF")]; found {
+		var XAdminCSRF CSRF
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-Admin-CSRF", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Admin-CSRF", valueList[0], &XAdminCSRF, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-Admin-CSRF", Err: err})
+			return
+		}
+
+		params.XAdminCSRF = XAdminCSRF
+
+	} else {
+		err := fmt.Errorf("Header parameter X-Admin-CSRF is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-Admin-CSRF", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AdminBanUser(w, r, accountId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AdminForceLogoutUser operation middleware
+func (siw *ServerInterfaceWrapper) AdminForceLogoutUser(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "account_id" -------------
+	var accountId AccountID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "account_id", chi.URLParam(r, "account_id"), &accountId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "account_id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params AdminForceLogoutUserParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-Admin-CSRF" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Admin-CSRF")]; found {
+		var XAdminCSRF CSRF
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-Admin-CSRF", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Admin-CSRF", valueList[0], &XAdminCSRF, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-Admin-CSRF", Err: err})
+			return
+		}
+
+		params.XAdminCSRF = XAdminCSRF
+
+	} else {
+		err := fmt.Errorf("Header parameter X-Admin-CSRF is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-Admin-CSRF", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AdminForceLogoutUser(w, r, accountId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AdminUnbanUser operation middleware
+func (siw *ServerInterfaceWrapper) AdminUnbanUser(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "account_id" -------------
+	var accountId AccountID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "account_id", chi.URLParam(r, "account_id"), &accountId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "account_id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params AdminUnbanUserParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-Admin-CSRF" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Admin-CSRF")]; found {
+		var XAdminCSRF CSRF
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-Admin-CSRF", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Admin-CSRF", valueList[0], &XAdminCSRF, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-Admin-CSRF", Err: err})
+			return
+		}
+
+		params.XAdminCSRF = XAdminCSRF
+
+	} else {
+		err := fmt.Errorf("Header parameter X-Admin-CSRF is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-Admin-CSRF", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AdminUnbanUser(w, r, accountId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 type UnescapedCookieParamError struct {
 	ParamName string
 	Err       error
@@ -1903,6 +2259,21 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		ErrorHandlerFunc:   options.ErrorHandlerFunc,
 	}
 
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/users/{account_id}/ban", wrapper.AdminBanUser)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/users/{account_id}/unban", wrapper.AdminUnbanUser)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/users/{account_id}/force-logout", wrapper.AdminForceLogoutUser)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/trips/{trip_id}/sharing-restriction", wrapper.AdminSharingRestriction)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/trips/{trip_id}/sharing-restriction", wrapper.AdminControlSharing)
+	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/audits", wrapper.AdminAudits)
 	})

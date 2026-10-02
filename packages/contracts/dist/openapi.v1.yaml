@@ -899,6 +899,8 @@ paths:
                 $ref: '#/components/schemas/TripShareResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
         '410':
@@ -917,6 +919,8 @@ paths:
                 $ref: '#/components/schemas/TripShareResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
         '410':
@@ -931,6 +935,8 @@ paths:
           description: 已关闭
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
         '410':
@@ -957,6 +963,8 @@ paths:
                 $ref: '#/components/schemas/TripShareResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
         '410':
@@ -3606,6 +3614,7 @@ components:
           type: string
           enum:
             - active
+            - banned
             - deleting
         version:
           $ref: '#/components/schemas/Version'

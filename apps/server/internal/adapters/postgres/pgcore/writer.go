@@ -15,9 +15,11 @@ import (
 	"github.com/riverqueue/river"
 
 	"tripfolio/server/internal/adapters/postgres/dbgen"
+	"tripfolio/server/internal/foundation/actor"
 	"tripfolio/server/internal/foundation/apperr"
 	"tripfolio/server/internal/foundation/clock"
 	"tripfolio/server/internal/foundation/write"
+	"tripfolio/server/internal/modules/account"
 )
 
 // Writer 实现总览 4.1 的统一写事务：账号锁 → 收据去重 → 业务写入 → 变更日志 → 收据 → River 入队 → 提交。
@@ -196,10 +198,14 @@ func (w *Writer) Run(ctx context.Context, req write.Request, fn func(ctx context
 	var receiptFound bool
 	batch := &pgx.Batch{}
 	batch.Queue("BEGIN ISOLATION LEVEL READ COMMITTED")
+	batch.Queue(`SELECT status FROM accounts WHERE id=$1 FOR UPDATE`, req.AccountID)
 	batch.Queue(lockAndReceiptQuery, req.AccountID)
 	batch.Queue(receiptLookupQuery, req.AccountID, req.OperationID)
 	results := conn.SendBatch(ctx, batch)
 	_, err = results.Exec()
+	if err == nil {
+		err = results.QueryRow().Scan(&lock.Status)
+	}
 	if err == nil {
 		err = results.QueryRow().Scan(&lock.LastSeq, &lock.Status)
 	}
@@ -222,7 +228,17 @@ func (w *Writer) Run(ctx context.Context, req write.Request, fn func(ctx context
 		return write.Result{}, apperr.Internal(err)
 	}
 	if lock.Status != "active" {
-		return write.Result{}, apperr.Forbidden("ACCOUNT_DELETING", "账号正在注销")
+		return write.Result{}, account.StatusError(lock.Status)
+	}
+	if a, ok := actor.FromContext(ctx); ok {
+		var valid bool
+		err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM account_sessions WHERE id=$1 AND account_id=$2 AND revoked_at IS NULL AND expires_at>$3)`, a.SessionID, req.AccountID, w.clock.Now()).Scan(&valid)
+		if err != nil {
+			return write.Result{}, apperr.Internal(err)
+		}
+		if !valid || a.AccountID != req.AccountID {
+			return write.Result{}, apperr.Unauthorized("SESSION_EXPIRED", "登录已失效，请重新登录")
+		}
 	}
 	now := w.clock.Now()
 	scope := &TxScope{Tx: tx, Queries: dbgen.New(tx), AccountID: req.AccountID, Now: now}

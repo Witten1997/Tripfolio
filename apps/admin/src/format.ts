@@ -5,7 +5,7 @@ export const formatTime = (value: string | null) =>
       )
     : '暂无记录'
 
-const statuses: Record<string, string> = { active: '正常', deleting: '注销中' }
+const statuses: Record<string, string> = { active: '正常', banned: '已封禁', deleting: '注销中' }
 const clients: Record<string, string> = { web: '网页端', android: 'Android', harmony: 'HarmonyOS' }
 export const statusLabel = (value: string) => statuses[value] || value
 export const clientLabel = (value: string) => clients[value] || value

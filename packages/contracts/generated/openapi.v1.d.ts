@@ -1135,7 +1135,7 @@ export type components = {
             id: string;
             nickname: string;
             /** @enum {string} */
-            status: "active" | "deleting";
+            status: "active" | "banned" | "deleting";
             updated_at: components["schemas"]["Instant"];
             version: components["schemas"]["Version"];
         };
@@ -4929,6 +4929,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             410: components["responses"]["Gone"];
         };
@@ -4954,6 +4955,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             410: components["responses"]["Gone"];
         };
@@ -4977,6 +4979,7 @@ export interface operations {
                 content?: never;
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             410: components["responses"]["Gone"];
         };
@@ -5002,6 +5005,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             410: components["responses"]["Gone"];
         };

@@ -38,6 +38,8 @@ type Account struct {
 
 // Session 是登录会话。
 type Session struct {
+	ExpectedAccountVersion   int64
+	ExpectedPasswordHash     string
 	ID                       uuid.UUID
 	AccountID                uuid.UUID
 	ClientKind               actor.ClientKind
@@ -99,9 +101,7 @@ type AuthResult struct {
 
 // Policy 集中会话与验证码的时间参数，便于测试调整。
 type Policy struct {
-	AccessTokenTTL time.Duration
-	// AuthCacheTTL 是鉴权结果的进程内缓存时长；0 表示每个请求都查库。
-	AuthCacheTTL        time.Duration
+	AccessTokenTTL      time.Duration
 	RefreshTokenTTL     time.Duration
 	RefreshGrace        time.Duration
 	ReauthWindow        time.Duration
@@ -117,7 +117,6 @@ type Policy struct {
 func DefaultPolicy() Policy {
 	return Policy{
 		AccessTokenTTL:      15 * time.Minute,
-		AuthCacheTTL:        60 * time.Second,
 		RefreshTokenTTL:     30 * 24 * time.Hour,
 		RefreshGrace:        60 * time.Second,
 		ReauthWindow:        5 * time.Minute,

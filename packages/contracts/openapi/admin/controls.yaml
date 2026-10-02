@@ -1,0 +1,159 @@
+BanPath:
+  post:
+    tags: [admin-users]
+    operationId: adminBanUser
+    summary: 封禁用户并撤销全部会话与分享
+    description: 原因必填，需五分钟内密码复验；审计与操作同事务，最后可用管理员不能封禁。
+    parameters:
+      - $ref: '#/AccountID'
+      - $ref: './openapi.yaml#/components/parameters/CSRF'
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/ControlReason'
+    responses:
+      '204':
+        description: 操作已完成
+      default:
+        $ref: './openapi.yaml#/components/responses/Problem'
+UnbanPath:
+  post:
+    tags: [admin-users]
+    operationId: adminUnbanUser
+    summary: 解除封禁，旧会话与旧分享不恢复
+    description: 原因必填，需五分钟内密码复验；审计与操作同事务，最后可用管理员不能封禁。
+    parameters:
+      - $ref: '#/AccountID'
+      - $ref: './openapi.yaml#/components/parameters/CSRF'
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/ControlReason'
+    responses:
+      '204':
+        description: 操作已完成
+      default:
+        $ref: './openapi.yaml#/components/responses/Problem'
+ForceLogoutPath:
+  post:
+    tags: [admin-users]
+    operationId: adminForceLogoutUser
+    summary: 撤销用户端和后台全部会话
+    description: 原因必填，需五分钟内密码复验；审计与操作同事务，最后可用管理员不能封禁。
+    parameters:
+      - $ref: '#/AccountID'
+      - $ref: './openapi.yaml#/components/parameters/CSRF'
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/ControlReason'
+    responses:
+      '204':
+        description: 操作已完成
+      default:
+        $ref: './openapi.yaml#/components/responses/Problem'
+SharingPath:
+  parameters:
+    - name: trip_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  get:
+    tags: [admin-trips]
+    operationId: adminSharingRestriction
+    summary: 查询旅行的管理分享限制
+    responses:
+      '200':
+        $ref: '#/SharingResponse'
+      default:
+        $ref: './openapi.yaml#/components/responses/Problem'
+  put:
+    tags: [admin-trips]
+    operationId: adminControlSharing
+    summary: 限制或解除旅行分享
+    description: 独立于用户分享开关；两种操作都删除旧链接。原因、当前限制版本和近期密码复验必填。
+    parameters:
+      - $ref: './openapi.yaml#/components/parameters/CSRF'
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/SharingControl'
+    responses:
+      '200':
+        $ref: '#/SharingResponse'
+      default:
+        $ref: './openapi.yaml#/components/responses/Problem'
+AccountID:
+  name: account_id
+  in: path
+  required: true
+  schema:
+    type: string
+    format: uuid
+ControlReason:
+  type: object
+  additionalProperties: false
+  required: [reason]
+  properties:
+    reason:
+      type: string
+      minLength: 1
+      maxLength: 500
+SharingControl:
+  type: object
+  additionalProperties: false
+  required: [reason, restricted, version]
+  properties:
+    reason:
+      type: string
+      minLength: 1
+      maxLength: 500
+    restricted:
+      type: boolean
+    version:
+      type: integer
+      format: int64
+      minimum: 0
+SharingRestriction:
+  type: object
+  additionalProperties: false
+  required: [trip_id, account_id, restricted, reason, changed_at, version]
+  properties:
+    trip_id:
+      type: string
+      format: uuid
+    account_id:
+      type: string
+      format: uuid
+    restricted:
+      type: boolean
+    reason:
+      type: string
+    changed_at:
+      type: string
+      format: date-time
+      nullable: true
+    version:
+      type: integer
+      format: int64
+      minimum: 0
+SharingResponse:
+  description: 管理分享限制；version=0 表示从未设置
+  content:
+    application/json:
+      schema:
+        type: object
+        required: [data]
+        properties:
+          data:
+            $ref: '#/SharingRestriction'

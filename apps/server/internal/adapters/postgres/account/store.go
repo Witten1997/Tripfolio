@@ -14,6 +14,7 @@ import (
 	financepg "tripfolio/server/internal/adapters/postgres/finance"
 	"tripfolio/server/internal/adapters/postgres/pgcore"
 	"tripfolio/server/internal/foundation/actor"
+	"tripfolio/server/internal/foundation/apperr"
 	"tripfolio/server/internal/modules/account"
 )
 
@@ -138,14 +139,30 @@ func (s *Store) SetAccountStatus(ctx context.Context, id uuid.UUID, status strin
 }
 
 func (s *Store) CreateSession(ctx context.Context, sess account.Session) (account.Session, error) {
-	row, err := s.q.CreateSession(ctx, dbgen.CreateSessionParams{
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return account.Session{}, err
+	}
+	defer tx.Rollback(ctx)
+	var status, hash string
+	var version int64
+	if err = tx.QueryRow(ctx, `SELECT status,password_hash,version FROM accounts WHERE id=$1 FOR SHARE`, sess.AccountID).Scan(&status, &hash, &version); err != nil {
+		return account.Session{}, err
+	}
+	if status != "active" {
+		return account.Session{}, account.StatusError(status)
+	}
+	if sess.ExpectedAccountVersion != 0 && (sess.ExpectedAccountVersion != version || sess.ExpectedPasswordHash != hash) {
+		return account.Session{}, apperr.Unauthorized("SESSION_EXPIRED", "账号状态已改变，请重新登录")
+	}
+	row, err := dbgen.New(tx).CreateSession(ctx, dbgen.CreateSessionParams{
 		ID: sess.ID, AccountID: sess.AccountID, ClientKind: string(sess.ClientKind), DeviceID: sess.DeviceID, DeviceName: sess.DeviceName,
 		RefreshTokenHash: sess.RefreshTokenHash, CsrfTokenHash: sess.CSRFTokenHash, ExpiresAt: sess.ExpiresAt, CreatedAt: sess.CreatedAt,
 	})
 	if err != nil {
 		return account.Session{}, err
 	}
-	return toSession(row), nil
+	return toSession(row), tx.Commit(ctx)
 }
 
 func (s *Store) SessionByID(ctx context.Context, id uuid.UUID) (account.Session, bool, error) {
@@ -176,6 +193,17 @@ func (s *Store) RotateSessionTx(ctx context.Context, id uuid.UUID, fn func(accou
 		return account.Session{}, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+	var status string
+	err = tx.QueryRow(ctx, `SELECT a.status FROM accounts a WHERE a.id=(SELECT account_id FROM account_sessions WHERE id=$1) FOR SHARE`, id).Scan(&status)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return account.Session{}, apperr.Unauthorized("SESSION_EXPIRED", "登录已失效，请重新登录")
+	}
+	if err != nil {
+		return account.Session{}, err
+	}
+	if status != "active" {
+		return account.Session{}, account.StatusError(status)
+	}
 	q := dbgen.New(tx)
 	row, err := q.GetSessionForUpdate(ctx, id)
 	if errors.Is(err, pgx.ErrNoRows) {

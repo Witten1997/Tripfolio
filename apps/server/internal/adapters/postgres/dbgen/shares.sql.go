@@ -117,6 +117,7 @@ FROM trip_shares s
 JOIN accounts a ON a.id = s.account_id
 JOIN trips t ON t.account_id = s.account_id AND t.id = s.trip_id
 WHERE s.token = $1
+AND NOT EXISTS (SELECT 1 FROM trip_sharing_restrictions r WHERE r.account_id=s.account_id AND r.trip_id=s.trip_id AND r.restricted)
 `
 
 type ResolveTripShareTokenRow struct {
