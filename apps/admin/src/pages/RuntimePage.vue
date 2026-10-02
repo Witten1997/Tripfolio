@@ -269,7 +269,7 @@ onBeforeUnmount(() => {
       <div class="section-heading">
         <div>
           <h2 id="deletion-jobs-heading">清理任务进度</h2>
-          <p class="muted">永久清理尚未开放，排队中的任务不代表已清理。</p>
+          <p class="muted">只有任务显示“已完成”，才表示关联对象和数据已全部清理。</p>
         </div>
         <el-select
           v-model="deletionState"
@@ -293,10 +293,12 @@ onBeforeUnmount(() => {
           <el-table-column label="清理对象" min-width="210"
             ><template #default="{ row }"
               ><RouterLink
-                v-if="row.target_trip_id"
+                v-if="row.target_trip_id && row.status !== 'completed'"
                 class="text-link record-id"
                 :to="{ name: 'trip', params: { id: row.target_trip_id } }"
                 >旅行 {{ row.target_trip_id }}</RouterLink
+              ><span v-else-if="row.target_trip_id" class="record-id"
+                >旅行 {{ row.target_trip_id }}</span
               ><span v-else>账号清理</span>
               <p class="user-email">所属账号 {{ row.owner_account_id }}</p>
               <p class="user-email">任务 {{ row.id }}</p></template

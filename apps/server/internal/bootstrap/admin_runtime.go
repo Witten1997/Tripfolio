@@ -54,7 +54,13 @@ func adminRuntime(pool *pgxpool.Pool, readiness *dbReadiness, worker *river.Clie
 			}
 			out.Components = append(out.Components, component)
 		}
-		out.Components = append(out.Components, admin.ComponentStatus{Name: "trip_purge", Status: "disabled", Summary: "永久清理尚未开放，功能完成前不执行清理"})
+		purge := admin.ComponentStatus{Name: "trip_purge", Status: "configured", Summary: "已启用受控清理，实际完成情况以任务结果为准"}
+		if !objects {
+			purge.Status, purge.Summary = "disabled", "未配置对象存储，永久清理无法完成"
+		} else if db.Status != "ok" || jobs.Status != "ok" {
+			purge.Status, purge.Summary = "unavailable", "数据库或任务队列不可用，清理无法完成"
+		}
+		out.Components = append(out.Components, purge)
 		return out
 	}
 }
