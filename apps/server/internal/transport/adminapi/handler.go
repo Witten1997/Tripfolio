@@ -119,8 +119,24 @@ func (h *Handler) authenticate(next http.Handler) http.Handler {
 			h.fail(w, r, apperr.New(503, "DEPENDENCY_UNAVAILABLE", "管理后台尚未启用"))
 			return
 		}
+		setup := strings.TrimRight(r.URL.Path, "/") == "/api/v1/wahaha/setup"
+		if setup {
+			open, err := h.options.Service.SetupOpen(r.Context())
+			if err != nil {
+				h.fail(w, r, apperr.New(503, "DEPENDENCY_UNAVAILABLE", "初始化状态暂不可用").WithCause(err))
+				return
+			}
+			if !open {
+				h.fail(w, r, apperr.NotFound())
+				return
+			}
+		}
 		if !h.validOrigin(r) {
 			h.reject(w, r, nil, "request.origin", csrfError())
+			return
+		}
+		if setup {
+			next.ServeHTTP(w, r)
 			return
 		}
 		if r.Method == http.MethodPost && r.URL.Path == "/api/v1/wahaha/login" {

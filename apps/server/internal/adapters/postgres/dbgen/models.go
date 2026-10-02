@@ -95,6 +95,11 @@ type AdminSession struct {
 	UserAgent         string
 }
 
+type AdminSetup struct {
+	ID          int32
+	CompletedAt *time.Time
+}
+
 type Asset struct {
 	ID                 uuid.UUID
 	AccountID          uuid.UUID

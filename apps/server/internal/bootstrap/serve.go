@@ -153,7 +153,7 @@ func RunServe(ctx context.Context, cfg config.Config, logger *slog.Logger) error
 	}
 	defer stopWorker(worker, cfg, logger)
 
-	webHandler, err := web.NewHandler(web.Options{Logger: logger, JSCode: cfg.AMapJSCode})
+	webHandler, err := web.NewHandler(web.Options{Logger: logger, JSCode: cfg.AMapJSCode, AdminSetupOpen: services.Admin.SetupOpen})
 	if err != nil {
 		return &StartupError{Phase: PhaseServices, Cause: fmt.Errorf("组装前端资源与高德代理: %w", err), Hints: servicesHints(cfg)}
 	}

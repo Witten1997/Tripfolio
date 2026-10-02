@@ -1,0 +1,60 @@
+SetupPath:
+  get:
+    tags: [admin-auth]
+    operationId: adminSetupStatus
+    summary: 查询首次初始化是否开放，已完成时返回 404
+    security: []
+    responses:
+      '200':
+        description: 尚未初始化
+        content:
+          application/json:
+            schema:
+              $ref: '#/SetupStatus'
+      default:
+        $ref: './openapi.yaml#/components/responses/Problem'
+  post:
+    tags: [admin-auth]
+    operationId: adminInitialize
+    summary: 首次创建或验证账号并授予管理资格，成功后永久关闭
+    security: []
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/SetupRequest'
+    responses:
+      '204':
+        description: 初始化成功，请使用设置的账号登录
+      default:
+        $ref: './openapi.yaml#/components/responses/Problem'
+
+SetupStatus:
+  type: object
+  required: [required]
+  properties:
+    required:
+      type: boolean
+      enum: [true]
+
+SetupRequest:
+  type: object
+  additionalProperties: false
+  required: [mode, email, password]
+  properties:
+    mode:
+      type: string
+      enum: [create, existing]
+    email:
+      type: string
+      format: email
+      maxLength: 254
+    nickname:
+      type: string
+      maxLength: 64
+      description: 创建新账号时必填，使用已有账号时不修改资料
+    password:
+      type: string
+      minLength: 8
+      maxLength: 128

@@ -20,6 +20,8 @@ tags:
 security:
   - adminSession: []
 paths:
+  /setup:
+    $ref: ./setup.yaml#/SetupPath
   /trips/{trip_id}/lifecycle:
     $ref: ./trip-lifecycle.yaml#/LifecyclePath
   /users/{account_id}/ban:

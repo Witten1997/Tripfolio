@@ -175,6 +175,24 @@ export type paths = {
         patch?: never;
         trace?: never;
     };
+    "/setup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 查询首次初始化是否开放，已完成时返回 404 */
+        get: operations["adminSetupStatus"];
+        put?: never;
+        /** 首次创建或验证账号并授予管理资格，成功后永久关闭 */
+        post: operations["adminInitialize"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/trips": {
         parameters: {
             query?: never;
@@ -660,6 +678,19 @@ export type components = {
         SessionEnvelope: {
             data: components["schemas"]["AdminIdentity"];
         };
+        SetupRequest: {
+            /** Format: email */
+            email: string;
+            /** @enum {string} */
+            mode: "create" | "existing";
+            /** @description 创建新账号时必填，使用已有账号时不修改资料 */
+            nickname?: string;
+            password: string;
+        };
+        SetupStatus: {
+            /** @enum {boolean} */
+            required: true;
+        };
         SharingControl: {
             reason: string;
             restricted: boolean;
@@ -1029,6 +1060,50 @@ export interface operations {
         requestBody?: never;
         responses: {
             /** @description 会话已撤销 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    adminSetupStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 尚未初始化 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SetupStatus"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    adminInitialize: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetupRequest"];
+            };
+        };
+        responses: {
+            /** @description 初始化成功，请使用设置的账号登录 */
             204: {
                 headers: {
                     [name: string]: unknown;

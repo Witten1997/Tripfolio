@@ -36,6 +36,7 @@ const actions: Record<string, string> = {
   'reauthenticate.rate_limited': '密码复验限流',
   'principal.grant': '授予管理资格',
   'principal.revoke': '撤销管理资格',
+  'setup.initialize': '首次初始化管理员',
   'overview.read': '平台概览',
   'user.list': '查询用户',
   'user.read': '查看用户',

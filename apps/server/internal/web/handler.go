@@ -2,6 +2,7 @@ package web
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"io/fs"
@@ -40,7 +41,8 @@ func DefaultUpstreams() []Upstream {
 
 // Options 是构造处理器的依赖；除 Assets 外都可缺省，便于测试注入。
 type Options struct {
-	Logger *slog.Logger
+	AdminSetupOpen func(context.Context) (bool, error)
+	Logger         *slog.Logger
 	// JSCode 是高德 JS API 安全密钥，由服务端覆盖进查询串，不进入浏览器产物。
 	JSCode string
 	// Assets 缺省使用内嵌的前端产物。
@@ -52,12 +54,13 @@ type Options struct {
 }
 
 type handler struct {
-	logger     *slog.Logger
-	jsCode     string
-	assets     fs.FS
-	noEntry    bool
-	proxies    []proxyRoute
-	warnedOnce sync.Once
+	adminSetupOpen func(context.Context) (bool, error)
+	logger         *slog.Logger
+	jsCode         string
+	assets         fs.FS
+	noEntry        bool
+	proxies        []proxyRoute
+	warnedOnce     sync.Once
 }
 
 // proxyRoute 是预建好的一条高德代理：构造时解析上游地址，请求路径上不再重复解析与分配。
@@ -90,7 +93,7 @@ func NewHandler(o Options) (http.Handler, error) {
 		upstreams = DefaultUpstreams()
 	}
 	// 代理在构造时建好：上游地址解析只做一次，请求路径上不再重复 url.Parse 与分配。
-	base := &handler{logger: logger, jsCode: o.JSCode, assets: assets}
+	base := &handler{logger: logger, jsCode: o.JSCode, assets: assets, adminSetupOpen: o.AdminSetupOpen}
 	proxies := make([]proxyRoute, 0, len(upstreams))
 	for _, up := range upstreams {
 		proxy, err := base.proxyFor(up, transport)
@@ -130,6 +133,22 @@ func (h *handler) serveStatic(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := strings.TrimPrefix(r.URL.Path, "/")
+	if name == "wahaha/setup" || strings.HasPrefix(name, "wahaha/setup/") {
+		w.Header().Set("Cache-Control", "no-store")
+		if h.adminSetupOpen == nil {
+			http.NotFound(w, r)
+			return
+		}
+		open, err := h.adminSetupOpen(r.Context())
+		if err != nil {
+			http.Error(w, "初始化状态暂不可用，请稍后重试", http.StatusServiceUnavailable)
+			return
+		}
+		if !open {
+			http.NotFound(w, r)
+			return
+		}
+	}
 	if name == "admin" || strings.HasPrefix(name, "admin/") {
 		http.NotFound(w, r)
 		return
@@ -197,7 +216,9 @@ func (h *handler) serveFile(w http.ResponseWriter, r *http.Request, name string)
 		http.NotFound(w, r)
 		return
 	}
-	w.Header().Set("Cache-Control", noCache)
+	if w.Header().Get("Cache-Control") == "" {
+		w.Header().Set("Cache-Control", noCache)
+	}
 	if strings.HasPrefix(name, assetsDir) || strings.HasPrefix(name, "wahaha/assets/") {
 		w.Header().Set("Cache-Control", immutableCache)
 	}

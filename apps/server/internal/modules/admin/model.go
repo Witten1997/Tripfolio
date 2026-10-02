@@ -52,6 +52,8 @@ type Session struct {
 }
 
 type Store interface {
+	SetupOpen(context.Context) (bool, error)
+	InitializeAdmin(context.Context, SetupCommand, Audit) error
 	ControlUser(context.Context, Session, uuid.UUID, string, Audit) error
 	SharingRestriction(context.Context, Session, uuid.UUID, Audit) (SharingRestriction, error)
 	ControlSharing(context.Context, Session, uuid.UUID, SharingControl, Audit) (SharingRestriction, error)

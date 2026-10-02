@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ShieldCheck, ArrowRight } from '@lucide/vue'
 import { connectionError, login } from '../api'
 
 const router = useRouter()
+const route = useRoute()
 const email = ref('')
 const password = ref('')
 const busy = ref(false)
@@ -43,6 +44,9 @@ async function submit() {
         <span class="form-icon"><ShieldCheck :size="24" aria-hidden="true" /></span>
         <h2>登录管理后台</h2>
         <p class="muted">使用已授权的超级管理员账号登录。</p>
+        <p v-if="route.query.setup === 'complete'" class="notice-strip" role="status">
+          管理员已设置，初始化入口已关闭。请使用刚设置的账号登录。
+        </p>
         <div v-if="errorMessage || connectionError" class="form-error" role="alert">
           {{ errorMessage || connectionError }}
         </div>

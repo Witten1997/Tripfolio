@@ -28,7 +28,8 @@ const titles: Record<string, string> = {
 }
 const pageTitle = computed(() => titles[String(route.name)] || '管理后台')
 watch(identity, (value) => {
-  if (!value && route.name !== 'login') void router.replace({ name: 'login' })
+  if (!value && route.name !== 'login' && route.name !== 'setup')
+    void router.replace({ name: 'login' })
 })
 async function signOut() {
   try {
@@ -41,7 +42,7 @@ async function signOut() {
 </script>
 
 <template>
-  <RouterView v-if="route.name === 'login'" />
+  <RouterView v-if="route.name === 'login' || route.name === 'setup'" />
   <div v-else-if="identity" class="admin-layout">
     <a href="#main-content" class="skip-link">跳到主要内容</a>
     <aside class="sidebar">

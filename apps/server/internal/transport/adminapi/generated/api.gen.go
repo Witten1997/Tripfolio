@@ -312,6 +312,39 @@ func (e RuntimeStatusStatus) Valid() bool {
 	}
 }
 
+// Defines values for SetupRequestMode.
+const (
+	Create   SetupRequestMode = "create"
+	Existing SetupRequestMode = "existing"
+)
+
+// Valid indicates whether the value is a known member of the SetupRequestMode enum.
+func (e SetupRequestMode) Valid() bool {
+	switch e {
+	case Create:
+		return true
+	case Existing:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SetupStatusRequired.
+const (
+	SetupStatusRequiredTrue SetupStatusRequired = true
+)
+
+// Valid indicates whether the value is a known member of the SetupStatusRequired enum.
+func (e SetupStatusRequired) Valid() bool {
+	switch e {
+	case SetupStatusRequiredTrue:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for AdminAuditsParamsResult.
 const (
 	AdminAuditsParamsResultDenied  AdminAuditsParamsResult = "denied"
@@ -789,6 +822,27 @@ type SessionEnvelope struct {
 	Data AdminIdentity `json:"data"`
 }
 
+// SetupRequest defines model for SetupRequest.
+type SetupRequest struct {
+	Email openapi_types.Email `json:"email"`
+	Mode  SetupRequestMode    `json:"mode"`
+
+	// Nickname 创建新账号时必填，使用已有账号时不修改资料
+	Nickname *string `json:"nickname,omitempty"`
+	Password string  `json:"password"`
+}
+
+// SetupRequestMode defines model for SetupRequest.Mode.
+type SetupRequestMode string
+
+// SetupStatus defines model for SetupStatus.
+type SetupStatus struct {
+	Required SetupStatusRequired `json:"required"`
+}
+
+// SetupStatusRequired defines model for SetupStatus.Required.
+type SetupStatusRequired bool
+
 // SharingControl defines model for SharingControl.
 type SharingControl struct {
 	Reason     string `json:"reason"`
@@ -1018,6 +1072,9 @@ type AdminLoginJSONRequestBody = LoginRequest
 // AdminReauthenticateJSONRequestBody defines body for AdminReauthenticate for application/json ContentType.
 type AdminReauthenticateJSONRequestBody = PasswordRequest
 
+// AdminInitializeJSONRequestBody defines body for AdminInitialize for application/json ContentType.
+type AdminInitializeJSONRequestBody = SetupRequest
+
 // AdminMutateTripJSONRequestBody defines body for AdminMutateTrip for application/json ContentType.
 type AdminMutateTripJSONRequestBody = AdminTripMutation
 
@@ -1068,6 +1125,12 @@ type ServerInterface interface {
 	// AdminRevokeSession 撤销自己指定的后台会话
 	// (DELETE /sessions/{session_id})
 	AdminRevokeSession(w http.ResponseWriter, r *http.Request, sessionId openapi_types.UUID, params AdminRevokeSessionParams)
+	// AdminSetupStatus 查询首次初始化是否开放，已完成时返回 404
+	// (GET /setup)
+	AdminSetupStatus(w http.ResponseWriter, r *http.Request)
+	// AdminInitialize 首次创建或验证账号并授予管理资格，成功后永久关闭
+	// (POST /setup)
+	AdminInitialize(w http.ResponseWriter, r *http.Request)
 	// AdminTrips 分页检索全平台旅行
 	// (GET /trips)
 	AdminTrips(w http.ResponseWriter, r *http.Request, params AdminTripsParams)
@@ -1167,6 +1230,18 @@ func (_ Unimplemented) AdminListSessions(w http.ResponseWriter, r *http.Request)
 // AdminRevokeSession 撤销自己指定的后台会话
 // (DELETE /sessions/{session_id})
 func (_ Unimplemented) AdminRevokeSession(w http.ResponseWriter, r *http.Request, sessionId openapi_types.UUID, params AdminRevokeSessionParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// AdminSetupStatus 查询首次初始化是否开放，已完成时返回 404
+// (GET /setup)
+func (_ Unimplemented) AdminSetupStatus(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// AdminInitialize 首次创建或验证账号并授予管理资格，成功后永久关闭
+// (POST /setup)
+func (_ Unimplemented) AdminInitialize(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -1699,6 +1774,34 @@ func (siw *ServerInterfaceWrapper) AdminRevokeSession(w http.ResponseWriter, r *
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.AdminRevokeSession(w, r, sessionId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AdminSetupStatus operation middleware
+func (siw *ServerInterfaceWrapper) AdminSetupStatus(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AdminSetupStatus(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AdminInitialize operation middleware
+func (siw *ServerInterfaceWrapper) AdminInitialize(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AdminInitialize(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -2430,6 +2533,12 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		ErrorHandlerFunc:   options.ErrorHandlerFunc,
 	}
 
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/setup", wrapper.AdminSetupStatus)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/setup", wrapper.AdminInitialize)
+	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/trips/{trip_id}/lifecycle", wrapper.AdminMutateTrip)
 	})

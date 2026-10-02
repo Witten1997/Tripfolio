@@ -22,6 +22,31 @@ export type DeletionJobPage = components['schemas']['DeletionJobPage']
 export const identity = shallowRef<AdminIdentity | null>(null)
 export const connectionError = shallowRef('')
 let initialized = false
+export const setupRequired = shallowRef(false)
+let setupChecked = false
+
+export async function checkSetup(force = false) {
+  if (setupChecked && !force) return
+  try {
+    const status = await request<components['schemas']['SetupStatus']>('/setup')
+    setupRequired.value = status.required
+  } catch (error) {
+    if (!(error instanceof AdminApiError) || error.status !== 404) {
+      connectionError.value = error instanceof Error ? error.message : '初始化状态暂不可用。'
+      throw error
+    }
+    setupRequired.value = false
+  }
+  setupChecked = true
+  connectionError.value = ''
+}
+
+export async function initializeAdmin(body: components['schemas']['SetupRequest']) {
+  await request<void>('/setup', { method: 'POST', body: JSON.stringify(body) })
+  setupRequired.value = false
+  setupChecked = true
+  initialized = false
+}
 
 export class AdminApiError extends Error {
   constructor(
