@@ -17,10 +17,13 @@ import (
 	"tripfolio/server/internal/modules/finance"
 	"tripfolio/server/internal/modules/geo"
 	"tripfolio/server/internal/modules/metadata"
+	"tripfolio/server/internal/modules/travel/album"
 	"tripfolio/server/internal/modules/travel/dashboard"
+	"tripfolio/server/internal/modules/travel/document"
 	"tripfolio/server/internal/modules/travel/itinerary"
 	"tripfolio/server/internal/modules/travel/member"
 	"tripfolio/server/internal/modules/travel/packing"
+	"tripfolio/server/internal/modules/travel/reservation"
 	"tripfolio/server/internal/modules/travel/routeplan"
 	"tripfolio/server/internal/modules/travel/todo"
 	"tripfolio/server/internal/modules/travel/trip"
@@ -30,6 +33,9 @@ import (
 
 // Deps 是路由需要的全部依赖，由 bootstrap 显式装配。
 type Deps struct {
+	Photos        *album.Service
+	Reservations  *reservation.Service
+	Documents     *document.Service
 	AdminBasePath string
 	Admin         http.Handler
 	Dashboard     *dashboard.Service
@@ -127,6 +133,7 @@ func NewRouter(d Deps) http.Handler {
 	}
 
 	handler := &Handler{
+		photos: d.Photos, reservations: d.Reservations, documents: d.Documents,
 		dashboard: d.Dashboard,
 		logger:    d.Logger, metadata: d.Metadata, identity: d.Identity, sessions: d.Sessions, profile: d.Profile,
 		categories: d.Categories, trips: d.Trips, itinerary: d.Itinerary, routePlans: d.RoutePlans, packing: d.Packing, todos: d.Todos,
@@ -150,6 +157,7 @@ func NewRouter(d Deps) http.Handler {
 		api.Use(middleware.Share(unavailableResolver{}, isSharePath))
 	}
 
+	api.Use(contentRequests)
 	api.NotFound(notFound)
 	api.MethodNotAllowed(methodNotAllowed)
 	generated.HandlerWithOptions(strict, generated.ChiServerOptions{

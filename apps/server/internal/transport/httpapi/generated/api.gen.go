@@ -1718,11 +1718,11 @@ type PhotoCreate struct {
 	AssetId      *openapi_types.UUID        `json:"asset_id,omitempty"`
 	Caption      *string                    `json:"caption,omitempty"`
 	Id           openapi_types.UUID         `json:"id"`
-	Latitude     nullable.Nullable[float32] `json:"latitude,omitempty"`
-	Longitude    nullable.Nullable[float32] `json:"longitude,omitempty"`
+	Latitude     nullable.Nullable[float64] `json:"latitude,omitempty"`
+	Longitude    nullable.Nullable[float64] `json:"longitude,omitempty"`
 	PlaceName    *string                    `json:"place_name,omitempty"`
 	RecordedOn   *string                    `json:"recorded_on,omitempty"`
-	SortOrder    *int                       `json:"sort_order,omitempty"`
+	SortOrder    *int32                     `json:"sort_order,omitempty"`
 	TakenAtLocal nullable.Nullable[string]  `json:"taken_at_local,omitempty"`
 	union        json.RawMessage
 }
@@ -1744,11 +1744,11 @@ type PhotoPatch struct {
 	Address      *string                    `json:"address,omitempty"`
 	AssetId      *openapi_types.UUID        `json:"asset_id,omitempty"`
 	Caption      *string                    `json:"caption,omitempty"`
-	Latitude     nullable.Nullable[float32] `json:"latitude,omitempty"`
-	Longitude    nullable.Nullable[float32] `json:"longitude,omitempty"`
+	Latitude     nullable.Nullable[float64] `json:"latitude,omitempty"`
+	Longitude    nullable.Nullable[float64] `json:"longitude,omitempty"`
 	PlaceName    *string                    `json:"place_name,omitempty"`
 	RecordedOn   *string                    `json:"recorded_on,omitempty"`
-	SortOrder    *int                       `json:"sort_order,omitempty"`
+	SortOrder    *int32                     `json:"sort_order,omitempty"`
 	TakenAtLocal nullable.Nullable[string]  `json:"taken_at_local,omitempty"`
 }
 

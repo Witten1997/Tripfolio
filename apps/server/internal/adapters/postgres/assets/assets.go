@@ -333,3 +333,6 @@ func (r *Reader) ListByTrip(ctx context.Context, accountID, tripID uuid.UUID, q 
 func (r *Reader) Trip(ctx context.Context, accountID, tripID uuid.UUID) (assets.TripInfo, bool, error) {
 	return tripInfo(ctx, r.q, accountID, tripID)
 }
+
+// Bind composes asset writes in an existing account transaction.
+func Bind(scope *pgcore.TxScope) assets.Repo { return &repo{scope: scope} }

@@ -7447,6 +7447,7 @@ components:
           type: integer
           minimum: 0
           maximum: 2147483647
+          format: int32
         place_name:
           type: string
           maxLength: 200
@@ -7458,11 +7459,13 @@ components:
           nullable: true
           minimum: -90
           maximum: 90
+          format: double
         longitude:
           type: number
           nullable: true
           minimum: -180
           maximum: 180
+          format: double
         version:
           $ref: '#/components/schemas/Version'
         created_at:
@@ -7549,6 +7552,7 @@ components:
           type: integer
           minimum: 0
           maximum: 2147483647
+          format: int32
         place_name:
           type: string
           maxLength: 200
@@ -7560,11 +7564,13 @@ components:
           nullable: true
           minimum: -90
           maximum: 90
+          format: double
         longitude:
           type: number
           nullable: true
           minimum: -180
           maximum: 180
+          format: double
         asset:
           $ref: '#/components/schemas/PhotoAssetCreate'
       oneOf:
@@ -7605,6 +7611,7 @@ components:
           type: integer
           minimum: 0
           maximum: 2147483647
+          format: int32
         place_name:
           type: string
           maxLength: 200
@@ -7616,11 +7623,13 @@ components:
           nullable: true
           minimum: -90
           maximum: 90
+          format: double
         longitude:
           type: number
           nullable: true
           minimum: -180
           maximum: 180
+          format: double
       description: 提交 taken_at_local 且未提交 recorded_on 时，同时派生日期；清空拍摄时刻时保持原分组日期。经纬度必须成对。
     PhotoWriteResult:
       type: object

@@ -17,6 +17,7 @@ type Querier interface {
 	AssetIDExists(ctx context.Context, arg AssetIDExistsParams) (*bool, error)
 	ChangedFieldsBetweenVersions(ctx context.Context, arg ChangedFieldsBetweenVersionsParams) ([]ChangedFieldsBetweenVersionsRow, error)
 	ConsumeChallenge(ctx context.Context, arg ConsumeChallengeParams) error
+	ContentTombstoneExists(ctx context.Context, arg ContentTombstoneExistsParams) (bool, error)
 	CountActiveLedgerEntries(ctx context.Context, arg CountActiveLedgerEntriesParams) (int64, error)
 	CountChallengesSince(ctx context.Context, arg CountChallengesSinceParams) (int64, error)
 	CountExpenseCategories(ctx context.Context, accountID uuid.UUID) (int64, error)
@@ -40,6 +41,7 @@ type Querier interface {
 	DeleteLedgerSplits(ctx context.Context, arg DeleteLedgerSplitsParams) error
 	DeleteRoutePlanLegs(ctx context.Context, arg DeleteRoutePlanLegsParams) error
 	DeleteTripShare(ctx context.Context, arg DeleteTripShareParams) (int64, error)
+	DocumentIDExists(ctx context.Context, arg DocumentIDExistsParams) (bool, error)
 	ExpenseCategoryActive(ctx context.Context, arg ExpenseCategoryActiveParams) (bool, error)
 	ExpenseCategoryIDExists(ctx context.Context, id uuid.UUID) (bool, error)
 	GetAccountByEmailKey(ctx context.Context, emailKey string) (Account, error)
@@ -55,6 +57,9 @@ type Querier interface {
 	// 批量读取保持输入顺序：unnest WITH ORDINALITY 再按序号排序，适配器据此判断缺失项。
 	GetAssetsByIDs(ctx context.Context, arg GetAssetsByIDsParams) ([]Asset, error)
 	GetChallengeForUpdate(ctx context.Context, id uuid.UUID) (AuthChallenge, error)
+	GetContentAssetReference(ctx context.Context, arg GetContentAssetReferenceParams) (GetContentAssetReferenceRow, error)
+	GetContentReservationReference(ctx context.Context, arg GetContentReservationReferenceParams) (*time.Time, error)
+	GetDocument(ctx context.Context, arg GetDocumentParams) (Document, error)
 	GetExpenseCategory(ctx context.Context, arg GetExpenseCategoryParams) (ExpenseCategory, error)
 	GetExpenseCategoryForUpdate(ctx context.Context, arg GetExpenseCategoryForUpdateParams) (ExpenseCategory, error)
 	GetItineraryItem(ctx context.Context, arg GetItineraryItemParams) (ItineraryItem, error)
@@ -68,6 +73,8 @@ type Querier interface {
 	// 行李清单物品（数据库设计表 6）。同分类同名唯一由部分唯一索引兜底，应用层先用 PackingNameTaken 预检以返回 422。
 	GetPackingItem(ctx context.Context, arg GetPackingItemParams) (PackingItem, error)
 	GetPackingItemForUpdate(ctx context.Context, arg GetPackingItemForUpdateParams) (PackingItem, error)
+	GetPhoto(ctx context.Context, arg GetPhotoParams) (Photo, error)
+	GetReservation(ctx context.Context, arg GetReservationParams) (Reservation, error)
 	GetRoutePlanLegForUpdate(ctx context.Context, arg GetRoutePlanLegForUpdateParams) (ItineraryRouteLeg, error)
 	// 旅行路线偏好、相邻路段与列表汇总。
 	GetRoutePlanTrip(ctx context.Context, arg GetRoutePlanTripParams) (GetRoutePlanTripRow, error)
@@ -91,6 +98,7 @@ type Querier interface {
 	IncrementChallengeAttempts(ctx context.Context, id uuid.UUID) error
 	InitEmptyRouteSummary(ctx context.Context, arg InitEmptyRouteSummaryParams) error
 	InsertAsset(ctx context.Context, arg InsertAssetParams) (Asset, error)
+	InsertDocument(ctx context.Context, arg InsertDocumentParams) (Document, error)
 	// 账号级账单分类。
 	InsertExpenseCategory(ctx context.Context, arg InsertExpenseCategoryParams) (ExpenseCategory, error)
 	InsertItineraryItem(ctx context.Context, arg InsertItineraryItemParams) (ItineraryItem, error)
@@ -99,6 +107,8 @@ type Querier interface {
 	InsertLedgerSplits(ctx context.Context, arg InsertLedgerSplitsParams) error
 	InsertMutationReceipt(ctx context.Context, arg InsertMutationReceiptParams) error
 	InsertPackingItem(ctx context.Context, arg InsertPackingItemParams) (PackingItem, error)
+	InsertPhoto(ctx context.Context, arg InsertPhotoParams) (Photo, error)
+	InsertReservation(ctx context.Context, arg InsertReservationParams) (Reservation, error)
 	InsertRoutePlanLeg(ctx context.Context, arg InsertRoutePlanLegParams) (ItineraryRouteLeg, error)
 	InsertSyncChange(ctx context.Context, arg InsertSyncChangeParams) error
 	InsertTodoItem(ctx context.Context, arg InsertTodoItemParams) (TodoItem, error)
@@ -120,6 +130,7 @@ type Querier interface {
 	LedgerFilteredTotals(ctx context.Context, arg LedgerFilteredTotalsParams) (LedgerFilteredTotalsRow, error)
 	LedgerTripTotals(ctx context.Context, arg LedgerTripTotalsParams) (LedgerTripTotalsRow, error)
 	ListActiveSessions(ctx context.Context, arg ListActiveSessionsParams) ([]AccountSession, error)
+	ListDocuments(ctx context.Context, arg ListDocumentsParams) ([]Document, error)
 	ListExpenseCategories(ctx context.Context, accountID uuid.UUID) ([]ExpenseCategory, error)
 	// 列表：接口设计 3.9 ItineraryFilters；游标用行比较走 (account_id, trip_id, scheduled_on, sort_order, id) 部分索引。
 	ListItineraryItems(ctx context.Context, arg ListItineraryItemsParams) ([]ItineraryItem, error)
@@ -132,6 +143,8 @@ type Querier interface {
 	ListLinkedRefundsForUpdate(ctx context.Context, arg ListLinkedRefundsForUpdateParams) ([]LedgerEntry, error)
 	// 列表：接口设计 3.9 PackingFilters；游标走 (account_id, trip_id, category, created_at, id) 部分索引。
 	ListPackingItems(ctx context.Context, arg ListPackingItemsParams) ([]PackingItem, error)
+	ListPhotos(ctx context.Context, arg ListPhotosParams) ([]Photo, error)
+	ListReservations(ctx context.Context, arg ListReservationsParams) ([]Reservation, error)
 	ListRoutePlanLegs(ctx context.Context, arg ListRoutePlanLegsParams) ([]ItineraryRouteLeg, error)
 	ListRoutePlanPoints(ctx context.Context, arg ListRoutePlanPointsParams) ([]ListRoutePlanPointsRow, error)
 	ListSyncChanges(ctx context.Context, arg ListSyncChangesParams) ([]SyncChange, error)
@@ -162,6 +175,7 @@ type Querier interface {
 	MaxItinerarySortOrder(ctx context.Context, arg MaxItinerarySortOrderParams) (MaxItinerarySortOrderRow, error)
 	PackingItemIDExists(ctx context.Context, arg PackingItemIDExistsParams) (*bool, error)
 	PackingNameTaken(ctx context.Context, arg PackingNameTakenParams) (bool, error)
+	PhotoIDExists(ctx context.Context, arg PhotoIDExistsParams) (bool, error)
 	RecordTripShareView(ctx context.Context, arg RecordTripShareViewParams) error
 	ReissueSessionWithinGrace(ctx context.Context, arg ReissueSessionWithinGraceParams) error
 	// 续签：只延长当前尝试的截止时间，暂存键与序号不变。
@@ -169,6 +183,7 @@ type Querier interface {
 	ReplaceRouteSummary(ctx context.Context, arg ReplaceRouteSummaryParams) (int64, error)
 	RepositionItineraryItem(ctx context.Context, arg RepositionItineraryItemParams) (ItineraryItem, error)
 	RequestTripPurge(ctx context.Context, arg RequestTripPurgeParams) (Trip, error)
+	ReservationIDExists(ctx context.Context, arg ReservationIDExistsParams) (bool, error)
 	ResolveTripShareToken(ctx context.Context, token string) (ResolveTripShareTokenRow, error)
 	RestoreTrip(ctx context.Context, arg RestoreTripParams) (Trip, error)
 	RevokeAccountSessions(ctx context.Context, arg RevokeAccountSessionsParams) error
@@ -185,10 +200,13 @@ type Querier interface {
 	SetTripArchived(ctx context.Context, arg SetTripArchivedParams) (Trip, error)
 	// 币种锁定与解锁：只改 currency_locked_at，递增旅行版本并返回整行作为同步快照。
 	SetTripCurrencyLock(ctx context.Context, arg SetTripCurrencyLockParams) (Trip, error)
+	SoftDeleteDocument(ctx context.Context, arg SoftDeleteDocumentParams) (Document, error)
 	SoftDeleteExpenseCategory(ctx context.Context, arg SoftDeleteExpenseCategoryParams) (ExpenseCategory, error)
 	SoftDeleteItineraryItem(ctx context.Context, arg SoftDeleteItineraryItemParams) (ItineraryItem, error)
 	SoftDeleteLedgerEntry(ctx context.Context, arg SoftDeleteLedgerEntryParams) (LedgerEntry, error)
 	SoftDeletePackingItem(ctx context.Context, arg SoftDeletePackingItemParams) (PackingItem, error)
+	SoftDeletePhoto(ctx context.Context, arg SoftDeletePhotoParams) (Photo, error)
+	SoftDeleteReservation(ctx context.Context, arg SoftDeleteReservationParams) (Reservation, error)
 	SoftDeleteTodoItem(ctx context.Context, arg SoftDeleteTodoItemParams) (TodoItem, error)
 	SoftDeleteTripMember(ctx context.Context, arg SoftDeleteTripMemberParams) (TripMember, error)
 	// 新尝试：序号加 1、换暂存键与截止时间、回到 uploading 并清掉上次错误码；最终键留空由校验重写。
@@ -203,13 +221,17 @@ type Querier interface {
 	TripMemberIDExists(ctx context.Context, arg TripMemberIDExistsParams) (*bool, error)
 	// 成员结算（接口设计 3.8 TripSettlement）：每位有效成员作为付款人与参与人的支出、退款合计。
 	TripMemberSettlement(ctx context.Context, arg TripMemberSettlementParams) ([]TripMemberSettlementRow, error)
+	UnlinkReservationDocuments(ctx context.Context, arg UnlinkReservationDocumentsParams) ([]Document, error)
 	UpdateAccountPassword(ctx context.Context, arg UpdateAccountPasswordParams) error
 	UpdateAccountProfile(ctx context.Context, arg UpdateAccountProfileParams) (Account, error)
+	UpdateDocument(ctx context.Context, arg UpdateDocumentParams) (Document, error)
 	UpdateExpenseCategory(ctx context.Context, arg UpdateExpenseCategoryParams) (ExpenseCategory, error)
 	UpdateItineraryItem(ctx context.Context, arg UpdateItineraryItemParams) (ItineraryItem, error)
 	UpdateLedgerEntry(ctx context.Context, arg UpdateLedgerEntryParams) (LedgerEntry, error)
 	UpdatePackingItem(ctx context.Context, arg UpdatePackingItemParams) (PackingItem, error)
 	UpdatePackingStatusIfVersion(ctx context.Context, arg UpdatePackingStatusIfVersionParams) (PackingItem, error)
+	UpdatePhoto(ctx context.Context, arg UpdatePhotoParams) (Photo, error)
+	UpdateReservation(ctx context.Context, arg UpdateReservationParams) (Reservation, error)
 	UpdateRouteLegMode(ctx context.Context, arg UpdateRouteLegModeParams) (ItineraryRouteLeg, error)
 	UpdateTodoItem(ctx context.Context, arg UpdateTodoItemParams) (TodoItem, error)
 	UpdateTrip(ctx context.Context, arg UpdateTripParams) (Trip, error)

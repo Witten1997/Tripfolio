@@ -38,6 +38,7 @@ Photo:
       type: integer
       minimum: 0
       maximum: 2147483647
+      format: int32
     place_name: &id007
       type: string
       maxLength: 200
@@ -49,11 +50,13 @@ Photo:
       nullable: true
       minimum: -90
       maximum: 90
+      format: double
     longitude: &id010
       type: number
       nullable: true
       minimum: -180
       maximum: 180
+      format: double
     version:
       $ref: ./write.yaml#/Version
     created_at:

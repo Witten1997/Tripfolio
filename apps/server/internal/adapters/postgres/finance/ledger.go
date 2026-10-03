@@ -13,6 +13,7 @@ import (
 	"tripfolio/server/internal/adapters/postgres/dbgen"
 	"tripfolio/server/internal/adapters/postgres/pgcore"
 	travelpg "tripfolio/server/internal/adapters/postgres/travel"
+	"tripfolio/server/internal/foundation/apperr"
 	"tripfolio/server/internal/foundation/money"
 	"tripfolio/server/internal/foundation/types"
 	"tripfolio/server/internal/foundation/write"
@@ -206,17 +207,16 @@ func (r *ledgerRepo) CategoryActive(ctx context.Context, accountID, categoryID u
 }
 
 func (r *ledgerRepo) MissingAssets(ctx context.Context, accountID, tripID uuid.UUID, ids []uuid.UUID) ([]uuid.UUID, error) {
-	found, err := r.scope.Queries.ListTripImageAssetIDs(ctx, dbgen.ListTripImageAssetIDsParams{AccountID: accountID, TripID: tripID, Ids: ids})
-	if err != nil {
-		return nil, err
-	}
-	present := make(map[uuid.UUID]struct{}, len(found))
-	for _, id := range found {
-		present[id] = struct{}{}
-	}
 	var missing []uuid.UUID
 	for _, id := range ids {
-		if _, ok := present[id]; !ok {
+		row, err := r.scope.Queries.GetContentAssetReference(ctx, dbgen.GetContentAssetReferenceParams{AccountID: accountID, TripID: uuid.NullUUID{UUID: tripID, Valid: true}, ID: id})
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, apperr.NotFound()
+		}
+		if err != nil {
+			return nil, err
+		}
+		if row.DeletedAt != nil || (row.MediaType != "image/jpeg" && row.MediaType != "image/png" && row.MediaType != "image/webp") {
 			missing = append(missing, id)
 		}
 	}

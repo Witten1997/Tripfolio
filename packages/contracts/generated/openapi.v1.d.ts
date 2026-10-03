@@ -2241,10 +2241,13 @@ export type components = {
             deleted_at: string | null;
             /** Format: uuid */
             id: string;
+            /** Format: double */
             latitude: number | null;
+            /** Format: double */
             longitude: number | null;
             place_name: string;
             recorded_on: string;
+            /** Format: int32 */
             sort_order: number;
             taken_at_local: string | null;
             /** Format: uuid */
@@ -2269,10 +2272,13 @@ export type components = {
             caption?: string;
             /** Format: uuid */
             id: string;
+            /** Format: double */
             latitude?: number | null;
+            /** Format: double */
             longitude?: number | null;
             place_name?: string;
             recorded_on?: string;
+            /** Format: int32 */
             sort_order?: number;
             taken_at_local?: string | null;
         } & (unknown | unknown);
@@ -2287,10 +2293,13 @@ export type components = {
             /** Format: uuid */
             asset_id?: string;
             caption?: string;
+            /** Format: double */
             latitude?: number | null;
+            /** Format: double */
             longitude?: number | null;
             place_name?: string;
             recorded_on?: string;
+            /** Format: int32 */
             sort_order?: number;
             taken_at_local?: string | null;
         };

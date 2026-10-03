@@ -11,10 +11,13 @@ import (
 	"tripfolio/server/internal/modules/finance"
 	"tripfolio/server/internal/modules/geo"
 	"tripfolio/server/internal/modules/metadata"
+	"tripfolio/server/internal/modules/travel/album"
 	"tripfolio/server/internal/modules/travel/dashboard"
+	"tripfolio/server/internal/modules/travel/document"
 	"tripfolio/server/internal/modules/travel/itinerary"
 	"tripfolio/server/internal/modules/travel/member"
 	"tripfolio/server/internal/modules/travel/packing"
+	"tripfolio/server/internal/modules/travel/reservation"
 	"tripfolio/server/internal/modules/travel/routeplan"
 	"tripfolio/server/internal/modules/travel/share"
 	"tripfolio/server/internal/modules/travel/todo"
@@ -26,27 +29,30 @@ import (
 // Handler 实现生成的 StrictServerInterface。它只做分发与模型转换，业务状态与规则留在模块服务中；
 // 各业务的方法分散在对应文件（metadata.go、account.go、finance.go、travel_*.go 等）。
 type Handler struct {
-	dashboard   *dashboard.Service
-	logger      *slog.Logger
-	metadata    metadata.Metadata
-	identity    *account.IdentityService
-	sessions    *account.SessionService
-	profile     *account.ProfileService
-	categories  *finance.CategoryService
-	ledger      *finance.LedgerService
-	statistics  *finance.StatisticsService
-	settlement  *finance.SettlementService
-	assets      *assets.Service
-	geo         *geo.Service
-	trips       *trip.Service
-	itinerary   *itinerary.Service
-	routePlans  *routeplan.Service
-	packing     *packing.Service
-	todos       *todo.Service
-	members     *member.Service
-	shares      *share.Service
-	cookies     CookieSettings
-	corsOrigins []string
+	photos       *album.Service
+	reservations *reservation.Service
+	documents    *document.Service
+	dashboard    *dashboard.Service
+	logger       *slog.Logger
+	metadata     metadata.Metadata
+	identity     *account.IdentityService
+	sessions     *account.SessionService
+	profile      *account.ProfileService
+	categories   *finance.CategoryService
+	ledger       *finance.LedgerService
+	statistics   *finance.StatisticsService
+	settlement   *finance.SettlementService
+	assets       *assets.Service
+	geo          *geo.Service
+	trips        *trip.Service
+	itinerary    *itinerary.Service
+	routePlans   *routeplan.Service
+	packing      *packing.Service
+	todos        *todo.Service
+	members      *member.Service
+	shares       *share.Service
+	cookies      CookieSettings
+	corsOrigins  []string
 }
 
 var _ generated.StrictServerInterface = (*Handler)(nil)

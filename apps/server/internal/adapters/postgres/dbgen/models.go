@@ -72,6 +72,32 @@ type AdminAvailabilityGuard struct {
 	Version int64
 }
 
+type AdminBackupRun struct {
+	ID              uuid.UUID
+	Trigger         string
+	State           string
+	Config          []byte
+	CreatedAt       time.Time
+	StartedAt       *time.Time
+	SnapshotAt      *time.Time
+	FinishedAt      *time.Time
+	SizeBytes       int64
+	Sha256          string
+	ErrorCode       string
+	CleanupError    string
+	RemoteDeletedAt *time.Time
+	Manifest        []byte
+}
+
+type AdminBackupSetting struct {
+	ID         int32
+	DatabaseID uuid.UUID
+	Version    int64
+	Config     []byte
+	NextAt     *time.Time
+	UpdatedAt  time.Time
+}
+
 type AdminPrincipal struct {
 	AccountID uuid.UUID
 	Version   int64
@@ -98,6 +124,13 @@ type AdminSession struct {
 type AdminSetup struct {
 	ID          int32
 	CompletedAt *time.Time
+}
+
+type AdminSiteSetting struct {
+	ID           int32
+	ShareBaseUrl string
+	Version      int64
+	UpdatedAt    time.Time
 }
 
 type Asset struct {
@@ -526,4 +559,24 @@ type TripSharingRestriction struct {
 	ChangedBy  uuid.UUID
 	ChangedAt  time.Time
 	Version    int64
+}
+
+type TripfolioRestoreControl struct {
+	ID    bool
+	Epoch int64
+}
+
+type TripfolioRestoreJob struct {
+	ID         uuid.UUID
+	BackupID   uuid.UUID
+	ActorID    uuid.UUID
+	State      string
+	TokenHash  []byte
+	Secret     string
+	Config     []byte
+	Manifest   []byte
+	CreatedAt  time.Time
+	StartedAt  *time.Time
+	FinishedAt *time.Time
+	ErrorCode  string
 }

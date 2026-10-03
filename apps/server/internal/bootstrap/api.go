@@ -31,10 +31,13 @@ import (
 	"tripfolio/server/internal/modules/finance"
 	geoservice "tripfolio/server/internal/modules/geo"
 	"tripfolio/server/internal/modules/metadata"
+	"tripfolio/server/internal/modules/travel/album"
 	"tripfolio/server/internal/modules/travel/dashboard"
+	"tripfolio/server/internal/modules/travel/document"
 	"tripfolio/server/internal/modules/travel/itinerary"
 	"tripfolio/server/internal/modules/travel/member"
 	"tripfolio/server/internal/modules/travel/packing"
+	"tripfolio/server/internal/modules/travel/reservation"
 	"tripfolio/server/internal/modules/travel/routeplan"
 	"tripfolio/server/internal/modules/travel/share"
 	"tripfolio/server/internal/modules/travel/todo"
@@ -43,25 +46,28 @@ import (
 
 // Services 是 API 用到的全部业务服务；测试也用它在内存或真实数据库上组装。
 type Services struct {
-	Maintenance *pgcore.MaintenanceGate
-	Backups     *backup.Service
-	TripPurger  *trip.Purger
-	Admin       *admin.Service
-	Dashboard   *dashboard.Service
-	Identity    *account.IdentityService
-	Sessions    *account.SessionService
-	Profile     *account.ProfileService
-	Categories  *finance.CategoryService
-	Trips       *trip.Service
-	Itinerary   *itinerary.Service
-	RoutePlans  *routeplan.Service
-	Packing     *packing.Service
-	Todos       *todo.Service
-	Members     *member.Service
-	Shares      *share.Service
-	Ledger      *finance.LedgerService
-	Statistics  *finance.StatisticsService
-	Settlement  *finance.SettlementService
+	Photos       *album.Service
+	Reservations *reservation.Service
+	Documents    *document.Service
+	Maintenance  *pgcore.MaintenanceGate
+	Backups      *backup.Service
+	TripPurger   *trip.Purger
+	Admin        *admin.Service
+	Dashboard    *dashboard.Service
+	Identity     *account.IdentityService
+	Sessions     *account.SessionService
+	Profile      *account.ProfileService
+	Categories   *finance.CategoryService
+	Trips        *trip.Service
+	Itinerary    *itinerary.Service
+	RoutePlans   *routeplan.Service
+	Packing      *packing.Service
+	Todos        *todo.Service
+	Members      *member.Service
+	Shares       *share.Service
+	Ledger       *finance.LedgerService
+	Statistics   *finance.StatisticsService
+	Settlement   *finance.SettlementService
 	// Assets 始终装配；对象存储未配置时其授权类用例返回 503，读取类用例照常工作。
 	Assets *assets.Service
 	// AssetVerifier 是 worker 侧校验器；对象存储未配置时为 nil，校验任务被推迟。
@@ -146,6 +152,9 @@ func BuildServices(pool *pgxpool.Pool, cfg config.Config, logger *slog.Logger, m
 		})
 	}
 	assetSvc := assets.NewService(assetDeps)
+	photos := album.NewService(travelpg.NewPhotoUnitOfWork(writer), travelpg.NewPhotoReader(pool), cursors, clk, assetSvc)
+	reservations := reservation.NewService(travelpg.NewReservationUnitOfWork(writer), travelpg.NewReservationReader(pool), cursors, clk)
+	documents := document.NewService(travelpg.NewDocumentUnitOfWork(writer), travelpg.NewDocumentReader(pool), cursors, clk)
 	// 头像校验由 assets 提供：资料服务必须在资产服务之后装配。
 	profile := account.NewProfileService(store, assetSvc, clk)
 
@@ -160,6 +169,7 @@ func BuildServices(pool *pgxpool.Pool, cfg config.Config, logger *slog.Logger, m
 	}
 	backups := backup.New(backupStore, backup.Options{Password: cfg.Backup.Password, Key: cfg.Backup.Key, DatabaseURL: backupURL, Directory: cfg.Backup.Directory, MaxBytes: cfg.Backup.MaxBytes, Timeout: cfg.Backup.Timeout}).WithRestores(backupStore, cfg.DatabaseURL)
 	return Services{
+		Photos: photos, Reservations: reservations, Documents: documents,
 		Maintenance: pgcore.NewMaintenanceGate(cfg.DatabaseURL, pool),
 		Backups:     backups,
 		TripPurger:  trip.NewPurger(adminpg.NewTripPurgeStore(pool), purgeObjects),

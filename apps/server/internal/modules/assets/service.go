@@ -100,9 +100,6 @@ func (s *Service) Create(ctx context.Context, a actor.Actor, operationID uuid.UU
 		return write.Result{}, nil, err
 	}
 
-	now := s.clock.Now()
-	expiresAt := now.Add(UploadWindow)
-	keys := s.keys.KeysFor(a.AccountID, in.ID, 1)
 	name := strings.TrimSpace(in.OriginalName)
 	attempt := AttemptInfo{ExpectedSize: in.ExpectedSize, DeclaredMediaType: normalizeMediaType(in.DeclaredMediaType)}
 	if in.ClientSHA256 != nil {
@@ -119,45 +116,11 @@ func (s *Service) Create(ctx context.Context, a actor.Actor, operationID uuid.UU
 
 	var created Resource
 	result, err := s.uow.Run(ctx, req, func(ctx context.Context, scope write.Scope, repo Repo) error {
-		exists, err := repo.IDExists(ctx, in.ID)
+		var err error
+		created, err = s.CreateInTransaction(ctx, scope, repo, a.AccountID, in)
 		if err != nil {
-			return apperr.Internal(err)
+			return err
 		}
-		if exists {
-			return apperr.Conflicted("ID_ALREADY_USED", "该 ID 已被使用")
-		}
-		// trip 范围必须落在本人未删除的旅行上；回收站中的旅行不接受新文件。
-		if in.Scope == ScopeTrip {
-			info, found, err := repo.Trip(ctx, a.AccountID, *in.TripID)
-			if err != nil {
-				return apperr.Internal(err)
-			}
-			if !found {
-				return apperr.NotFound()
-			}
-			if info.DeletedAt != nil {
-				return apperr.Gone("TRIP_DELETED", "旅行在回收站，不能添加文件")
-			}
-		}
-
-		res := Resource{
-			ID:              in.ID,
-			TripID:          in.TripID,
-			Scope:           in.Scope,
-			OriginalName:    name,
-			Status:          StatusUploading,
-			UploadAttempt:   1,
-			UploadExpiresAt: &expiresAt,
-			ThumbnailStatus: ThumbnailNone,
-			Version:         1,
-			CreatedAt:       now,
-			UpdatedAt:       now,
-		}
-		created, err = repo.Insert(ctx, a.AccountID, res, attempt, keys.Staging)
-		if err != nil {
-			return apperr.Internal(err)
-		}
-		recordWrite(scope, created, nil)
 		return nil
 	}, func(ctx context.Context, repo Repo) (any, error) {
 		r, found, err := repo.GetForUpdate(ctx, a.AccountID, in.ID)
@@ -269,6 +232,9 @@ func (s *Service) AuthorizeUpload(ctx context.Context, a actor.Actor, operationI
 		if current.DeletedAt != nil {
 			return assetGone()
 		}
+		if err := checkAssetTrip(ctx, repo, a.AccountID, current); err != nil {
+			return err
+		}
 		if !current.AcceptsUploadAttempt() {
 			return apperr.Conflicted(CodeUploadNotAllowed,
 				fmt.Sprintf("%s 状态的资产不接受上传尝试；替换文件需新建资产", current.Status))
@@ -322,9 +288,15 @@ func (s *Service) AuthorizeUpload(ctx context.Context, a actor.Actor, operationI
 // authorizeUploadFor 为资产的当前尝试签发直传授权。
 // 签名里带上声明大小与类型，客户端必须原样发送；实际内容由 worker 嗅探判定。
 func (s *Service) authorizeUploadFor(ctx context.Context, accountID uuid.UUID, res Resource, attempt AttemptInfo) (*UploadAuthorization, error) {
-	// ready 后不再签发授权（接口设计 3.7）。
-	if res.Status == StatusReady {
+	// 仅为仍在确认窗口内的 uploading 尝试签发授权。
+	if res.Status != StatusUploading || res.DeletedAt != nil || res.UploadExpiresAt == nil || !res.UploadExpiresAt.After(s.clock.Now()) {
 		return nil, nil
+	}
+	if err := checkAssetTrip(ctx, s.reader, accountID, res); err != nil {
+		if e, ok := apperr.As(err); ok && (e.Status == 404 || e.Status == 410) {
+			return nil, nil
+		}
+		return nil, err
 	}
 	keys := s.keys.KeysFor(accountID, res.ID, int(res.UploadAttempt))
 	// 授权有效期与确认窗口对齐：窗口过了授权也没用。
@@ -367,6 +339,9 @@ func (s *Service) Confirm(ctx context.Context, a actor.Actor, operationID, asset
 		}
 		if current.DeletedAt != nil {
 			return assetGone()
+		}
+		if err := checkAssetTrip(ctx, repo, a.AccountID, current); err != nil {
+			return err
 		}
 		// 序号不是当前尝试：可能是过期授权的迟到确认，或客户端串了尝试。
 		if uploadAttempt != current.UploadAttempt {
@@ -412,6 +387,9 @@ func (s *Service) Get(ctx context.Context, a actor.Actor, assetID uuid.UUID) (Re
 	if r.DeletedAt != nil {
 		return Resource{}, assetGone()
 	}
+	if err := checkAssetTrip(ctx, s.reader, a.AccountID, r); err != nil {
+		return Resource{}, err
+	}
 	return r, nil
 }
 
@@ -452,6 +430,9 @@ func (s *Service) AuthorizeDownload(ctx context.Context, a actor.Actor, in Downl
 	}
 	if res.DeletedAt != nil {
 		return DownloadAuthorization{}, assetGone()
+	}
+	if err := checkAssetTrip(ctx, s.reader, a.AccountID, res); err != nil {
+		return DownloadAuthorization{}, err
 	}
 	// 单个授权对未就绪资产报 409；批量授权则逐项返回状态而不报错。
 	if res.Status != StatusReady {
@@ -505,13 +486,22 @@ func (s *Service) AuthorizeDownloads(ctx context.Context, a actor.Actor, items [
 		byID[r.ID] = r
 	}
 
-	out := make([]DownloadAuthorization, 0, len(items))
+	checkedTrips := map[uuid.UUID]bool{}
 	for _, it := range items {
 		res, ok := byID[it.AssetID]
-		// 缺失或已删除都按整批 404：不区分「不存在」与「他人的」。
 		if !ok || res.DeletedAt != nil {
 			return nil, apperr.NotFound()
 		}
+		if res.TripID != nil && !checkedTrips[*res.TripID] {
+			if err := checkAssetTrip(ctx, s.reader, a.AccountID, res); err != nil {
+				return nil, err
+			}
+			checkedTrips[*res.TripID] = true
+		}
+	}
+	out := make([]DownloadAuthorization, 0, len(items))
+	for _, it := range items {
+		res := byID[it.AssetID]
 		auth := DownloadAuthorization{
 			AssetID: res.ID, Status: res.Status, ThumbnailStatus: res.ThumbnailStatus,
 			FileName: res.OriginalName, MediaType: res.MediaType, ByteSize: res.ByteSize,
