@@ -28,7 +28,6 @@ type Options struct {
 	Runtime  func(context.Context) admin.RuntimeStatus
 	Service  *admin.Service
 	Secure   bool
-	Origins  []string
 	Logger   *slog.Logger
 }
 
@@ -103,19 +102,6 @@ func requestInfo(r *http.Request) admin.RequestInfo {
 	return admin.RequestInfo{RequestID: clip(middleware.RequestIDFrom(r.Context()), 128), IP: clip(ip, 64), UserAgent: clip(r.UserAgent(), 512)}
 }
 
-func (h *Handler) validOrigin(r *http.Request) bool {
-	origin := r.Header.Get("Origin")
-	if origin == "" {
-		return r.Method == http.MethodGet && r.Header.Get("Sec-Fetch-Site") != "cross-site"
-	}
-	for _, allowed := range h.options.Origins {
-		if strings.EqualFold(strings.TrimRight(allowed, "/"), origin) {
-			return true
-		}
-	}
-	return false
-}
-
 func (h *Handler) authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
@@ -136,8 +122,8 @@ func (h *Handler) authenticate(next http.Handler) http.Handler {
 				return
 			}
 		}
-		if !h.validOrigin(r) {
-			h.reject(w, r, nil, "request.origin", csrfError())
+		if r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, h.options.BasePath+"/restores/") {
+			next.ServeHTTP(w, r)
 			return
 		}
 		if setup {
@@ -163,7 +149,7 @@ func (h *Handler) authenticate(next http.Handler) http.Handler {
 }
 
 func csrfError() error {
-	return apperr.Forbidden("ADMIN_CSRF_FAILED", "请求来源或安全验证已失效，请刷新后台页面后重试")
+	return apperr.Forbidden("ADMIN_CSRF_FAILED", "安全验证已失效，请刷新后台页面后重试")
 }
 
 func current(r *http.Request) admin.Session { return r.Context().Value(sessionKey{}).(admin.Session) }

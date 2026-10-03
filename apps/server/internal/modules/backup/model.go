@@ -22,16 +22,18 @@ type Config struct {
 }
 
 type Settings struct {
-	Enabled     bool       `json:"enabled"`
-	Time        string     `json:"time"`
-	Retain      int        `json:"retain"`
-	URL         string     `json:"url"`
-	Username    string     `json:"username"`
-	PasswordSet bool       `json:"password_set"`
-	Version     int64      `json:"version"`
-	NextAt      *time.Time `json:"next_at"`
-	Ready       bool       `json:"ready"`
-	Readiness   string     `json:"readiness"`
+	RestoreReady     bool       `json:"restore_ready"`
+	RestoreReadiness string     `json:"restore_readiness"`
+	Enabled          bool       `json:"enabled"`
+	Time             string     `json:"time"`
+	Retain           int        `json:"retain"`
+	URL              string     `json:"url"`
+	Username         string     `json:"username"`
+	PasswordSet      bool       `json:"password_set"`
+	Version          int64      `json:"version"`
+	NextAt           *time.Time `json:"next_at"`
+	Ready            bool       `json:"ready"`
+	Readiness        string     `json:"readiness"`
 }
 
 type Update struct {
@@ -78,7 +80,7 @@ type Manifest struct {
 	RiverVersion  int64     `json:"river_version"`
 	Schemas       []string  `json:"schemas"`
 	ExcludedData  []string  `json:"excluded_data"`
-	KeyID         string    `json:"key_id"`
+	KeyID         string    `json:"key_id,omitempty"`
 	Size          int64     `json:"size_bytes"`
 	SHA256        string    `json:"sha256"`
 }

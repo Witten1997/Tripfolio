@@ -24,6 +24,8 @@ tags:
 security:
   - adminSession: []
 paths:
+  /site-settings:
+    $ref: ./site-settings.yaml#/SettingsPath
   /backup-settings:
     $ref: ./backups.yaml#/SettingsPath
   /backup-settings/test:
@@ -32,6 +34,14 @@ paths:
     $ref: ./backups.yaml#/RunsPath
   /backups/{backup_id}/retry:
     $ref: ./backups.yaml#/RetryPath
+  /backups/{backup_id}/restore:
+    $ref: ./backups.yaml#/RestorePath
+  /backup-remote:
+    $ref: ./backups.yaml#/RemotePath
+  /backup-remote/restore:
+    $ref: ./backups.yaml#/RemoteRestorePath
+  /restores/{restore_id}:
+    $ref: ./backups.yaml#/RestoreStatusPath
   /setup:
     $ref: ./setup.yaml#/SetupPath
   /trips/{trip_id}/lifecycle:
@@ -283,6 +293,10 @@ components:
       $ref: ./backups.yaml#/BackupRun
     BackupPage:
       $ref: ./backups.yaml#/BackupPage
+    RemoteBackup:
+      $ref: ./backups.yaml#/RemoteBackup
+    RemoteBackupPage:
+      $ref: ./backups.yaml#/RemoteBackupPage
     SharingRestriction:
       $ref: ./controls.yaml#/SharingRestriction
     SharingControl:

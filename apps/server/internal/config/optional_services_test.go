@@ -12,7 +12,6 @@ func minimalProdEnv() map[string]string {
 		"TRIPFOLIO_ENV":                  "prod",
 		"TRIPFOLIO_DATABASE_URL":         "postgres://u:p@localhost:5432/db",
 		"TRIPFOLIO_KEYRING":              "k1=" + strings.Repeat("A", 44),
-		"TRIPFOLIO_WEB_BASE_URL":         "https://trip.example.com",
 		"TRIPFOLIO_AMAP_WEB_SERVICE_KEY": "amap-key",
 	}
 }

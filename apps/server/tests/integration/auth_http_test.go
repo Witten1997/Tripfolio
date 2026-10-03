@@ -59,7 +59,7 @@ func newAPIFixture(t *testing.T) *apiFixture {
 	url := testDatabaseURL(t)
 	ctx := context.Background()
 	cfg := config.Config{
-		DatabaseURL: url, DBMaxConns: 4, WebBaseURL: "http://localhost:5173", CORSOrigins: []string{"http://localhost:5173"},
+		DatabaseURL: url, DBMaxConns: 4, CORSOrigins: []string{"http://localhost:5173"},
 		PasswordHashConcurrency: 2, CookieSecure: false, Mail: config.MailConfig{Driver: "log"},
 	}
 	// 设置了对象存储端点时接入真实 MinIO，资产用例据此决定是否跳过。
@@ -72,6 +72,9 @@ func newAPIFixture(t *testing.T) *apiFixture {
 		t.Fatal(err)
 	}
 	t.Cleanup(pool.Close)
+	if _, err := pool.Exec(ctx, `UPDATE admin_site_settings SET share_base_url='http://localhost:5173' WHERE id=1`); err != nil {
+		t.Fatal(err)
+	}
 	mailer := &captureMailer{}
 	logger := slog.New(slog.NewTextHandler(testWriter{t}, &slog.HandlerOptions{Level: slog.LevelWarn}))
 	services, err := bootstrap.BuildServices(pool, cfg, logger, mailer)

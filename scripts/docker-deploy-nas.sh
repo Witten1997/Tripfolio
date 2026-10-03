@@ -29,9 +29,15 @@ NAS_PORT=${NAS_PORT:-22}
 NAS_TMP=${NAS_TMP:-/tmp}
 NAS_DOCKER=${NAS_DOCKER:-/usr/local/bin/docker}
 NAS_PROJECT=${NAS_PROJECT:-$(basename "$NAS_DIR")}
+NAS_START_TIMEOUT=${NAS_START_TIMEOUT:-300}
 IMAGE=${IMAGE:-tripfolio/app}
 PLATFORM=${PLATFORM:-linux/amd64}
 SUDO=${SUDO-sudo}
+
+if [[ ! $NAS_START_TIMEOUT =~ ^[1-9][0-9]*$ ]]; then
+  echo 'NAS_START_TIMEOUT 必须为正整数（秒）' >&2
+  exit 1
+fi
 
 TAR_NAME="tripfolio-${VERSION}.tar"
 REMOTE="${NAS_USER}@${NAS_HOST}"
@@ -84,11 +90,11 @@ echo '  已确认 NAS 上存在 .env'"
 echo "==> [4/4] 重启项目 ${NAS_PROJECT}"
 # 用未加引号的 heredoc 交给远端 bash：本地变量在此展开，远端要自己求值的用 \$ 转义。
 $SSH 'bash -s' <<REMOTE
-set -e
-cd '${NAS_DIR}' 2>/dev/null || { echo '  跳过启动：部署目录不存在'; exit 0; }
+set -euo pipefail
+cd '${NAS_DIR}' 2>/dev/null || { echo '==> 部署失败：部署目录不存在' >&2; exit 1; }
 if [ ! -f .env ]; then
-  echo '  跳过启动：等待 .env'
-  exit 0
+  echo '==> 部署未完成：请先填写 NAS 上的 .env，再重新执行本脚本' >&2
+  exit 1
 fi
 # 签名密钥留空时自动生成一次并写入 .env；换掉它会让已登录会话、游标与验证码失效，所以只在空值时补。
 if grep -qE '^TRIPFOLIO_KEYRING=(k[0-9A-Za-z_-]+=)?$' .env; then
@@ -97,11 +103,53 @@ if grep -qE '^TRIPFOLIO_KEYRING=(k[0-9A-Za-z_-]+=)?$' .env; then
   ${SUDO} sed -i "s|^TRIPFOLIO_KEYRING=.*|TRIPFOLIO_KEYRING=k1=\$KEY|" .env
   echo '  已生成签名密钥并写入 NAS 上的 .env'
 fi
-${SUDO} ${NAS_DOCKER} compose -p '${NAS_PROJECT}' -f docker-compose.yaml up -d
-${SUDO} ${NAS_DOCKER} compose -p '${NAS_PROJECT}' -f docker-compose.yaml ps
+compose() {
+  ${SUDO} ${NAS_DOCKER} compose -p '${NAS_PROJECT}' -f docker-compose.yaml "\$@"
+}
+startup_failed() {
+  echo "==> 部署失败：\$1" >&2
+  compose ps -a >&2 || true
+  echo '最近启动日志（含失败阶段、原因与排查建议）：' >&2
+  compose logs --no-color --tail=120 app >&2 || true
+  exit 1
+}
+
+# 强制重建 app，确保本次部署使用新镜像和配置，并从零开始记录重启次数。
+compose up -d --force-recreate app || startup_failed '无法启动 app 容器'
+CONTAINER_ID=\$(compose ps -a -q app) || startup_failed '无法查询 app 容器'
+[ -n "\$CONTAINER_ID" ] || startup_failed '未找到 app 容器'
+
+echo '等待 app 健康检查通过（最多 ${NAS_START_TIMEOUT} 秒）…'
+DEADLINE=\$((SECONDS + ${NAS_START_TIMEOUT}))
+LAST_STATE=''
+while true; do
+  STATE=\$(${SUDO} ${NAS_DOCKER} inspect --format '{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{else}}missing{{end}} {{.RestartCount}} {{.State.ExitCode}}' "\$CONTAINER_ID") || startup_failed '无法读取容器状态'
+  read -r STATUS HEALTH RESTARTS EXIT_CODE <<< "\$STATE"
+  case "\$STATUS" in
+    exited|dead|restarting|removing|paused)
+      startup_failed "容器状态为 \$STATUS，进程退出码 \$EXIT_CODE，重启次数 \$RESTARTS"
+      ;;
+  esac
+  [ "\$RESTARTS" -eq 0 ] || startup_failed "启动期间发生自动重启（\$RESTARTS 次），请查看启动日志"
+  case "\$HEALTH" in
+    unhealthy) startup_failed '容器健康检查未通过' ;;
+    missing) startup_failed '容器未启用健康检查，无法确认服务就绪' ;;
+  esac
+  if [ "\$STATUS" = running ] && [ "\$HEALTH" = healthy ]; then
+    echo '==> app 健康检查通过'
+    break
+  fi
+  if [ "\$STATE" != "\$LAST_STATE" ]; then
+    echo "  容器状态：\$STATUS，健康状态：\$HEALTH"
+    LAST_STATE=\$STATE
+  fi
+  [ "\$SECONDS" -lt "\$DEADLINE" ] || startup_failed '等待健康检查超时（${NAS_START_TIMEOUT} 秒）'
+  sleep 2
+done
+compose ps
 echo
-echo '最近日志（启动失败会打印中文排查块）：'
-${SUDO} ${NAS_DOCKER} compose -p '${NAS_PROJECT}' -f docker-compose.yaml logs --tail=30 app
+echo '最近启动日志：'
+compose logs --no-color --tail=30 app || true
 REMOTE
 
 echo

@@ -63,7 +63,7 @@ func (s *BackupStore) BackupSettings(ctx context.Context, sess admin.Session, a 
 		return out, cfg, err
 	}
 	defer tx.Rollback(ctx)
-	if err = lockControl(ctx, tx, sess, sess.AccountID, a.Action != "backup.settings.read"); err != nil {
+	if err = lockControl(ctx, tx, sess, sess.AccountID, false); err != nil {
 		return out, cfg, err
 	}
 	out, cfg, err = backupSettings(ctx, tx)
@@ -119,12 +119,19 @@ func (s *BackupStore) BackupRequest(ctx context.Context, sess admin.Session, a a
 		return out, err
 	}
 	defer tx.Rollback(ctx)
-	if err = lockControl(ctx, tx, sess, sess.AccountID, true); err != nil {
+	if err = lockControl(ctx, tx, sess, sess.AccountID, retry != nil); err != nil {
 		return out, err
 	}
 	_, cfg, err := backupSettings(ctx, tx)
 	if err != nil {
 		return out, err
+	}
+	var restoring bool
+	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM tripfolio_restore.jobs WHERE state IN ('queued','preparing','restoring'))`).Scan(&restoring); err != nil {
+		return out, err
+	}
+	if restoring {
+		return out, apperr.Conflicted("BACKUP_BUSY", "数据库正在恢复，请稍后重试")
 	}
 	if cfg.Secret == "" || cfg.URL == "" {
 		return out, apperr.BadRequest("BACKUP_NOT_CONFIGURED", "请先保存 WebDAV 设置")
@@ -235,6 +242,13 @@ func (s *BackupStore) Schedule(ctx context.Context) error {
 	out, cfg, err := backupSettings(ctx, tx)
 	if err != nil {
 		return err
+	}
+	var restoring bool
+	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM tripfolio_restore.jobs WHERE state IN ('queued','preparing','restoring'))`).Scan(&restoring); err != nil {
+		return err
+	}
+	if restoring {
+		return tx.Commit(ctx)
 	}
 	// If a process could not persist its terminal state, surface that failure after River finishes.
 	rows, err := tx.Query(ctx, `UPDATE admin_backup_runs b SET state='failed',error_code='BACKUP_INTERRUPTED',finished_at=clock_timestamp()

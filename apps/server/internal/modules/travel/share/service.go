@@ -51,8 +51,8 @@ type Deps struct {
 	Limiter Limiter
 	Cursors paging.Codec
 	Clock   clock.Clock
-	// WebBaseURL 是网页站点根地址（无尾部斜杠），分享链接为 WebBaseURL + "/s/" + token。
-	WebBaseURL string
+	// ShareBaseURL 每次生成链接时读取后台配置。
+	ShareBaseURL func(context.Context) (string, error)
 	// Tokens 为 nil 时用 GenerateToken；测试注入确定性令牌。
 	Tokens func() (string, error)
 	// RouteCacheTTL 为 0 时取 5 分钟。
@@ -81,10 +81,24 @@ func shareNotFound() *apperr.Error {
 }
 func tripDeleted() *apperr.Error { return apperr.Gone(codeTripDeleted, "旅行已在回收站中") }
 
+func (s *Service) shareBaseURL(ctx context.Context) (string, error) {
+	if s.d.ShareBaseURL == nil {
+		return "", apperr.New(503, "SHARE_SITE_NOT_CONFIGURED", "请先在后台站点设置中配置旅行分享地址")
+	}
+	value, err := s.d.ShareBaseURL(ctx)
+	if err != nil {
+		return "", shareError(err)
+	}
+	if value == "" {
+		return "", apperr.New(503, "SHARE_SITE_NOT_CONFIGURED", "请先在后台站点设置中配置旅行分享地址")
+	}
+	return value, nil
+}
+
 // resource 把数据库行转成主人可见的资源并拼出完整链接。
-func (s *Service) resource(r Record) Resource {
+func (s *Service) resource(r Record, baseURL string) Resource {
 	return Resource{
-		ID: r.ID, Token: r.Token, URL: s.d.WebBaseURL + "/s/" + r.Token,
+		ID: r.ID, Token: r.Token, URL: baseURL + "/s/" + r.Token,
 		CreatedAt: r.CreatedAt, RotatedAt: r.RotatedAt, LastViewedAt: r.LastViewedAt, ViewCount: r.ViewCount,
 	}
 }
@@ -109,6 +123,11 @@ func (s *Service) Get(ctx context.Context, a actor.Actor, tripID uuid.UUID) (Res
 	if err := s.ownerTrip(ctx, a, tripID); err != nil {
 		return Resource{}, err
 	}
+	baseURL, err := s.shareBaseURL(ctx)
+	if err != nil {
+		return Resource{}, err
+	}
+
 	r, ok, err := s.d.Store.GetByTrip(ctx, a.AccountID, tripID)
 	if err != nil {
 		return Resource{}, shareError(err)
@@ -116,7 +135,7 @@ func (s *Service) Get(ctx context.Context, a actor.Actor, tripID uuid.UUID) (Res
 	if !ok {
 		return Resource{}, shareNotFound()
 	}
-	return s.resource(r), nil
+	return s.resource(r, baseURL), nil
 }
 
 // Enable 开启分享；已开启原样返回。并发开启时后到者读取先到者的结果。
@@ -124,10 +143,15 @@ func (s *Service) Enable(ctx context.Context, a actor.Actor, tripID uuid.UUID) (
 	if err := s.ownerTrip(ctx, a, tripID); err != nil {
 		return Resource{}, err
 	}
+	baseURL, err := s.shareBaseURL(ctx)
+	if err != nil {
+		return Resource{}, err
+	}
+
 	if r, ok, err := s.d.Store.GetByTrip(ctx, a.AccountID, tripID); err != nil {
 		return Resource{}, shareError(err)
 	} else if ok {
-		return s.resource(r), nil
+		return s.resource(r, baseURL), nil
 	}
 	token, err := s.d.Tokens()
 	if err != nil {
@@ -142,7 +166,7 @@ func (s *Service) Enable(ctx context.Context, a actor.Actor, tripID uuid.UUID) (
 			return Resource{}, shareError(err)
 		}
 	}
-	return s.resource(r), nil
+	return s.resource(r, baseURL), nil
 }
 
 // Rotate 重新生成令牌，旧链接立即失效、无宽限期（设计 3）。
@@ -150,6 +174,11 @@ func (s *Service) Rotate(ctx context.Context, a actor.Actor, tripID uuid.UUID) (
 	if err := s.ownerTrip(ctx, a, tripID); err != nil {
 		return Resource{}, err
 	}
+	baseURL, err := s.shareBaseURL(ctx)
+	if err != nil {
+		return Resource{}, err
+	}
+
 	token, err := s.d.Tokens()
 	if err != nil {
 		return Resource{}, shareError(err)
@@ -161,7 +190,7 @@ func (s *Service) Rotate(ctx context.Context, a actor.Actor, tripID uuid.UUID) (
 	if !ok {
 		return Resource{}, shareNotFound()
 	}
-	return s.resource(r), nil
+	return s.resource(r, baseURL), nil
 }
 
 // Disable 关闭分享（物理删行）；未开启也成功。

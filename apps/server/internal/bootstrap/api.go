@@ -43,24 +43,25 @@ import (
 
 // Services 是 API 用到的全部业务服务；测试也用它在内存或真实数据库上组装。
 type Services struct {
-	Backups    *backup.Service
-	TripPurger *trip.Purger
-	Admin      *admin.Service
-	Dashboard  *dashboard.Service
-	Identity   *account.IdentityService
-	Sessions   *account.SessionService
-	Profile    *account.ProfileService
-	Categories *finance.CategoryService
-	Trips      *trip.Service
-	Itinerary  *itinerary.Service
-	RoutePlans *routeplan.Service
-	Packing    *packing.Service
-	Todos      *todo.Service
-	Members    *member.Service
-	Shares     *share.Service
-	Ledger     *finance.LedgerService
-	Statistics *finance.StatisticsService
-	Settlement *finance.SettlementService
+	Maintenance *pgcore.MaintenanceGate
+	Backups     *backup.Service
+	TripPurger  *trip.Purger
+	Admin       *admin.Service
+	Dashboard   *dashboard.Service
+	Identity    *account.IdentityService
+	Sessions    *account.SessionService
+	Profile     *account.ProfileService
+	Categories  *finance.CategoryService
+	Trips       *trip.Service
+	Itinerary   *itinerary.Service
+	RoutePlans  *routeplan.Service
+	Packing     *packing.Service
+	Todos       *todo.Service
+	Members     *member.Service
+	Shares      *share.Service
+	Ledger      *finance.LedgerService
+	Statistics  *finance.StatisticsService
+	Settlement  *finance.SettlementService
 	// Assets 始终装配；对象存储未配置时其授权类用例返回 503，读取类用例照常工作。
 	Assets *assets.Service
 	// AssetVerifier 是 worker 侧校验器；对象存储未配置时为 nil，校验任务被推迟。
@@ -124,7 +125,7 @@ func BuildServices(pool *pgxpool.Pool, cfg config.Config, logger *slog.Logger, m
 
 	shares := share.NewService(share.Deps{
 		Store: travelpg.NewShareStore(pool), Trips: travelpg.NewTripReader(pool), Itinerary: travelpg.NewItineraryReader(pool),
-		Routes: geoSvc, Limiter: ratelimit.New(), Cursors: cursors, Clock: clk, WebBaseURL: cfg.WebBaseURL,
+		Routes: geoSvc, Limiter: ratelimit.New(), Cursors: cursors, Clock: clk, ShareBaseURL: adminpg.NewStore(pool).ShareBaseURL,
 	})
 
 	// 对象键推导、授权与 worker 读写都由同一个 S3Store 经 AssetsStore 适配提供；
@@ -157,13 +158,14 @@ func BuildServices(pool *pgxpool.Pool, cfg config.Config, logger *slog.Logger, m
 	if backupURL == "" {
 		backupURL = cfg.DatabaseURL
 	}
-	backups := backup.New(backupStore, backup.Options{Key: cfg.Backup.Key, DatabaseURL: backupURL, Directory: cfg.Backup.Directory, MaxBytes: cfg.Backup.MaxBytes, Timeout: cfg.Backup.Timeout, AllowedHosts: cfg.Backup.AllowedHosts})
+	backups := backup.New(backupStore, backup.Options{Password: cfg.Backup.Password, Key: cfg.Backup.Key, DatabaseURL: backupURL, Directory: cfg.Backup.Directory, MaxBytes: cfg.Backup.MaxBytes, Timeout: cfg.Backup.Timeout}).WithRestores(backupStore, cfg.DatabaseURL)
 	return Services{
-		Backups:    backups,
-		TripPurger: trip.NewPurger(adminpg.NewTripPurgeStore(pool), purgeObjects),
-		Admin:      admin.NewService(adminpg.NewStore(pool), hasher, clk).WithTripLifecycle(adminpg.NewTripLifecycleStore(pool, insertOnly, clk)).WithBackups(backupStore, backups),
-		Dashboard:  dashboardSvc,
-		Identity:   identity, Sessions: sessions, Profile: profile, Categories: categories,
+		Maintenance: pgcore.NewMaintenanceGate(cfg.DatabaseURL, pool),
+		Backups:     backups,
+		TripPurger:  trip.NewPurger(adminpg.NewTripPurgeStore(pool), purgeObjects),
+		Admin:       admin.NewService(adminpg.NewStore(pool), hasher, clk).WithTripLifecycle(adminpg.NewTripLifecycleStore(pool, insertOnly, clk)).WithBackups(backupStore, backups),
+		Dashboard:   dashboardSvc,
+		Identity:    identity, Sessions: sessions, Profile: profile, Categories: categories,
 		Trips: trips, Itinerary: itineraries, RoutePlans: routePlans, Packing: packings, Todos: todos, Members: members, Ledger: ledger, Statistics: statistics, Settlement: settlement,
 		Assets: assetSvc, AssetVerifier: verifier, ObjectStore: objects, Geo: geoSvc, Shares: shares,
 	}, nil

@@ -142,7 +142,7 @@ func TestRoutesWithoutRouteSourceIsUnavailable(t *testing.T) {
 	f := newFixture(t)
 	threeStops(f)
 	v := f.viewer(t)
-	svc := share.NewService(share.Deps{Store: f.store, Trips: f.trips, Itinerary: f.items, Limiter: f.limiter, Cursors: paging.InsecureCodec{}, Clock: f.clock, WebBaseURL: "https://trip.example.com"})
+	svc := share.NewService(share.Deps{Store: f.store, Trips: f.trips, Itinerary: f.items, Limiter: f.limiter, Cursors: paging.InsecureCodec{}, Clock: f.clock, ShareBaseURL: func(context.Context) (string, error) { return "https://trip.example.com", nil }})
 	_, err := svc.Routes(context.Background(), v, geo.Driving)
 	code(t, err, 503, "DEPENDENCY_UNAVAILABLE")
 }

@@ -4,6 +4,8 @@ import { ElMessage } from 'element-plus'
 import type { components } from '@tripfolio/contracts/openapi/admin'
 import { request } from '../api'
 import AdminControlDialog from '../components/AdminControlDialog.vue'
+import RestoreBackupDialog from '../components/RestoreBackupDialog.vue'
+import RemoteBackupsDialog from '../components/RemoteBackupsDialog.vue'
 
 type Settings = components['schemas']['BackupSettings']
 type Run = components['schemas']['BackupRun']
@@ -24,15 +26,15 @@ const historyError = ref('')
 const historyLoading = ref(false)
 const page = ref(1)
 const dialog = ref(false)
-const action = ref<'save' | 'test' | 'run' | 'retry'>('save')
+const restoreDialog = ref(false)
+const remoteDialog = ref(false)
+type DirectAction = 'save' | 'test' | 'run'
+const pending = ref<DirectAction | null>(null)
+const busy = computed(
+  () => dialog.value || restoreDialog.value || remoteDialog.value || pending.value !== null,
+)
 const selected = ref<Run | null>(null)
-const labels = { save: '保存备份设置', test: '测试 WebDAV', run: '立即备份', retry: '重试备份' }
-const descriptions = {
-  save: '保存定时计划与存储目标。WebDAV 密码留空将保留原密码，更换目标或用户名时需要重新填写。',
-  test: '使用已保存的设置创建临时文件，验证上传、读取、完整性校验和删除权限。',
-  run: '将当前数据库的完整业务数据加密备份到已保存的 WebDAV 目标。',
-  retry: '优先重用校验通过的暂存文件；暂存文件已失效时重新导出数据库。',
-}
+const labels = { save: '保存备份设置', test: '测试 WebDAV', run: '立即备份' }
 const states: Record<string, string> = {
   queued: '排队中',
   running: '正在导出',
@@ -45,8 +47,8 @@ const states: Record<string, string> = {
 const messages: Record<string, string> = {
   BACKUP_INTERRUPTED: '任务中断，可重试',
   BACKUP_TIMEOUT: '任务超时或服务停止',
-  BACKUP_KEY_MISSING: '服务器未配置备份密钥',
-  BACKUP_KEY_INVALID: '备份密钥与已保存凭证不匹配',
+  BACKUP_KEY_MISSING: '服务器未配置备份密码',
+  BACKUP_KEY_INVALID: '无法解密 WebDAV 凭证，请核对备份密码或重新保存 WebDAV 密码',
   BACKUP_SPACE_LIMIT: '暂存空间不足或达到上限',
   BACKUP_TOO_LARGE: '超过单文件大小上限',
   BACKUP_VERSION_MISMATCH: '数据库客户端版本过旧',
@@ -58,7 +60,6 @@ const messages: Record<string, string> = {
   WEBDAV_UPLOAD_FAILED: '上传失败，请检查空间与写入权限',
   WEBDAV_VERIFY_FAILED: '远端完整性校验失败',
   WEBDAV_DELETE_FAILED: '旧备份清理失败，请检查删除权限',
-  WEBDAV_ADDRESS_BLOCKED: '内网地址未加入服务器白名单',
   WEBDAV_REQUEST_FAILED: 'WebDAV 请求失败，请检查连接与凭证',
 }
 const hasActive = computed(
@@ -125,32 +126,47 @@ async function refresh() {
     loading.value = false
   }
 }
-function open(next: typeof action.value, run: Run | null = null) {
-  action.value = next
+function openRetry(run: Run) {
   selected.value = run
   dialog.value = true
 }
-async function execute(reason: string) {
+function openRestore(run: Run) {
+  selected.value = run
+  restoreDialog.value = true
+}
+async function execute(action: DirectAction | 'retry', reason: string) {
   if (!settings.value) return
-  if (action.value === 'save') {
+  if (action === 'save') {
     await request('/backup-settings', {
       method: 'PUT',
       body: JSON.stringify({ ...form, version: settings.value.version, reason }),
     })
     await loadSettings()
     ElMessage.success('备份设置已保存')
-  } else if (action.value === 'test') {
+  } else if (action === 'test') {
     await request('/backup-settings/test', { method: 'POST', body: JSON.stringify({ reason }) })
     ElMessage.success('WebDAV 创建、上传、读取、校验及删除检查通过')
   } else {
     const path =
-      action.value === 'retry' && selected.value
-        ? `/backups/${selected.value.id}/retry`
-        : '/backups'
+      action === 'retry' && selected.value ? `/backups/${selected.value.id}/retry` : '/backups'
     await request(path, { method: 'POST', body: JSON.stringify({ reason }) })
     await loadHistory(1)
     ElMessage.success('备份任务已入队')
   }
+}
+async function executeDirect(action: DirectAction) {
+  if (busy.value || loading.value || !settings.value) return
+  pending.value = action
+  try {
+    await execute(action, labels[action])
+  } catch (e) {
+    ElMessage.error(e instanceof Error ? e.message : `${labels[action]}失败，请重试`)
+  } finally {
+    pending.value = null
+  }
+}
+async function retry(reason: string) {
+  await execute('retry', reason)
 }
 async function poll() {
   if (disposed) return
@@ -176,7 +192,7 @@ onBeforeUnmount(() => {
         <h1>数据库备份</h1>
         <p class="muted">按北京时间定时备份，将加密文件保存到你的 WebDAV。</p>
       </div>
-      <el-button :loading="loading" :disabled="dirty || dialog" @click="refresh">刷新</el-button>
+      <el-button :loading="loading" :disabled="dirty || busy" @click="refresh">刷新</el-button>
     </div>
     <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon />
     <p v-if="loading && !settings" role="status">正在加载备份设置…</p>
@@ -191,9 +207,9 @@ onBeforeUnmount(() => {
       <div class="backup-columns">
         <section class="backup-panel" aria-labelledby="schedule-title">
           <h2 id="schedule-title">定时计划</h2>
-          <el-form label-position="top" @submit.prevent="open('save')">
+          <el-form label-position="top" @submit.prevent="executeDirect('save')">
             <el-form-item label="自动备份"
-              ><el-switch v-model="form.enabled" :disabled="dialog" aria-label="启用自动备份"
+              ><el-switch v-model="form.enabled" :disabled="busy" aria-label="启用自动备份"
             /></el-form-item>
             <el-form-item label="每日执行时间（北京时间）"
               ><el-time-select
@@ -203,7 +219,7 @@ onBeforeUnmount(() => {
                 step="00:01"
                 :editable="false"
                 :clearable="false"
-                :disabled="dialog"
+                :disabled="busy"
                 aria-label="每日备份时间"
             /></el-form-item>
             <el-form-item label="保留最近几份成功备份"
@@ -212,7 +228,7 @@ onBeforeUnmount(() => {
                 :min="1"
                 :max="90"
                 :precision="0"
-                :disabled="dialog"
+                :disabled="busy"
                 aria-label="备份保留份数"
             /></el-form-item>
             <p class="muted">
@@ -225,13 +241,13 @@ onBeforeUnmount(() => {
         </section>
         <section class="backup-panel" aria-labelledby="storage-title">
           <h2 id="storage-title">WebDAV 存储</h2>
-          <el-form label-position="top" @submit.prevent="open('save')">
+          <el-form label-position="top" @submit.prevent="executeDirect('save')">
             <el-form-item label="已存在的 WebDAV 目录 URL"
               ><el-input
                 v-model="form.url"
                 placeholder="https://dav.example.com/backups/"
                 :maxlength="2048"
-                :disabled="dialog"
+                :disabled="busy"
                 aria-label="WebDAV 目录 URL"
             /></el-form-item>
             <el-form-item label="用户名"
@@ -239,7 +255,7 @@ onBeforeUnmount(() => {
                 v-model="form.username"
                 autocomplete="off"
                 :maxlength="256"
-                :disabled="dialog"
+                :disabled="busy"
                 aria-label="WebDAV 用户名"
             /></el-form-item>
             <el-form-item label="密码或应用密码"
@@ -249,35 +265,66 @@ onBeforeUnmount(() => {
                 autocomplete="new-password"
                 :placeholder="settings.password_set ? '已保存，留空保持原密码' : '输入 WebDAV 密码'"
                 :maxlength="2048"
-                :disabled="dialog"
+                :disabled="busy"
                 show-password
                 aria-label="WebDAV 密码"
             /></el-form-item>
-            <p class="muted">
-              使用 HTTPS。内网目标需由服务器配置允许的主机；每个存储目标使用独立目录。
-            </p>
+            <p class="muted">支持 HTTP 和 HTTPS，可使用内网地址；每个存储目标使用独立目录。</p>
           </el-form>
         </section>
       </div>
       <div class="backup-actions">
-        <el-button type="primary" :disabled="!dirty || dialog" @click="open('save')"
+        <el-button
+          type="primary"
+          :loading="pending === 'save'"
+          :disabled="!dirty || busy || loading"
+          @click="executeDirect('save')"
           >保存设置</el-button
         >
-        <el-button :disabled="!settings.password_set || dirty || dialog" @click="open('test')"
+        <el-button
+          :loading="pending === 'test'"
+          :disabled="!settings.password_set || dirty || busy || loading"
+          @click="executeDirect('test')"
           >测试 WebDAV</el-button
         >
         <el-button
-          :disabled="!settings.ready || !settings.password_set || dirty || hasActive || dialog"
-          @click="open('run')"
+          :loading="pending === 'run'"
+          :disabled="
+            !settings.ready || !settings.password_set || dirty || hasActive || busy || loading
+          "
+          @click="executeDirect('run')"
           >立即备份</el-button
         >
         <span v-if="dirty" class="muted">有未保存的设置</span>
       </div>
       <p class="backup-note">
-        备份包含数据库结构与业务数据，不包含照片、附件等对象存储文件。文件使用 age
-        加密，请单独保管服务器备份密钥；丢失密钥将无法恢复。
+        备份包含数据库结构与业务数据，不包含照片、附件等对象存储文件。恢复时需使用备份当时的加密密码；请妥善保管，更改密码不会更新已有备份。
       </p>
     </template>
+    <section class="backup-panel" aria-labelledby="remote-title">
+      <h2 id="remote-title">恢复其他部署的数据</h2>
+      <p class="muted">
+        新部署的系统也可直接查找 WebDAV 中已有的备份，无需先在当前系统创建备份。请先保存原系统使用的
+        WebDAV 目录地址与凭证。
+      </p>
+      <el-button
+        type="danger"
+        plain
+        :disabled="
+          !settings?.restore_ready ||
+          !settings?.password_set ||
+          dirty ||
+          hasActive ||
+          busy ||
+          loading
+        "
+        @click="remoteDialog = true"
+        >从 WebDAV 恢复</el-button
+      >
+      <p v-if="settings && !settings.restore_ready" class="muted">
+        {{ settings.restore_readiness }}
+      </p>
+    </section>
     <section class="backup-panel history" aria-labelledby="history-title">
       <div class="history-heading">
         <h2 id="history-title">备份记录</h2>
@@ -330,11 +377,19 @@ onBeforeUnmount(() => {
         <el-table-column label="操作" width="90" fixed="right"
           ><template #default="{ row }"
             ><el-button
+              v-if="row.state === 'succeeded' && !row.remote_deleted_at"
+              link
+              type="danger"
+              :disabled="hasActive || dirty || busy || loading || !settings?.restore_ready"
+              :title="settings?.restore_readiness"
+              @click="openRestore(row)"
+              >恢复</el-button
+            ><el-button
               v-if="row.state === 'failed'"
               link
               type="primary"
-              :disabled="hasActive || dirty || dialog"
-              @click="open('retry', row)"
+              :disabled="hasActive || dirty || busy || loading"
+              @click="openRetry(row)"
               >重试</el-button
             ></template
           ></el-table-column
@@ -352,10 +407,12 @@ onBeforeUnmount(() => {
     </section>
     <AdminControlDialog
       v-model="dialog"
-      :title="labels[action]"
-      :description="descriptions[action]"
-      :execute="execute"
+      title="重试备份"
+      description="优先重用校验通过的暂存文件；暂存文件已失效时重新导出数据库。"
+      :execute="retry"
     />
+    <RestoreBackupDialog v-model="restoreDialog" :run="selected" />
+    <RemoteBackupsDialog v-model="remoteDialog" />
   </section>
 </template>
 

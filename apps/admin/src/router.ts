@@ -5,6 +5,12 @@ import { checkSetup, identity, restoreSession, setupRequired } from './api'
 export const router = createRouter({
   history: createWebHistory(adminBasePath),
   routes: [
+    {
+      path: '/site-settings',
+      name: 'site-settings',
+      component: () => import('./pages/SiteSettingsPage.vue'),
+    },
+    { path: '/restore', name: 'restore', component: () => import('./pages/RestoreStatusPage.vue') },
     { path: '/backups', name: 'backups', component: () => import('./pages/BackupsPage.vue') },
     { path: '/', redirect: '/overview' },
     { path: '/overview', name: 'overview', component: () => import('./pages/OverviewPage.vue') },
@@ -21,6 +27,7 @@ export const router = createRouter({
 })
 
 router.beforeEach(async (to) => {
+  if (to.name === 'restore') return true
   try {
     await checkSetup(to.name === 'setup')
   } catch {

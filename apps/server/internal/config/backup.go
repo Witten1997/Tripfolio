@@ -4,18 +4,22 @@ import (
 	"encoding/base64"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 type BackupConfig struct {
-	Key, DatabaseURL, Directory string
-	MaxBytes                    int64
-	Timeout                     time.Duration
-	AllowedHosts                []string
+	Password, Key, DatabaseURL, Directory string
+	MaxBytes                              int64
+	Timeout                               time.Duration
 }
 
-func loadBackup(get func(string, string) string) (BackupConfig, error) {
-	cfg := BackupConfig{Key: get("BACKUP_KEY", ""), DatabaseURL: get("BACKUP_DATABASE_URL", ""), Directory: get("BACKUP_DIR", ""), AllowedHosts: splitList(get("BACKUP_WEBDAV_ALLOWED_HOSTS", ""))}
+func loadBackup(get func(string, string) string, password string) (BackupConfig, error) {
+	cfg := BackupConfig{Password: password, Key: get("BACKUP_KEY", ""), DatabaseURL: get("BACKUP_DATABASE_URL", ""), Directory: get("BACKUP_DIR", "")}
+	if password != "" && (utf8.RuneCountInString(password) < 8 || utf8.RuneCountInString(password) > 312 || strings.TrimSpace(password) == "" || strings.ContainsAny(password, "\r\n\x00")) {
+		return cfg, fmt.Errorf("TRIPFOLIO_BACKUP_PASSWORD 必须为 8–312 个字符，不能全为空白或包含换行")
+	}
 	if cfg.Key != "" {
 		key, err := base64.StdEncoding.DecodeString(cfg.Key)
 		if err != nil || len(key) != 32 {

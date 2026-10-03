@@ -21,6 +21,40 @@ export type paths = {
         patch?: never;
         trace?: never;
     };
+    "/backup-remote": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 查找已保存 WebDAV 根目录中的其他部署及备份，无需本地备份记录 */
+        get: operations["adminRemoteBackups"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/backup-remote/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 使用远端备份覆盖当前数据库，需明确确认及近期管理员密码复验 */
+        post: operations["adminRestoreRemoteBackup"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/backup-settings": {
         parameters: {
             query?: never;
@@ -30,7 +64,7 @@ export type paths = {
         };
         /** 查看备份设置，密码只返回是否已设置 */
         get: operations["adminBackupSettings"];
-        /** 保存备份设置，需近期密码复验 */
+        /** 保存备份设置 */
         put: operations["adminUpdateBackupSettings"];
         post?: never;
         delete?: never;
@@ -66,8 +100,25 @@ export type paths = {
         /** 分页查询备份记录 */
         get: operations["adminBackupRuns"];
         put?: never;
-        /** 请求立即备份，需近期密码复验 */
+        /** 请求立即备份 */
         post: operations["adminRequestBackup"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/backups/{backup_id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 确认覆盖当前数据库，需近期管理员密码复验 */
+        post: operations["adminRestoreBackup"];
         delete?: never;
         options?: never;
         head?: never;
@@ -176,6 +227,23 @@ export type paths = {
         patch?: never;
         trace?: never;
     };
+    "/restores/{restore_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 使用此次恢复专用令牌查询结果，令牌有效期 24 小时 */
+        get: operations["adminRestoreStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/runtime": {
         parameters: {
             query?: never;
@@ -257,6 +325,24 @@ export type paths = {
         put?: never;
         /** 首次创建或验证账号并授予管理资格，成功后永久关闭 */
         post: operations["adminInitialize"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/site-settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 获取旅行分享站点设置 */
+        get: operations["adminSiteSettings"];
+        /** 保存旅行分享站点设置并立即生效 */
+        put: operations["adminUpdateSiteSettings"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -625,6 +711,8 @@ export type components = {
             password_set: boolean;
             readiness: string;
             ready: boolean;
+            restore_readiness?: string;
+            restore_ready?: boolean;
             retain: number;
             time: string;
             url: string;
@@ -684,6 +772,9 @@ export type components = {
             page_size: number;
             /** Format: int64 */
             total: number;
+        };
+        Envelope: {
+            data: components["schemas"]["SiteSettings"];
         };
         FieldError: {
             /** @description 稳定的校验错误代码 */
@@ -794,6 +885,47 @@ export type components = {
              */
             type: string;
         };
+        RemoteBackup: {
+            /** Format: uuid */
+            destination: string;
+            /** Format: int64 */
+            goose_version: number;
+            /** Format: uuid */
+            id: string;
+            sha256: string;
+            /** Format: int64 */
+            size_bytes: number;
+            /** Format: date-time */
+            snapshot_at: string;
+        };
+        RemoteBackupPage: {
+            data: components["schemas"]["RemoteBackup"][];
+            destinations: string[];
+            page: number;
+            page_size: number;
+            /** Format: int64 */
+            settings_version: number;
+            skipped: number;
+            total: number;
+        };
+        RestoreJob: {
+            /** Format: uuid */
+            backup_id: string;
+            /** Format: date-time */
+            created_at: string;
+            error_code: string;
+            /** Format: date-time */
+            finished_at: string | null;
+            /** Format: uuid */
+            id: string;
+            message: string;
+            /** Format: date-time */
+            started_at: string | null;
+            /** @enum {string} */
+            state: "queued" | "preparing" | "restoring" | "succeeded" | "failed";
+            /** @description 仅提交时返回的恢复进度查询令牌 */
+            token?: string;
+        };
         RuntimeStatus: {
             /** Format: date-time */
             as_of: string;
@@ -835,6 +967,12 @@ export type components = {
             restricted: boolean;
             /** Format: uuid */
             trip_id: string;
+            /** Format: int64 */
+            version: number;
+        };
+        SiteSettings: {
+            /** @description 用户端站点根地址，不含路径；初始未配置时返回空字符串 */
+            share_base_url: string;
             /** Format: int64 */
             version: number;
         };
@@ -956,6 +1094,74 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AuditPage"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    adminRemoteBackups: {
+        parameters: {
+            query?: {
+                /** @description 不传时列出部署目录；传入目录编号时分页列出该目录的完整备份 */
+                destination?: string;
+                page?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 目录或备份列表，按远端文件修改时间倒序；skipped 为本页无效备份数量 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RemoteBackupPage"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    adminRestoreRemoteBackup: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 登录或当前身份响应返回的后台请求防伪令牌 */
+                "X-Admin-CSRF": components["parameters"]["CSRF"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    confirmation: "确认覆盖当前数据库";
+                    /** Format: uuid */
+                    destination: string;
+                    /** Format: uuid */
+                    id: string;
+                    /** @description 备份当时的加密密码，留空使用当前配置 */
+                    password: string;
+                    reason: string;
+                    /** Format: int64 */
+                    settings_version: number;
+                    sha256: string;
+                };
+            };
+        };
+        responses: {
+            /** @description 恢复已受理，远端备份不会加入本地保留策略 */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["RestoreJob"];
+                    };
                 };
             };
             default: components["responses"]["Problem"];
@@ -1087,6 +1293,44 @@ export interface operations {
                 content: {
                     "application/json": {
                         data: components["schemas"]["BackupRun"];
+                    };
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    adminRestoreBackup: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 登录或当前身份响应返回的后台请求防伪令牌 */
+                "X-Admin-CSRF": components["parameters"]["CSRF"];
+            };
+            path: {
+                backup_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    confirmation: "确认覆盖当前数据库";
+                    /** @description 备份当时的加密密码，留空使用服务器当前配置 */
+                    password: string;
+                    reason: string;
+                };
+            };
+        };
+        responses: {
+            /** @description 恢复已受理，保存返回的 token 查询状态 */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["RestoreJob"];
                     };
                 };
             };
@@ -1249,6 +1493,33 @@ export interface operations {
             default: components["responses"]["Problem"];
         };
     };
+    adminRestoreStatus: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Restore-Token": string;
+            };
+            path: {
+                restore_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 恢复状态，不包含备份凭证或业务数据 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["RestoreJob"];
+                    };
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
     adminRuntime: {
         parameters: {
             query?: never;
@@ -1402,6 +1673,55 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    adminSiteSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 当前站点设置 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    adminUpdateSiteSettings: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 登录或当前身份响应返回的后台请求防伪令牌 */
+                "X-Admin-CSRF": components["parameters"]["CSRF"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SiteSettings"];
+            };
+        };
+        responses: {
+            /** @description 已保存的站点设置 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope"];
+                };
             };
             default: components["responses"]["Problem"];
         };

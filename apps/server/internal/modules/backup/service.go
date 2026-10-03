@@ -19,25 +19,22 @@ import (
 )
 
 type Options struct {
-	Key, DatabaseURL, Directory string
-	MaxBytes                    int64
-	Timeout                     time.Duration
-	AllowedHosts                []string
+	Password, Key, DatabaseURL, Directory string
+	MaxBytes                              int64
+	Timeout                               time.Duration
 }
 type Service struct {
-	store   Store
-	key     []byte
-	options Options
-	allowed map[string]bool
+	store      Store
+	restores   RestoreStore
+	restoreURL string
+	key        []byte
+	options    Options
 }
 
 func New(store Store, o Options) *Service {
-	s := &Service{store: store, options: o, allowed: map[string]bool{}}
+	s := &Service{store: store, options: o}
 	if o.Key != "" {
 		s.key, _ = ParseKey(o.Key)
-	}
-	for _, host := range o.AllowedHosts {
-		s.allowed[strings.ToLower(strings.TrimSpace(host))] = true
 	}
 	if s.options.Directory == "" {
 		s.options.Directory = filepath.Join(os.TempDir(), "tripfolio-backups")
@@ -51,13 +48,13 @@ func New(store Store, o Options) *Service {
 	return s
 }
 func (s *Service) Readiness() (bool, string) {
-	if len(s.key) != 32 {
-		return false, "服务器尚未配置 TRIPFOLIO_BACKUP_KEY"
+	if s.passphrase() == "" {
+		return false, "服务器尚未配置 TRIPFOLIO_BACKUP_PASSWORD"
 	}
 	if _, err := exec.LookPath("pg_dump"); err != nil {
 		return false, "服务器未安装 PostgreSQL pg_dump 客户端"
 	}
-	return true, "已配置备份密钥和数据库导出工具"
+	return true, "备份加密配置和数据库导出工具已就绪"
 }
 func (s *Service) Validate(in Update) error {
 	if _, err := time.Parse("15:04", in.Time); err != nil || len(in.Time) != 5 {
@@ -80,12 +77,8 @@ func (s *Service) Schedule(ctx context.Context) error { return s.store.Schedule(
 
 func Summary(code string) string {
 	switch code {
-	case "WEBDAV_HTTPS_REQUIRED":
-		return "WebDAV 需使用 HTTPS；内网 HTTP 须在服务器配置允许的主机"
 	case "WEBDAV_URL_INVALID":
-		return "请填写不含账号、查询参数或片段的 WebDAV 目录地址"
-	case "WEBDAV_ADDRESS_BLOCKED":
-		return "目标地址受限；内网 WebDAV 需配置服务器主机白名单"
+		return "请填写不含账号、查询参数或片段的 HTTP/HTTPS WebDAV 目录地址"
 	case "WEBDAV_DIRECTORY_FAILED":
 		return "无法创建备份目录，请检查地址及写入权限"
 	case "WEBDAV_UPLOAD_FAILED":
@@ -95,9 +88,9 @@ func Summary(code string) string {
 	case "WEBDAV_DELETE_FAILED":
 		return "远端文件删除失败，请检查删除权限"
 	case "BACKUP_KEY_INVALID":
-		return "备份密钥无法解密已保存凭证，请核对服务器密钥"
+		return "无法解密已保存的 WebDAV 凭证，请核对备份密码或重新保存 WebDAV 密码"
 	case "BACKUP_KEY_MISSING":
-		return "服务器未配置有效备份密钥"
+		return "服务器未配置有效备份密码"
 	case "BACKUP_SPACE_LIMIT":
 		return "备份暂存空间达到上限，请清理失败文件或提高容量配置"
 	case "BACKUP_TOO_LARGE":
@@ -188,13 +181,13 @@ func (s *Service) Execute(ctx context.Context, id uuid.UUID, lastAttempt bool) e
 }
 
 func (s *Service) execute(ctx context.Context, r *Run, filename string) error {
-	if len(s.key) != 32 {
+	if s.passphrase() == "" {
 		return errors.New("BACKUP_KEY_MISSING")
 	}
 	if _, err := s.unseal(r.Config.Secret); err != nil {
 		return err
 	}
-	if !validArchive(filename, r.Manifest) {
+	if !validArchive(filename, r.Manifest) || !s.archiveUsesPassword(filename) {
 		if err := s.prepareDirectory(); err != nil {
 			return err
 		}
@@ -306,7 +299,12 @@ func (s *Service) prune(ctx context.Context, cfg Config) error {
 	}
 	return nil
 }
-func (s *Service) passphrase() string { return base64.StdEncoding.EncodeToString(s.key) }
+func (s *Service) passphrase() string {
+	if s.options.Password != "" {
+		return s.options.Password
+	}
+	return base64.StdEncoding.EncodeToString(s.key)
+}
 
 func (s *Service) discardRemote(ctx context.Context, r Run) error {
 	d, err := s.dav(r.Config)

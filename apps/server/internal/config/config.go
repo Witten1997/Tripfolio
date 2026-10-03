@@ -74,14 +74,12 @@ type Config struct {
 	ShutdownTimeout time.Duration
 	// CORSOrigins 是允许的浏览器来源：网页域与 Capacitor 来源。
 	CORSOrigins []string
-	// WebBaseURL 是网页站点根地址（无尾部斜杠），用于拼接分享链接等需要回到网页的完整地址。
-	WebBaseURL string
 	// WorkerMaxJobs 是 worker 默认队列的最大并发。
 	WorkerMaxJobs int
 	// Keyring 是签名与派生密钥配置："kid=base64,..."，第一个为当前密钥。
 	Keyring string
-	// CookieSecure 控制刷新 Cookie 是否带 Secure 与 __Host- 前缀：跟随站点协议自动决定
-	// （https 在 prod 下默认开启，http 一律关闭），可用 TRIPFOLIO_COOKIE_SECURE 显式覆盖。
+	// CookieSecure 控制登录 Cookie 是否带 Secure 与 __Host- 前缀：生产默认开启
+	// 可用 TRIPFOLIO_COOKIE_SECURE 显式覆盖；纯 HTTP 部署应设置 false。
 	CookieSecure bool
 	// PasswordHashConcurrency 是 Argon2id 的并发上限。
 	PasswordHashConcurrency int
@@ -129,7 +127,7 @@ func Load(getenv func(string) string) (Config, error) {
 	} else {
 		cfg.AdminPath = path
 	}
-	if backup, err := loadBackup(get); err != nil {
+	if backup, err := loadBackup(get, getenv(Prefix+"BACKUP_PASSWORD")); err != nil {
 		errs = append(errs, err)
 	} else {
 		cfg.Backup = backup
@@ -170,43 +168,13 @@ func Load(getenv func(string) string) (Config, error) {
 		}
 	}
 
-	// COOKIE_SECURE 只在显式设置时才覆盖下面的自动判定，非法值仍然是配置错误。
-	var cookieSecureSet, cookieSecureValue bool
+	cfg.CookieSecure = cfg.Env == "prod"
 	if raw := get("COOKIE_SECURE", ""); raw != "" {
 		if b, err := strconv.ParseBool(raw); err != nil {
 			errs = append(errs, fmt.Errorf("%sCOOKIE_SECURE 必须是 true 或 false", Prefix))
 		} else {
-			cookieSecureSet, cookieSecureValue = true, b
+			cfg.CookieSecure = b
 		}
-	}
-
-	cfg.WebBaseURL = strings.TrimRight(get("WEB_BASE_URL", "http://localhost:5173"), "/")
-	if !strings.HasPrefix(cfg.WebBaseURL, "http://") && !strings.HasPrefix(cfg.WebBaseURL, "https://") {
-		errs = append(errs, fmt.Errorf("%sWEB_BASE_URL 必须以 http:// 或 https:// 开头", Prefix))
-	}
-
-	// 刷新 Cookie 的 Secure 与 __Host- 前缀跟随站点协议自动决定：https 用 Secure（prod 默认），
-	// http 一律关闭。纯 http 部署不再要求额外的开关——自托管里 http 很常见，把「没有 TLS」当成
-	// 配置错误只会把人挡在门外；需要强调的是取舍本身，所以只告警不报错。
-	// TRIPFOLIO_COOKIE_SECURE 仍可显式覆盖（例如前面已有 HTTPS 代理但地址暂时写成 http）。
-	insecureSite := strings.HasPrefix(cfg.WebBaseURL, "http://")
-	switch {
-	case cookieSecureSet:
-		cfg.CookieSecure = cookieSecureValue
-		if cfg.CookieSecure && insecureSite {
-			cfg.Warnings = append(cfg.Warnings,
-				"站点地址是 http 却显式设置了 TRIPFOLIO_COOKIE_SECURE=true：浏览器不会回传带 Secure 的 Cookie，"+
-					"登录会表现为「登录后又变回未登录」；请去掉该变量或把站点改成 https")
-		}
-	case insecureSite:
-		cfg.CookieSecure = false
-		if cfg.Env == "prod" {
-			cfg.Warnings = append(cfg.Warnings,
-				"站点地址是 http：分享链接为 http、刷新 Cookie 不以 Secure 传输，仅适合内网或个人自用；"+
-					"对外请在前面加一层 HTTPS 反向代理并把 TRIPFOLIO_WEB_BASE_URL 改成 https")
-		}
-	default:
-		cfg.CookieSecure = cfg.Env == "prod"
 	}
 
 	if n, err := strconv.Atoi(get("WORKER_MAX_JOBS", "20")); err != nil || n < 1 {

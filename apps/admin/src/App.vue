@@ -12,6 +12,7 @@ import {
   ScrollText,
   Activity,
   DatabaseBackup,
+  Settings,
 } from '@lucide/vue'
 import { ElMessage } from 'element-plus'
 import { identity, logout } from './api'
@@ -20,6 +21,7 @@ import { adminBasePath } from './config'
 const route = useRoute()
 const router = useRouter()
 const titles: Record<string, string> = {
+  'site-settings': '站点设置',
   overview: '平台概览',
   users: '用户管理',
   account: '账号与安全',
@@ -31,7 +33,7 @@ const titles: Record<string, string> = {
 }
 const pageTitle = computed(() => titles[String(route.name)] || '管理后台')
 watch(identity, (value) => {
-  if (!value && route.name !== 'login' && route.name !== 'setup')
+  if (!value && route.name !== 'login' && route.name !== 'setup' && route.name !== 'restore')
     void router.replace({ name: 'login' })
 })
 async function signOut() {
@@ -45,7 +47,7 @@ async function signOut() {
 </script>
 
 <template>
-  <RouterView v-if="route.name === 'login' || route.name === 'setup'" />
+  <RouterView v-if="route.name === 'login' || route.name === 'setup' || route.name === 'restore'" />
   <div v-else-if="identity" class="admin-layout">
     <a :href="router.resolve(route.fullPath).href + '#main-content'" class="skip-link"
       >跳到主要内容</a
@@ -80,6 +82,9 @@ async function signOut() {
         >
         <RouterLink to="/backups" class="nav-item"
           ><DatabaseBackup :size="18" aria-hidden="true" />数据库备份</RouterLink
+        >
+        <RouterLink to="/site-settings" class="nav-item"
+          ><Settings :size="18" aria-hidden="true" />站点设置</RouterLink
         >
       </nav>
       <div class="sidebar-bottom">

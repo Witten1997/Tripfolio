@@ -20,7 +20,6 @@ func TestBuildProdServicesWithoutMailAndObjectStore(t *testing.T) {
 		"TRIPFOLIO_ENV":                  "prod",
 		"TRIPFOLIO_DATABASE_URL":         "postgres://u:p@localhost:5432/db",
 		"TRIPFOLIO_KEYRING":              "k1=" + base64.StdEncoding.EncodeToString([]byte(strings.Repeat("k", 32))),
-		"TRIPFOLIO_WEB_BASE_URL":         "https://trip.example.com",
 		"TRIPFOLIO_AMAP_WEB_SERVICE_KEY": "amap-key",
 	}
 	cfg, err := config.Load(func(key string) string { return env[key] })

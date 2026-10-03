@@ -10,7 +10,6 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"net/netip"
 	"net/url"
 	"os"
 	"path"
@@ -32,9 +31,8 @@ func (s *Service) validateURL(raw string) (*url.URL, error) {
 	if err != nil || u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || strings.ContainsAny(raw, "\r\n\\") || len(raw) > 2048 {
 		return nil, errors.New("WEBDAV_URL_INVALID")
 	}
-	allowed := s.allowed[strings.ToLower(u.Hostname())]
-	if u.Scheme != "https" && !(u.Scheme == "http" && allowed) {
-		return nil, errors.New("WEBDAV_HTTPS_REQUIRED")
+	if u.Scheme != "https" && u.Scheme != "http" {
+		return nil, errors.New("WEBDAV_URL_INVALID")
 	}
 	for _, part := range strings.Split(u.Path, "/") {
 		if part == "." || part == ".." {
@@ -47,6 +45,15 @@ func (s *Service) validateURL(raw string) (*url.URL, error) {
 }
 
 func (s *Service) dav(cfg Config) (*dav, error) {
+	d, err := s.davRoot(cfg)
+	if err != nil {
+		return nil, err
+	}
+	d.base.Path = path.Join(d.base.Path, "tripfolio-"+cfg.Destination) + "/"
+	return d, nil
+}
+
+func (s *Service) davRoot(cfg Config) (*dav, error) {
 	u, err := s.validateURL(cfg.URL)
 	if err != nil {
 		return nil, err
@@ -62,17 +69,11 @@ func (s *Service) dav(cfg Config) (*dav, error) {
 	transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
 		host, port, e := net.SplitHostPort(address)
 		if e != nil {
-			return nil, errors.New("WEBDAV_ADDRESS_BLOCKED")
+			return nil, errors.New("WEBDAV_URL_INVALID")
 		}
 		addresses, e := net.DefaultResolver.LookupNetIP(ctx, "ip", host)
 		if e != nil || len(addresses) == 0 {
 			return nil, errors.New("WEBDAV_DNS_FAILED")
-		}
-		for _, ip := range addresses {
-			ip = ip.Unmap()
-			if !s.allowed[strings.ToLower(host)] && !publicAddress(ip) {
-				return nil, errors.New("WEBDAV_ADDRESS_BLOCKED")
-			}
 		}
 		dialer := net.Dialer{Timeout: 10 * time.Second}
 		for _, ip := range addresses {
@@ -84,21 +85,9 @@ func (s *Service) dav(cfg Config) (*dav, error) {
 		return nil, errors.New("WEBDAV_CONNECT_FAILED")
 	}
 	client := &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return errors.New("WEBDAV_REDIRECT_BLOCKED") }}
-	u.Path = path.Join(u.Path, "tripfolio-"+cfg.Destination) + "/"
 	return &dav{client, u, cfg.Username, password}, nil
 }
 
-func publicAddress(ip netip.Addr) bool {
-	if !ip.IsGlobalUnicast() || ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalUnicast() {
-		return false
-	}
-	for _, cidr := range []string{"100.64.0.0/10", "192.0.0.0/24", "192.0.2.0/24", "198.18.0.0/15", "198.51.100.0/24", "203.0.113.0/24", "240.0.0.0/4", "2001:db8::/32", "64:ff9b::/96"} {
-		if netip.MustParsePrefix(cidr).Contains(ip) {
-			return false
-		}
-	}
-	return true
-}
 func (d *dav) close() { d.client.CloseIdleConnections() }
 func (d *dav) request(ctx context.Context, method, name string, body io.Reader, size int64) (*http.Response, error) {
 	u := *d.base
@@ -111,6 +100,10 @@ func (d *dav) request(ctx context.Context, method, name string, body io.Reader, 
 	req.ContentLength = size
 	if method == "PUT" {
 		req.Header.Set("Content-Type", "application/octet-stream")
+	}
+	if method == "PROPFIND" {
+		req.Header.Set("Depth", "1")
+		req.Header.Set("Content-Type", "application/xml; charset=utf-8")
 	}
 	resp, err := d.client.Do(req)
 	if err != nil {

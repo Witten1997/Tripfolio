@@ -109,7 +109,7 @@ func RunServe(ctx context.Context, cfg config.Config, logger *slog.Logger) error
 		"phase", string(PhaseConfig), "env", cfg.Env, "addr", cfg.HTTPAddr,
 		"auto_migrate", cfg.AutoMigrate, "db_wait_timeout", cfg.StartupDBTimeout.String(),
 		"database", safeTarget(cfg.DatabaseURL), "objectstore", cfg.ObjectStore.Endpoint,
-		"web_base_url", cfg.WebBaseURL, "cors_origins", cfg.CORSOrigins)
+		"cors_origins", cfg.CORSOrigins)
 	if web.MissingFrontend() {
 		logger.Warn("二进制内没有前端产物，页面请求会返回说明页；接口与分享链接不受影响",
 			"phase", string(PhaseConfig), "hint", "打包时先构建前端，见 scripts/package.sh 或 docker/Dockerfile")
@@ -146,6 +146,12 @@ func RunServe(ctx context.Context, cfg config.Config, logger *slog.Logger) error
 	if err != nil {
 		return &StartupError{Phase: PhaseServices, Cause: err, Hints: servicesHints(cfg)}
 	}
+	restoreCtx, stopRestores := context.WithCancel(ctx)
+	restoreDone := make(chan struct{})
+	gateDone := make(chan struct{})
+	go func() { defer close(restoreDone); services.Backups.RunRestores(restoreCtx) }()
+	go func() { defer close(gateDone); services.Maintenance.Watch(restoreCtx) }()
+	defer func() { stopRestores(); <-restoreDone; <-gateDone }()
 
 	worker, err := startWorker(ctx, pool, cfg, services, logger)
 	if err != nil {
@@ -162,13 +168,9 @@ func RunServe(ctx context.Context, cfg config.Config, logger *slog.Logger) error
 		return &StartupError{Phase: PhaseServices, Cause: err, Hints: servicesHints(cfg)}
 	}
 
-	adminOrigins := []string{cfg.WebBaseURL}
-	if cfg.Env != "prod" {
-		adminOrigins = append(adminOrigins, "http://localhost:5174", "http://127.0.0.1:5174")
-	}
 	router := httpapi.NewRouter(httpapi.Deps{
 		AdminBasePath: cfg.AdminAPIPath(),
-		Admin:         adminapi.NewHandler(adminapi.Options{BasePath: cfg.AdminAPIPath(), Service: services.Admin, Runtime: adminRuntime(pool, readiness, worker, cfg), Secure: cfg.CookieSecure, Origins: adminOrigins, Logger: logger}),
+		Admin:         adminapi.NewHandler(adminapi.Options{BasePath: cfg.AdminAPIPath(), Service: services.Admin, Runtime: adminRuntime(pool, readiness, worker, cfg), Secure: cfg.CookieSecure, Logger: logger}),
 		Logger:        logger, Metadata: metadata.Current(), Readiness: readiness, CORSOrigins: cfg.CORSOrigins,
 		Cookies:  httpapi.CookieSettings{Secure: cfg.CookieSecure},
 		Identity: services.Identity, Sessions: services.Sessions, Profile: services.Profile, Categories: services.Categories,
@@ -176,6 +178,7 @@ func RunServe(ctx context.Context, cfg config.Config, logger *slog.Logger) error
 		Dashboard: services.Dashboard, Ledger: services.Ledger, Statistics: services.Statistics, Settlement: services.Settlement, Assets: services.Assets, Geo: services.Geo, Shares: services.Shares,
 		Web: webHandler,
 	})
+	router = maintenanceHTTP(services.Maintenance, cfg.AdminAPIPath(), router)
 	logger.Info("HTTP 服务准备就绪",
 		"phase", string(PhaseHTTP), "addr", cfg.HTTPAddr, "cors_origins", cfg.CORSOrigins,
 		"cookie_secure", cfg.CookieSecure, "mail_driver", cfg.Mail.Driver, "frontend_embedded", !web.MissingFrontend())
@@ -252,7 +255,7 @@ func startWorker(ctx context.Context, pool *pgxpool.Pool, cfg config.Config, ser
 	// 每次尝试都新建客户端：构造不碰数据库，而失败过的客户端交给下一个尝试复用没有意义。
 	var client *river.Client[pgx.Tx]
 	err := retryStart(ctx, workerStartAttempts, workerStartBackoff, logger, func(attemptCtx context.Context) error {
-		created, err := queue.NewWorkerClient(pool, logger, workers, cfg.WorkerMaxJobs)
+		created, err := queue.NewWorkerClient(pool, logger, workers, cfg.WorkerMaxJobs, maintenanceWorker(services.Maintenance, pool))
 		if err != nil {
 			return fmt.Errorf("创建任务客户端: %w", err)
 		}

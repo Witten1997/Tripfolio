@@ -36,7 +36,7 @@ func RunBackupCLI(args []string, out io.Writer) error {
 		return errors.New("请指定 --input 和 --output")
 	}
 	if _, err := config.LoadDotEnv(os.Getenv); err != nil {
-		return errors.New("无法读取密钥配置")
+		return errors.New("无法读取备份密码配置")
 	}
 	in, err := os.Open(*input)
 	if err != nil {
@@ -47,7 +47,11 @@ func RunBackupCLI(args []string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	err = backup.Decrypt(os.Getenv("TRIPFOLIO_BACKUP_KEY"), in, file)
+	password := os.Getenv("TRIPFOLIO_BACKUP_PASSWORD")
+	if password == "" {
+		password = os.Getenv("TRIPFOLIO_BACKUP_KEY")
+	}
+	err = backup.Decrypt(password, in, file)
 	if err == nil {
 		err = file.Sync()
 	}

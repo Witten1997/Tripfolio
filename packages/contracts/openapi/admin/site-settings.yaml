@@ -1,0 +1,48 @@
+SettingsPath:
+  get:
+    tags: [admin-operations]
+    operationId: adminSiteSettings
+    summary: 获取旅行分享站点设置
+    responses:
+      '200':
+        description: 当前站点设置
+        content:
+          application/json:
+            schema: { $ref: '#/Envelope' }
+      default: { $ref: './openapi.yaml#/components/responses/Problem' }
+  put:
+    tags: [admin-operations]
+    operationId: adminUpdateSiteSettings
+    summary: 保存旅行分享站点设置并立即生效
+    parameters:
+      - $ref: './openapi.yaml#/components/parameters/CSRF'
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/SiteSettings' }
+    responses:
+      '200':
+        description: 已保存的站点设置
+        content:
+          application/json:
+            schema: { $ref: '#/Envelope' }
+      default: { $ref: './openapi.yaml#/components/responses/Problem' }
+Envelope:
+  type: object
+  required: [data]
+  properties:
+    data: { $ref: '#/SiteSettings' }
+SiteSettings:
+  type: object
+  additionalProperties: false
+  required: [share_base_url, version]
+  properties:
+    share_base_url:
+      type: string
+      maxLength: 2048
+      description: 用户端站点根地址，不含路径；初始未配置时返回空字符串
+    version:
+      type: integer
+      format: int64
+      minimum: 1

@@ -74,3 +74,58 @@ func (h *Handler) AdminRequestBackup(w http.ResponseWriter, r *http.Request, _ g
 func (h *Handler) AdminRetryBackup(w http.ResponseWriter, r *http.Request, id uuid.UUID, _ generated.AdminRetryBackupParams) {
 	h.requestBackup(w, r, &id)
 }
+
+func (h *Handler) AdminRestoreBackup(w http.ResponseWriter, r *http.Request, id uuid.UUID, _ generated.AdminRestoreBackupParams) {
+	var in backup.RestoreInput
+	if !h.decode(w, r, &in) {
+		return
+	}
+	out, err := h.options.Service.RestoreBackup(r.Context(), current(r), id, in, requestInfo(r))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(http.StatusAccepted)
+	writeJSON(w, map[string]any{"data": out})
+}
+
+func (h *Handler) AdminRestoreStatus(w http.ResponseWriter, r *http.Request, id uuid.UUID, _ generated.AdminRestoreStatusParams) {
+	out, err := h.options.Service.RestoreStatus(r.Context(), id, r.Header.Get("X-Restore-Token"))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeJSON(w, map[string]any{"data": out})
+}
+
+func (h *Handler) AdminRemoteBackups(w http.ResponseWriter, r *http.Request, p generated.AdminRemoteBackupsParams) {
+	destination, page := "", 1
+	if p.Destination != nil {
+		destination = p.Destination.String()
+	}
+	if p.Page != nil {
+		page = *p.Page
+	}
+	out, err := h.options.Service.RemoteBackups(r.Context(), current(r), destination, page, requestInfo(r))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeJSON(w, out)
+}
+
+func (h *Handler) AdminRestoreRemoteBackup(w http.ResponseWriter, r *http.Request, _ generated.AdminRestoreRemoteBackupParams) {
+	var in backup.RemoteRestoreInput
+	if !h.decode(w, r, &in) {
+		return
+	}
+	out, err := h.options.Service.RestoreRemoteBackup(r.Context(), current(r), in, requestInfo(r))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(http.StatusAccepted)
+	writeJSON(w, map[string]any{"data": out})
+}

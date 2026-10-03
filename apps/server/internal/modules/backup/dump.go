@@ -36,7 +36,11 @@ func (w *boundedWriter) Write(b []byte) (int, error) {
 }
 
 func (s *Service) dump(ctx context.Context, id uuid.UUID, filename, databaseID string) (Manifest, error) {
-	m := Manifest{Format: 1, ID: id, Schemas: []string{"public", "tripfolio_private"}, ExcludedData: excludedData, KeyID: keyID(s.key)}
+	m := Manifest{Format: 1, ID: id, Schemas: []string{"public", "tripfolio_private"}, ExcludedData: excludedData}
+	// A fast hash of a user-chosen password would expose an offline guessing oracle.
+	if s.options.Password == "" {
+		m.KeyID = keyID(s.key)
+	}
 	// Export a single database snapshot and keep it alive until pg_dump finishes.
 	conn, err := pgx.Connect(ctx, s.options.DatabaseURL)
 	if err != nil {

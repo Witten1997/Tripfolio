@@ -11,9 +11,89 @@ import (
 )
 
 type BackupStore interface {
+	RequestRestore(context.Context, Session, uuid.UUID, string, *backup.RemoteRestore, Audit) (backup.RestoreJob, error)
 	BackupSettings(context.Context, Session, Audit, *backup.Update, string) (backup.Settings, backup.Config, error)
 	BackupRequest(context.Context, Session, Audit, *uuid.UUID) (backup.Run, error)
 	BackupRuns(context.Context, Session, Audit, int) (backup.Page, error)
+}
+
+func (s *Service) RestoreBackup(ctx context.Context, sess Session, id uuid.UUID, in backup.RestoreInput, info RequestInfo) (job backup.RestoreJob, err error) {
+	return s.restoreBackup(ctx, sess, id, in, nil, info)
+}
+
+func (s *Service) RestoreRemoteBackup(ctx context.Context, sess Session, in backup.RemoteRestoreInput, info RequestInfo) (backup.RestoreJob, error) {
+	return s.restoreBackup(ctx, sess, in.ID, in.RestoreInput, &in, info)
+}
+
+func (s *Service) RemoteBackups(ctx context.Context, sess Session, destination string, page int, info RequestInfo) (out backup.RemotePage, err error) {
+	a, err := s.backupAudit(sess, "backup.remote.list", "查找 WebDAV 备份", info)
+	defer func() {
+		if err != nil {
+			err = s.backupFailure(ctx, a, err)
+		}
+	}()
+	if err != nil {
+		return out, err
+	}
+	settings, cfg, err := s.backups.BackupSettings(ctx, sess, a, nil, "")
+	if err != nil {
+		return out, err
+	}
+	a.ID = uuid.New()
+	out, err = s.backupRunner.RemoteBackups(ctx, cfg, destination, page)
+	out.SettingsVersion = settings.Version
+	return out, err
+}
+
+func (s *Service) restoreBackup(ctx context.Context, sess Session, id uuid.UUID, in backup.RestoreInput, remote *backup.RemoteRestoreInput, info RequestInfo) (job backup.RestoreJob, err error) {
+	a, err := s.backupAudit(sess, "backup.restore.request", in.Reason, info)
+	defer func() {
+		if err != nil {
+			err = s.backupFailure(ctx, a, err)
+		}
+	}()
+	if err != nil {
+		return job, err
+	}
+	if in.Confirmation != backup.RestoreConfirmation || utf8.RuneCountInString(in.Password) > 1024 {
+		return job, apperr.BadRequest("RESTORE_CONFIRMATION_REQUIRED", "请确认现有数据将被替换，并输入“确认覆盖当前数据库”")
+	}
+	if ok, why := s.backupRunner.RestoreReadiness(); !ok {
+		return job, apperr.New(503, "RESTORE_UNAVAILABLE", why)
+	}
+	secret := ""
+	if in.Password != "" {
+		secret, err = s.backupRunner.Seal(in.Password)
+		if err != nil {
+			return job, err
+		}
+	}
+	var source *backup.RemoteRestore
+	if remote != nil {
+		readAudit := a
+		readAudit.ID = uuid.New()
+		readAudit.Action = "backup.remote.list"
+		settings, cfg, e := s.backups.BackupSettings(ctx, sess, readAudit, nil, "")
+		if e != nil {
+			return job, e
+		}
+		if settings.Version != remote.SettingsVersion {
+			return job, apperr.Conflicted("VERSION_CONFLICT", "WebDAV 设置已变更，请重新查找备份")
+		}
+		prepared, e := s.backupRunner.PrepareRemoteRestore(ctx, cfg, *remote)
+		if e != nil {
+			return job, e
+		}
+		source = &prepared
+	}
+	return s.backups.RequestRestore(ctx, sess, id, secret, source, a)
+}
+
+func (s *Service) RestoreStatus(ctx context.Context, id uuid.UUID, token string) (backup.RestoreJob, error) {
+	if s.backupRunner == nil {
+		return backup.RestoreJob{}, apperr.NotFound()
+	}
+	return s.backupRunner.RestoreStatus(ctx, id, token)
 }
 
 func (s *Service) WithBackups(store BackupStore, runner *backup.Service) *Service {
@@ -61,6 +141,7 @@ func (s *Service) BackupSettings(ctx context.Context, sess Session, in *backup.U
 	}
 	out, _, err := s.backups.BackupSettings(ctx, sess, a, in, sealed)
 	out.Ready, out.Readiness = s.backupRunner.Readiness()
+	out.RestoreReady, out.RestoreReadiness = s.backupRunner.RestoreReadiness()
 	return out, err
 }
 

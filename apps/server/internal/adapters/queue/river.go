@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
+	"github.com/riverqueue/river/rivertype"
 )
 
 // NewInsertOnlyClient 创建只用于事务内入队的客户端（API 进程使用）。
@@ -22,9 +23,10 @@ func NewInsertOnlyClient(pool *pgxpool.Pool, logger *slog.Logger) (*river.Client
 }
 
 // NewWorkerClient 创建消费任务的客户端（worker 进程使用）。
-func NewWorkerClient(pool *pgxpool.Pool, logger *slog.Logger, workers *river.Workers, maxWorkers int) (*river.Client[pgx.Tx], error) {
+func NewWorkerClient(pool *pgxpool.Pool, logger *slog.Logger, workers *river.Workers, maxWorkers int, middleware ...rivertype.Middleware) (*river.Client[pgx.Tx], error) {
 	return river.NewClient(riverpgxv5.New(pool), &river.Config{
-		Logger: logger,
+		Middleware: middleware,
+		Logger:     logger,
 		Queues: map[string]river.QueueConfig{
 			"backup":           {MaxWorkers: 1},
 			river.QueueDefault: {MaxWorkers: maxWorkers},

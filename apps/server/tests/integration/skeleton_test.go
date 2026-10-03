@@ -1,6 +1,6 @@
 // Package integration 在真实 PostgreSQL 上验证迁移、生成的查询与 River 事务入队。
 // 需要环境变量 TRIPFOLIO_TEST_DATABASE_URL（见 apps/server/.env.example）；未设置时跳过。
-// 测试会重建目标库的 public schema，只能指向测试库。
+// 测试会重建目标库的应用 schema，只能指向测试库。
 package integration
 
 import (
@@ -36,7 +36,7 @@ func quietLogger() *slog.Logger {
 
 func resetSchema(t *testing.T, ctx context.Context, pool *pgxpool.Pool) {
 	t.Helper()
-	if _, err := pool.Exec(ctx, "DROP SCHEMA public CASCADE; CREATE SCHEMA public"); err != nil {
+	if _, err := pool.Exec(ctx, "DROP SCHEMA IF EXISTS tripfolio_restore CASCADE; DROP SCHEMA IF EXISTS tripfolio_private CASCADE; DROP SCHEMA public CASCADE; CREATE SCHEMA public"); err != nil {
 		t.Fatalf("重建 schema: %v", err)
 	}
 }

@@ -345,6 +345,33 @@ func (e JobState) Valid() bool {
 	}
 }
 
+// Defines values for RestoreJobState.
+const (
+	RestoreJobStateFailed    RestoreJobState = "failed"
+	RestoreJobStatePreparing RestoreJobState = "preparing"
+	RestoreJobStateQueued    RestoreJobState = "queued"
+	RestoreJobStateRestoring RestoreJobState = "restoring"
+	RestoreJobStateSucceeded RestoreJobState = "succeeded"
+)
+
+// Valid indicates whether the value is a known member of the RestoreJobState enum.
+func (e RestoreJobState) Valid() bool {
+	switch e {
+	case RestoreJobStateFailed:
+		return true
+	case RestoreJobStatePreparing:
+		return true
+	case RestoreJobStateQueued:
+		return true
+	case RestoreJobStateRestoring:
+		return true
+	case RestoreJobStateSucceeded:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for RuntimeStatusStatus.
 const (
 	RuntimeStatusStatusDegraded RuntimeStatusStatus = "degraded"
@@ -411,6 +438,36 @@ func (e AdminAuditsParamsResult) Valid() bool {
 	case AdminAuditsParamsResultFailure:
 		return true
 	case AdminAuditsParamsResultSuccess:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AdminRestoreRemoteBackupJSONBodyConfirmation.
+const (
+	AdminRestoreRemoteBackupJSONBodyConfirmationEmpty AdminRestoreRemoteBackupJSONBodyConfirmation = "确认覆盖当前数据库"
+)
+
+// Valid indicates whether the value is a known member of the AdminRestoreRemoteBackupJSONBodyConfirmation enum.
+func (e AdminRestoreRemoteBackupJSONBodyConfirmation) Valid() bool {
+	switch e {
+	case AdminRestoreRemoteBackupJSONBodyConfirmationEmpty:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AdminRestoreBackupJSONBodyConfirmation.
+const (
+	AdminRestoreBackupJSONBodyConfirmationEmpty AdminRestoreBackupJSONBodyConfirmation = "确认覆盖当前数据库"
+)
+
+// Valid indicates whether the value is a known member of the AdminRestoreBackupJSONBodyConfirmation enum.
+func (e AdminRestoreBackupJSONBodyConfirmation) Valid() bool {
+	switch e {
+	case AdminRestoreBackupJSONBodyConfirmationEmpty:
 		return true
 	default:
 		return false
@@ -727,16 +784,18 @@ type BackupRunTrigger string
 
 // BackupSettings defines model for BackupSettings.
 type BackupSettings struct {
-	Enabled     bool                         `json:"enabled"`
-	NextAt      nullable.Nullable[time.Time] `json:"next_at"`
-	PasswordSet bool                         `json:"password_set"`
-	Readiness   string                       `json:"readiness"`
-	Ready       bool                         `json:"ready"`
-	Retain      int                          `json:"retain"`
-	Time        string                       `json:"time"`
-	Url         string                       `json:"url"`
-	Username    string                       `json:"username"`
-	Version     int64                        `json:"version"`
+	Enabled          bool                         `json:"enabled"`
+	NextAt           nullable.Nullable[time.Time] `json:"next_at"`
+	PasswordSet      bool                         `json:"password_set"`
+	Readiness        string                       `json:"readiness"`
+	Ready            bool                         `json:"ready"`
+	RestoreReadiness *string                      `json:"restore_readiness,omitempty"`
+	RestoreReady     *bool                        `json:"restore_ready,omitempty"`
+	Retain           int                          `json:"retain"`
+	Time             string                       `json:"time"`
+	Url              string                       `json:"url"`
+	Username         string                       `json:"username"`
+	Version          int64                        `json:"version"`
 }
 
 // BackupUpdate defines model for BackupUpdate.
@@ -802,6 +861,11 @@ type DeletionJobPage struct {
 	Page     int           `json:"page"`
 	PageSize int           `json:"page_size"`
 	Total    int64         `json:"total"`
+}
+
+// Envelope defines model for Envelope.
+type Envelope struct {
+	Data SiteSettings `json:"data"`
 }
 
 // FieldError defines model for FieldError.
@@ -919,6 +983,45 @@ type Problem struct {
 	Type string `json:"type"`
 }
 
+// RemoteBackup defines model for RemoteBackup.
+type RemoteBackup struct {
+	Destination  openapi_types.UUID `json:"destination"`
+	GooseVersion int64              `json:"goose_version"`
+	Id           openapi_types.UUID `json:"id"`
+	Sha256       string             `json:"sha256"`
+	SizeBytes    int64              `json:"size_bytes"`
+	SnapshotAt   time.Time          `json:"snapshot_at"`
+}
+
+// RemoteBackupPage defines model for RemoteBackupPage.
+type RemoteBackupPage struct {
+	Data            []RemoteBackup       `json:"data"`
+	Destinations    []openapi_types.UUID `json:"destinations"`
+	Page            int                  `json:"page"`
+	PageSize        int                  `json:"page_size"`
+	SettingsVersion int64                `json:"settings_version"`
+	Skipped         int                  `json:"skipped"`
+	Total           int                  `json:"total"`
+}
+
+// RestoreJob defines model for RestoreJob.
+type RestoreJob struct {
+	BackupId   openapi_types.UUID           `json:"backup_id"`
+	CreatedAt  time.Time                    `json:"created_at"`
+	ErrorCode  string                       `json:"error_code"`
+	FinishedAt nullable.Nullable[time.Time] `json:"finished_at"`
+	Id         openapi_types.UUID           `json:"id"`
+	Message    string                       `json:"message"`
+	StartedAt  nullable.Nullable[time.Time] `json:"started_at"`
+	State      RestoreJobState              `json:"state"`
+
+	// Token 仅提交时返回的恢复进度查询令牌
+	Token *string `json:"token,omitempty"`
+}
+
+// RestoreJobState defines model for RestoreJob.State.
+type RestoreJobState string
+
 // RuntimeStatus defines model for RuntimeStatus.
 type RuntimeStatus struct {
 	AsOf       time.Time           `json:"as_of"`
@@ -972,6 +1075,13 @@ type SharingRestriction struct {
 	Restricted bool                         `json:"restricted"`
 	TripId     openapi_types.UUID           `json:"trip_id"`
 	Version    int64                        `json:"version"`
+}
+
+// SiteSettings defines model for SiteSettings.
+type SiteSettings struct {
+	// ShareBaseUrl 用户端站点根地址，不含路径；初始未配置时返回空字符串
+	ShareBaseUrl string `json:"share_base_url"`
+	Version      int64  `json:"version"`
 }
 
 // User defines model for User.
@@ -1065,6 +1175,35 @@ type AdminAuditsParams struct {
 // AdminAuditsParamsResult defines parameters for AdminAudits.
 type AdminAuditsParamsResult string
 
+// AdminRemoteBackupsParams defines parameters for AdminRemoteBackups.
+type AdminRemoteBackupsParams struct {
+	// Destination 不传时列出部署目录；传入目录编号时分页列出该目录的完整备份
+	Destination *openapi_types.UUID `form:"destination,omitempty" json:"destination,omitempty"`
+	Page        *int                `form:"page,omitempty" json:"page,omitempty"`
+}
+
+// AdminRestoreRemoteBackupJSONBody defines parameters for AdminRestoreRemoteBackup.
+type AdminRestoreRemoteBackupJSONBody struct {
+	Confirmation AdminRestoreRemoteBackupJSONBodyConfirmation `json:"confirmation"`
+	Destination  openapi_types.UUID                           `json:"destination"`
+	Id           openapi_types.UUID                           `json:"id"`
+
+	// Password 备份当时的加密密码，留空使用当前配置
+	Password        string `json:"password"`
+	Reason          string `json:"reason"`
+	SettingsVersion int64  `json:"settings_version"`
+	Sha256          string `json:"sha256"`
+}
+
+// AdminRestoreRemoteBackupParams defines parameters for AdminRestoreRemoteBackup.
+type AdminRestoreRemoteBackupParams struct {
+	// XAdminCSRF 登录或当前身份响应返回的后台请求防伪令牌
+	XAdminCSRF CSRF `json:"X-Admin-CSRF"`
+}
+
+// AdminRestoreRemoteBackupJSONBodyConfirmation defines parameters for AdminRestoreRemoteBackup.
+type AdminRestoreRemoteBackupJSONBodyConfirmation string
+
 // AdminUpdateBackupSettingsParams defines parameters for AdminUpdateBackupSettings.
 type AdminUpdateBackupSettingsParams struct {
 	// XAdminCSRF 登录或当前身份响应返回的后台请求防伪令牌
@@ -1087,6 +1226,24 @@ type AdminRequestBackupParams struct {
 	// XAdminCSRF 登录或当前身份响应返回的后台请求防伪令牌
 	XAdminCSRF CSRF `json:"X-Admin-CSRF"`
 }
+
+// AdminRestoreBackupJSONBody defines parameters for AdminRestoreBackup.
+type AdminRestoreBackupJSONBody struct {
+	Confirmation AdminRestoreBackupJSONBodyConfirmation `json:"confirmation"`
+
+	// Password 备份当时的加密密码，留空使用服务器当前配置
+	Password string `json:"password"`
+	Reason   string `json:"reason"`
+}
+
+// AdminRestoreBackupParams defines parameters for AdminRestoreBackup.
+type AdminRestoreBackupParams struct {
+	// XAdminCSRF 登录或当前身份响应返回的后台请求防伪令牌
+	XAdminCSRF CSRF `json:"X-Admin-CSRF"`
+}
+
+// AdminRestoreBackupJSONBodyConfirmation defines parameters for AdminRestoreBackup.
+type AdminRestoreBackupJSONBodyConfirmation string
 
 // AdminRetryBackupParams defines parameters for AdminRetryBackup.
 type AdminRetryBackupParams struct {
@@ -1120,6 +1277,11 @@ type AdminReauthenticateParams struct {
 	XAdminCSRF CSRF `json:"X-Admin-CSRF"`
 }
 
+// AdminRestoreStatusParams defines parameters for AdminRestoreStatus.
+type AdminRestoreStatusParams struct {
+	XRestoreToken string `json:"X-Restore-Token"`
+}
+
 // AdminLogoutParams defines parameters for AdminLogout.
 type AdminLogoutParams struct {
 	// XAdminCSRF 登录或当前身份响应返回的后台请求防伪令牌
@@ -1128,6 +1290,12 @@ type AdminLogoutParams struct {
 
 // AdminRevokeSessionParams defines parameters for AdminRevokeSession.
 type AdminRevokeSessionParams struct {
+	// XAdminCSRF 登录或当前身份响应返回的后台请求防伪令牌
+	XAdminCSRF CSRF `json:"X-Admin-CSRF"`
+}
+
+// AdminUpdateSiteSettingsParams defines parameters for AdminUpdateSiteSettings.
+type AdminUpdateSiteSettingsParams struct {
 	// XAdminCSRF 登录或当前身份响应返回的后台请求防伪令牌
 	XAdminCSRF CSRF `json:"X-Admin-CSRF"`
 }
@@ -1209,6 +1377,9 @@ type AdminUnbanUserParams struct {
 	XAdminCSRF CSRF `json:"X-Admin-CSRF"`
 }
 
+// AdminRestoreRemoteBackupJSONRequestBody defines body for AdminRestoreRemoteBackup for application/json ContentType.
+type AdminRestoreRemoteBackupJSONRequestBody AdminRestoreRemoteBackupJSONBody
+
 // AdminUpdateBackupSettingsJSONRequestBody defines body for AdminUpdateBackupSettings for application/json ContentType.
 type AdminUpdateBackupSettingsJSONRequestBody = BackupUpdate
 
@@ -1217,6 +1388,9 @@ type AdminTestBackupStorageJSONRequestBody = BackupAction
 
 // AdminRequestBackupJSONRequestBody defines body for AdminRequestBackup for application/json ContentType.
 type AdminRequestBackupJSONRequestBody = BackupAction
+
+// AdminRestoreBackupJSONRequestBody defines body for AdminRestoreBackup for application/json ContentType.
+type AdminRestoreBackupJSONRequestBody AdminRestoreBackupJSONBody
 
 // AdminRetryBackupJSONRequestBody defines body for AdminRetryBackup for application/json ContentType.
 type AdminRetryBackupJSONRequestBody = BackupAction
@@ -1229,6 +1403,9 @@ type AdminReauthenticateJSONRequestBody = PasswordRequest
 
 // AdminInitializeJSONRequestBody defines body for AdminInitialize for application/json ContentType.
 type AdminInitializeJSONRequestBody = SetupRequest
+
+// AdminUpdateSiteSettingsJSONRequestBody defines body for AdminUpdateSiteSettings for application/json ContentType.
+type AdminUpdateSiteSettingsJSONRequestBody = SiteSettings
 
 // AdminMutateTripJSONRequestBody defines body for AdminMutateTrip for application/json ContentType.
 type AdminMutateTripJSONRequestBody = AdminTripMutation
@@ -1250,10 +1427,16 @@ type ServerInterface interface {
 	// AdminAudits 按操作者、所属账号、操作、结果和北京时间日期查询审计
 	// (GET /audits)
 	AdminAudits(w http.ResponseWriter, r *http.Request, params AdminAuditsParams)
+	// AdminRemoteBackups 查找已保存 WebDAV 根目录中的其他部署及备份，无需本地备份记录
+	// (GET /backup-remote)
+	AdminRemoteBackups(w http.ResponseWriter, r *http.Request, params AdminRemoteBackupsParams)
+	// AdminRestoreRemoteBackup 使用远端备份覆盖当前数据库，需明确确认及近期管理员密码复验
+	// (POST /backup-remote/restore)
+	AdminRestoreRemoteBackup(w http.ResponseWriter, r *http.Request, params AdminRestoreRemoteBackupParams)
 	// AdminBackupSettings 查看备份设置，密码只返回是否已设置
 	// (GET /backup-settings)
 	AdminBackupSettings(w http.ResponseWriter, r *http.Request)
-	// AdminUpdateBackupSettings 保存备份设置，需近期密码复验
+	// AdminUpdateBackupSettings 保存备份设置
 	// (PUT /backup-settings)
 	AdminUpdateBackupSettings(w http.ResponseWriter, r *http.Request, params AdminUpdateBackupSettingsParams)
 	// AdminTestBackupStorage 检查已保存 WebDAV 的创建、读写、校验及删除能力
@@ -1262,9 +1445,12 @@ type ServerInterface interface {
 	// AdminBackupRuns 分页查询备份记录
 	// (GET /backups)
 	AdminBackupRuns(w http.ResponseWriter, r *http.Request, params AdminBackupRunsParams)
-	// AdminRequestBackup 请求立即备份，需近期密码复验
+	// AdminRequestBackup 请求立即备份
 	// (POST /backups)
 	AdminRequestBackup(w http.ResponseWriter, r *http.Request, params AdminRequestBackupParams)
+	// AdminRestoreBackup 确认覆盖当前数据库，需近期管理员密码复验
+	// (POST /backups/{backup_id}/restore)
+	AdminRestoreBackup(w http.ResponseWriter, r *http.Request, backupId openapi_types.UUID, params AdminRestoreBackupParams)
 	// AdminRetryBackup 重试当前 WebDAV 目标中的失败备份
 	// (POST /backups/{backup_id}/retry)
 	AdminRetryBackup(w http.ResponseWriter, r *http.Request, backupId openapi_types.UUID, params AdminRetryBackupParams)
@@ -1283,6 +1469,9 @@ type ServerInterface interface {
 	// AdminReauthenticate 为敏感操作再次验证密码
 	// (POST /reauthenticate)
 	AdminReauthenticate(w http.ResponseWriter, r *http.Request, params AdminReauthenticateParams)
+	// AdminRestoreStatus 使用此次恢复专用令牌查询结果，令牌有效期 24 小时
+	// (GET /restores/{restore_id})
+	AdminRestoreStatus(w http.ResponseWriter, r *http.Request, restoreId openapi_types.UUID, params AdminRestoreStatusParams)
 	// AdminRuntime 服务与依赖状态、失败和清理任务数量
 	// (GET /runtime)
 	AdminRuntime(w http.ResponseWriter, r *http.Request)
@@ -1304,6 +1493,12 @@ type ServerInterface interface {
 	// AdminInitialize 首次创建或验证账号并授予管理资格，成功后永久关闭
 	// (POST /setup)
 	AdminInitialize(w http.ResponseWriter, r *http.Request)
+	// AdminSiteSettings 获取旅行分享站点设置
+	// (GET /site-settings)
+	AdminSiteSettings(w http.ResponseWriter, r *http.Request)
+	// AdminUpdateSiteSettings 保存旅行分享站点设置并立即生效
+	// (PUT /site-settings)
+	AdminUpdateSiteSettings(w http.ResponseWriter, r *http.Request, params AdminUpdateSiteSettingsParams)
 	// AdminTrips 分页检索全平台旅行
 	// (GET /trips)
 	AdminTrips(w http.ResponseWriter, r *http.Request, params AdminTripsParams)
@@ -1346,13 +1541,25 @@ func (_ Unimplemented) AdminAudits(w http.ResponseWriter, r *http.Request, param
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// AdminRemoteBackups 查找已保存 WebDAV 根目录中的其他部署及备份，无需本地备份记录
+// (GET /backup-remote)
+func (_ Unimplemented) AdminRemoteBackups(w http.ResponseWriter, r *http.Request, params AdminRemoteBackupsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// AdminRestoreRemoteBackup 使用远端备份覆盖当前数据库，需明确确认及近期管理员密码复验
+// (POST /backup-remote/restore)
+func (_ Unimplemented) AdminRestoreRemoteBackup(w http.ResponseWriter, r *http.Request, params AdminRestoreRemoteBackupParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // AdminBackupSettings 查看备份设置，密码只返回是否已设置
 // (GET /backup-settings)
 func (_ Unimplemented) AdminBackupSettings(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
-// AdminUpdateBackupSettings 保存备份设置，需近期密码复验
+// AdminUpdateBackupSettings 保存备份设置
 // (PUT /backup-settings)
 func (_ Unimplemented) AdminUpdateBackupSettings(w http.ResponseWriter, r *http.Request, params AdminUpdateBackupSettingsParams) {
 	w.WriteHeader(http.StatusNotImplemented)
@@ -1370,9 +1577,15 @@ func (_ Unimplemented) AdminBackupRuns(w http.ResponseWriter, r *http.Request, p
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
-// AdminRequestBackup 请求立即备份，需近期密码复验
+// AdminRequestBackup 请求立即备份
 // (POST /backups)
 func (_ Unimplemented) AdminRequestBackup(w http.ResponseWriter, r *http.Request, params AdminRequestBackupParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// AdminRestoreBackup 确认覆盖当前数据库，需近期管理员密码复验
+// (POST /backups/{backup_id}/restore)
+func (_ Unimplemented) AdminRestoreBackup(w http.ResponseWriter, r *http.Request, backupId openapi_types.UUID, params AdminRestoreBackupParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -1409,6 +1622,12 @@ func (_ Unimplemented) AdminOverview(w http.ResponseWriter, r *http.Request) {
 // AdminReauthenticate 为敏感操作再次验证密码
 // (POST /reauthenticate)
 func (_ Unimplemented) AdminReauthenticate(w http.ResponseWriter, r *http.Request, params AdminReauthenticateParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// AdminRestoreStatus 使用此次恢复专用令牌查询结果，令牌有效期 24 小时
+// (GET /restores/{restore_id})
+func (_ Unimplemented) AdminRestoreStatus(w http.ResponseWriter, r *http.Request, restoreId openapi_types.UUID, params AdminRestoreStatusParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -1451,6 +1670,18 @@ func (_ Unimplemented) AdminSetupStatus(w http.ResponseWriter, r *http.Request) 
 // AdminInitialize 首次创建或验证账号并授予管理资格，成功后永久关闭
 // (POST /setup)
 func (_ Unimplemented) AdminInitialize(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// AdminSiteSettings 获取旅行分享站点设置
+// (GET /site-settings)
+func (_ Unimplemented) AdminSiteSettings(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// AdminUpdateSiteSettings 保存旅行分享站点设置并立即生效
+// (PUT /site-settings)
+func (_ Unimplemented) AdminUpdateSiteSettings(w http.ResponseWriter, r *http.Request, params AdminUpdateSiteSettingsParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -1660,6 +1891,97 @@ func (siw *ServerInterfaceWrapper) AdminAudits(w http.ResponseWriter, r *http.Re
 	handler.ServeHTTP(w, r)
 }
 
+// AdminRemoteBackups operation middleware
+func (siw *ServerInterfaceWrapper) AdminRemoteBackups(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params AdminRemoteBackupsParams
+
+	// ------------- Optional query parameter "destination" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "destination", r.URL.Query(), &params.Destination, runtime.BindQueryParameterOptions{Type: "string", Format: "uuid"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "destination"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "destination", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "page" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "page", r.URL.Query(), &params.Page, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "page"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "page", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AdminRemoteBackups(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AdminRestoreRemoteBackup operation middleware
+func (siw *ServerInterfaceWrapper) AdminRestoreRemoteBackup(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params AdminRestoreRemoteBackupParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-Admin-CSRF" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Admin-CSRF")]; found {
+		var XAdminCSRF CSRF
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-Admin-CSRF", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Admin-CSRF", valueList[0], &XAdminCSRF, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-Admin-CSRF", Err: err})
+			return
+		}
+
+		params.XAdminCSRF = XAdminCSRF
+
+	} else {
+		err := fmt.Errorf("Header parameter X-Admin-CSRF is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-Admin-CSRF", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AdminRestoreRemoteBackup(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // AdminBackupSettings operation middleware
 func (siw *ServerInterfaceWrapper) AdminBackupSettings(w http.ResponseWriter, r *http.Request) {
 
@@ -1833,6 +2155,60 @@ func (siw *ServerInterfaceWrapper) AdminRequestBackup(w http.ResponseWriter, r *
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.AdminRequestBackup(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AdminRestoreBackup operation middleware
+func (siw *ServerInterfaceWrapper) AdminRestoreBackup(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "backup_id" -------------
+	var backupId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "backup_id", chi.URLParam(r, "backup_id"), &backupId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "backup_id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params AdminRestoreBackupParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-Admin-CSRF" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Admin-CSRF")]; found {
+		var XAdminCSRF CSRF
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-Admin-CSRF", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Admin-CSRF", valueList[0], &XAdminCSRF, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-Admin-CSRF", Err: err})
+			return
+		}
+
+		params.XAdminCSRF = XAdminCSRF
+
+	} else {
+		err := fmt.Errorf("Header parameter X-Admin-CSRF is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-Admin-CSRF", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AdminRestoreBackup(w, r, backupId, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -2087,6 +2463,60 @@ func (siw *ServerInterfaceWrapper) AdminReauthenticate(w http.ResponseWriter, r 
 	handler.ServeHTTP(w, r)
 }
 
+// AdminRestoreStatus operation middleware
+func (siw *ServerInterfaceWrapper) AdminRestoreStatus(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "restore_id" -------------
+	var restoreId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "restore_id", chi.URLParam(r, "restore_id"), &restoreId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "restore_id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params AdminRestoreStatusParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-Restore-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Restore-Token")]; found {
+		var XRestoreToken string
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-Restore-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Restore-Token", valueList[0], &XRestoreToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-Restore-Token", Err: err})
+			return
+		}
+
+		params.XRestoreToken = XRestoreToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-Restore-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-Restore-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AdminRestoreStatus(w, r, restoreId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // AdminRuntime operation middleware
 func (siw *ServerInterfaceWrapper) AdminRuntime(w http.ResponseWriter, r *http.Request) {
 
@@ -2247,6 +2677,65 @@ func (siw *ServerInterfaceWrapper) AdminInitialize(w http.ResponseWriter, r *htt
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.AdminInitialize(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AdminSiteSettings operation middleware
+func (siw *ServerInterfaceWrapper) AdminSiteSettings(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AdminSiteSettings(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AdminUpdateSiteSettings operation middleware
+func (siw *ServerInterfaceWrapper) AdminUpdateSiteSettings(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params AdminUpdateSiteSettingsParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-Admin-CSRF" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Admin-CSRF")]; found {
+		var XAdminCSRF CSRF
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-Admin-CSRF", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Admin-CSRF", valueList[0], &XAdminCSRF, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-Admin-CSRF", Err: err})
+			return
+		}
+
+		params.XAdminCSRF = XAdminCSRF
+
+	} else {
+		err := fmt.Errorf("Header parameter X-Admin-CSRF is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-Admin-CSRF", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AdminUpdateSiteSettings(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -2979,6 +3468,12 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	}
 
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/site-settings", wrapper.AdminSiteSettings)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/site-settings", wrapper.AdminUpdateSiteSettings)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/backup-settings", wrapper.AdminBackupSettings)
 	})
 	r.Group(func(r chi.Router) {
@@ -2995,6 +3490,18 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/backups/{backup_id}/retry", wrapper.AdminRetryBackup)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/backups/{backup_id}/restore", wrapper.AdminRestoreBackup)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/backup-remote", wrapper.AdminRemoteBackups)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/backup-remote/restore", wrapper.AdminRestoreRemoteBackup)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/restores/{restore_id}", wrapper.AdminRestoreStatus)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/setup", wrapper.AdminSetupStatus)

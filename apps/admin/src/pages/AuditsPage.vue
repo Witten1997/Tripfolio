@@ -23,11 +23,17 @@ const page = ref(1)
 const asOf = ref('')
 let request = 0
 const actions: Record<string, string> = {
+  'site.settings.read': '查看站点设置',
+  'site.settings.update': '修改站点设置',
   'backup.settings.read': '查看备份设置',
   'backup.settings.update': '修改备份设置',
   'backup.request': '手动备份',
   'backup.retry': '重试备份',
+  'backup.restore.request': '申请覆盖恢复',
+  'backup.restore.completed': '数据库恢复完成',
+  'backup.restore.failed': '数据库恢复失败',
   'backup.list': '查询备份记录',
+  'backup.remote.list': '查找 WebDAV 备份',
   'backup.test': '测试 WebDAV',
   'backup.test.result': 'WebDAV 测试结果',
   'backup.scheduled': '定时备份入队',

@@ -132,7 +132,7 @@ func newFixture(t *testing.T) *fixture {
 	}
 	f.svc = share.NewService(share.Deps{
 		Store: f.store, Trips: f.trips, Itinerary: f.items, Routes: f.routes, Limiter: f.limiter,
-		Cursors: paging.InsecureCodec{}, Clock: f.clock, WebBaseURL: "https://trip.example.com",
+		Cursors: paging.InsecureCodec{}, Clock: f.clock, ShareBaseURL: func(context.Context) (string, error) { return "https://trip.example.com", nil },
 		// 确定性令牌 t000…0001、t000…0002 …，长度恒为 22 且符合令牌正则。
 		Tokens: func() (string, error) {
 			f.issued++
