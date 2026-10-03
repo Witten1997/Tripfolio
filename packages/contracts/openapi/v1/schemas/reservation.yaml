@@ -1,0 +1,201 @@
+Reservation:
+  type: object
+  required:
+    - id
+    - trip_id
+    - kind
+    - title
+    - booking_reference
+    - transport_number
+    - provider_name
+    - start_local
+    - end_local
+    - origin
+    - destination
+    - address
+    - contact_name
+    - contact_phone
+    - notes
+    - version
+    - created_at
+    - updated_at
+    - deleted_at
+  properties:
+    id: &id001
+      type: string
+      format: uuid
+    trip_id: *id001
+    kind: &id003
+      type: string
+      enum:
+        - transport
+        - lodging
+        - attraction
+        - other
+    title: &id004
+      type: string
+      minLength: 1
+      maxLength: 200
+    booking_reference: &id005
+      type: string
+      maxLength: 120
+    transport_number: &id006
+      type: string
+      maxLength: 80
+      nullable: true
+    provider_name: &id007
+      type: string
+      maxLength: 200
+      nullable: true
+    start_local: &id002
+      type: string
+      pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$
+      nullable: true
+    end_local: *id002
+    origin: &id008
+      type: string
+      maxLength: 300
+      nullable: true
+    destination: &id009
+      type: string
+      maxLength: 300
+      nullable: true
+    address: &id010
+      type: string
+      maxLength: 500
+    contact_name: &id011
+      type: string
+      maxLength: 120
+      nullable: true
+    contact_phone: &id012
+      type: string
+      maxLength: 64
+      nullable: true
+    notes: &id013
+      type: string
+      maxLength: 10000
+    version:
+      $ref: ./write.yaml#/Version
+    created_at:
+      $ref: ./write.yaml#/Instant
+    updated_at:
+      $ref: ./write.yaml#/Instant
+    deleted_at:
+      type: string
+      format: date-time
+      nullable: true
+  x-go-type: reservation.Resource
+  x-go-type-import:
+    path: tripfolio/server/internal/modules/travel/reservation
+ReservationResponse:
+  type: object
+  required:
+    - data
+  properties:
+    data:
+      $ref: '#/Reservation'
+ReservationPage:
+  type: object
+  description: start_local 升序、空值最后，再按 id 升序
+  required:
+    - items
+    - next_cursor
+  properties:
+    items:
+      type: array
+      items:
+        $ref: '#/Reservation'
+    next_cursor:
+      type: string
+      nullable: true
+ReservationCreate:
+  type: object
+  additionalProperties: false
+  required:
+    - id
+    - kind
+    - title
+  properties:
+    id: *id001
+    kind: *id003
+    title: *id004
+    booking_reference: *id005
+    transport_number: *id006
+    provider_name: *id007
+    start_local: *id002
+    end_local: *id002
+    origin: *id008
+    destination: *id009
+    address: *id010
+    contact_name: *id011
+    contact_phone: *id012
+    notes: *id013
+ReservationPatch:
+  type: object
+  additionalProperties: false
+  minProperties: 1
+  properties:
+    kind: *id003
+    title: *id004
+    booking_reference: *id005
+    transport_number: *id006
+    provider_name: *id007
+    start_local: *id002
+    end_local: *id002
+    origin: *id008
+    destination: *id009
+    address: *id010
+    contact_name: *id011
+    contact_phone: *id012
+    notes: *id013
+  description:
+    修改 kind 为非 transport 时，必须在同一请求显式将 transport_number、origin、destination
+    设为 null。end_local 不得早于 start_local。
+ReservationWriteResult:
+  type: object
+  description: 写操作的统一响应（接口设计 1.4）；data 为 primary 的当前规范资源
+  x-go-type: write.Result
+  x-go-type-import:
+    path: tripfolio/server/internal/foundation/write
+  required:
+    - operation_id
+    - primary
+    - affected
+    - commit_cursor
+    - warnings
+    - replayed
+    - data
+  properties:
+    operation_id:
+      type: string
+      format: uuid
+    primary:
+      type: object
+      nullable: true
+      allOf:
+        - $ref: ./write.yaml#/EntityRef
+    affected:
+      type: array
+      items:
+        $ref: ./write.yaml#/EntityRef
+    commit_cursor:
+      type: string
+      nullable: true
+    warnings:
+      type: array
+      items:
+        type: string
+    replayed:
+      type: boolean
+    data:
+      nullable: true
+      allOf:
+        - $ref: '#/Reservation'
+      type: object
+ReservationWriteResponse:
+  type: object
+  required:
+    - data
+  properties:
+    data:
+      $ref: '#/ReservationWriteResult'

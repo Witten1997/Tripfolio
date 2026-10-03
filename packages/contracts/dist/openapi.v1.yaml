@@ -42,6 +42,694 @@ tags:
   - name: public
     description: 访客凭分享令牌读取的只读接口
 paths:
+  /trips/{trip_id}/photos:
+    parameters:
+      - name: trip_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags:
+        - travel
+      operationId: listPhotos
+      summary: recorded_on 降序；同日 taken_at_local 升序、空值最后，再按 sort_order、id 升序Photo
+      parameters:
+        - name: date_from
+          in: query
+          required: false
+          schema:
+            type: string
+            pattern: ^\d{4}-\d{2}-\d{2}$
+        - name: date_to
+          in: query
+          required: false
+          schema:
+            type: string
+            pattern: ^\d{4}-\d{2}-\d{2}$
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PhotoPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '410':
+          $ref: '#/components/responses/Gone'
+        '412':
+          $ref: '#/components/responses/PreconditionFailed'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '428':
+          $ref: '#/components/responses/VersionRequired'
+        '503':
+          $ref: '#/components/responses/DependencyUnavailable'
+    post:
+      tags:
+        - travel
+      operationId: createPhoto
+      summary: 创建Photo
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PhotoCreate'
+      responses:
+        '201':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PhotoWriteResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '410':
+          $ref: '#/components/responses/Gone'
+        '412':
+          $ref: '#/components/responses/PreconditionFailed'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '428':
+          $ref: '#/components/responses/VersionRequired'
+        '503':
+          $ref: '#/components/responses/DependencyUnavailable'
+  /trips/{trip_id}/photos/{photo_id}:
+    parameters:
+      - name: trip_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: photo_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags:
+        - travel
+      operationId: getPhoto
+      summary: 读取Photo
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PhotoResponse'
+          headers:
+            ETag:
+              schema:
+                type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '410':
+          $ref: '#/components/responses/Gone'
+        '412':
+          $ref: '#/components/responses/PreconditionFailed'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '428':
+          $ref: '#/components/responses/VersionRequired'
+        '503':
+          $ref: '#/components/responses/DependencyUnavailable'
+    patch:
+      tags:
+        - travel
+      operationId: updatePhoto
+      summary: 更新Photo
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PhotoPatch'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PhotoWriteResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '410':
+          $ref: '#/components/responses/Gone'
+        '412':
+          $ref: '#/components/responses/PreconditionFailed'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '428':
+          $ref: '#/components/responses/VersionRequired'
+        '503':
+          $ref: '#/components/responses/DependencyUnavailable'
+    delete:
+      tags:
+        - travel
+      operationId: deletePhoto
+      summary: 删除Photo
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PhotoWriteResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '410':
+          $ref: '#/components/responses/Gone'
+        '412':
+          $ref: '#/components/responses/PreconditionFailed'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '428':
+          $ref: '#/components/responses/VersionRequired'
+        '503':
+          $ref: '#/components/responses/DependencyUnavailable'
+  /trips/{trip_id}/documents:
+    parameters:
+      - name: trip_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags:
+        - travel
+      operationId: listDocuments
+      summary: created_at、id 均降序Document
+      parameters:
+        - name: reservation_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '410':
+          $ref: '#/components/responses/Gone'
+        '412':
+          $ref: '#/components/responses/PreconditionFailed'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '428':
+          $ref: '#/components/responses/VersionRequired'
+        '503':
+          $ref: '#/components/responses/DependencyUnavailable'
+    post:
+      tags:
+        - travel
+      operationId: createDocument
+      summary: 创建Document
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DocumentCreate'
+      responses:
+        '201':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentWriteResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '410':
+          $ref: '#/components/responses/Gone'
+        '412':
+          $ref: '#/components/responses/PreconditionFailed'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '428':
+          $ref: '#/components/responses/VersionRequired'
+        '503':
+          $ref: '#/components/responses/DependencyUnavailable'
+  /trips/{trip_id}/documents/{document_id}:
+    parameters:
+      - name: trip_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: document_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags:
+        - travel
+      operationId: getDocument
+      summary: 读取Document
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentResponse'
+          headers:
+            ETag:
+              schema:
+                type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '410':
+          $ref: '#/components/responses/Gone'
+        '412':
+          $ref: '#/components/responses/PreconditionFailed'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '428':
+          $ref: '#/components/responses/VersionRequired'
+        '503':
+          $ref: '#/components/responses/DependencyUnavailable'
+    patch:
+      tags:
+        - travel
+      operationId: updateDocument
+      summary: 更新Document
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DocumentPatch'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentWriteResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '410':
+          $ref: '#/components/responses/Gone'
+        '412':
+          $ref: '#/components/responses/PreconditionFailed'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '428':
+          $ref: '#/components/responses/VersionRequired'
+        '503':
+          $ref: '#/components/responses/DependencyUnavailable'
+    delete:
+      tags:
+        - travel
+      operationId: deleteDocument
+      summary: 删除Document
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentWriteResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '410':
+          $ref: '#/components/responses/Gone'
+        '412':
+          $ref: '#/components/responses/PreconditionFailed'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '428':
+          $ref: '#/components/responses/VersionRequired'
+        '503':
+          $ref: '#/components/responses/DependencyUnavailable'
+  /trips/{trip_id}/reservations:
+    parameters:
+      - name: trip_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags:
+        - travel
+      operationId: listReservations
+      summary: start_local 升序、空值最后，再按 id 升序Reservation
+      parameters:
+        - name: kind
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - transport
+              - lodging
+              - attraction
+              - other
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReservationPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '410':
+          $ref: '#/components/responses/Gone'
+        '412':
+          $ref: '#/components/responses/PreconditionFailed'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '428':
+          $ref: '#/components/responses/VersionRequired'
+        '503':
+          $ref: '#/components/responses/DependencyUnavailable'
+    post:
+      tags:
+        - travel
+      operationId: createReservation
+      summary: 创建Reservation
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReservationCreate'
+      responses:
+        '201':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReservationWriteResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '410':
+          $ref: '#/components/responses/Gone'
+        '412':
+          $ref: '#/components/responses/PreconditionFailed'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '428':
+          $ref: '#/components/responses/VersionRequired'
+        '503':
+          $ref: '#/components/responses/DependencyUnavailable'
+  /trips/{trip_id}/reservations/{reservation_id}:
+    parameters:
+      - name: trip_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: reservation_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags:
+        - travel
+      operationId: getReservation
+      summary: 读取Reservation
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReservationResponse'
+          headers:
+            ETag:
+              schema:
+                type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '410':
+          $ref: '#/components/responses/Gone'
+        '412':
+          $ref: '#/components/responses/PreconditionFailed'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '428':
+          $ref: '#/components/responses/VersionRequired'
+        '503':
+          $ref: '#/components/responses/DependencyUnavailable'
+    patch:
+      tags:
+        - travel
+      operationId: updateReservation
+      summary: 更新Reservation
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReservationPatch'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReservationWriteResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '410':
+          $ref: '#/components/responses/Gone'
+        '412':
+          $ref: '#/components/responses/PreconditionFailed'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '428':
+          $ref: '#/components/responses/VersionRequired'
+        '503':
+          $ref: '#/components/responses/DependencyUnavailable'
+    delete:
+      tags:
+        - travel
+      operationId: deleteReservation
+      summary: 删除Reservation
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReservationWriteResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '410':
+          $ref: '#/components/responses/Gone'
+        '412':
+          $ref: '#/components/responses/PreconditionFailed'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '428':
+          $ref: '#/components/responses/VersionRequired'
+        '503':
+          $ref: '#/components/responses/DependencyUnavailable'
   /dashboard:
     get:
       tags:
@@ -6273,6 +6961,721 @@ components:
       properties:
         data:
           $ref: '#/components/schemas/PublicRoutes'
+    Reservation:
+      type: object
+      required:
+        - id
+        - trip_id
+        - kind
+        - title
+        - booking_reference
+        - transport_number
+        - provider_name
+        - start_local
+        - end_local
+        - origin
+        - destination
+        - address
+        - contact_name
+        - contact_phone
+        - notes
+        - version
+        - created_at
+        - updated_at
+        - deleted_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        trip_id:
+          type: string
+          format: uuid
+        kind:
+          type: string
+          enum:
+            - transport
+            - lodging
+            - attraction
+            - other
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        booking_reference:
+          type: string
+          maxLength: 120
+        transport_number:
+          type: string
+          maxLength: 80
+          nullable: true
+        provider_name:
+          type: string
+          maxLength: 200
+          nullable: true
+        start_local:
+          type: string
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$
+          nullable: true
+        end_local:
+          type: string
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$
+          nullable: true
+        origin:
+          type: string
+          maxLength: 300
+          nullable: true
+        destination:
+          type: string
+          maxLength: 300
+          nullable: true
+        address:
+          type: string
+          maxLength: 500
+        contact_name:
+          type: string
+          maxLength: 120
+          nullable: true
+        contact_phone:
+          type: string
+          maxLength: 64
+          nullable: true
+        notes:
+          type: string
+          maxLength: 10000
+        version:
+          $ref: '#/components/schemas/Version'
+        created_at:
+          $ref: '#/components/schemas/Instant'
+        updated_at:
+          $ref: '#/components/schemas/Instant'
+        deleted_at:
+          type: string
+          format: date-time
+          nullable: true
+      x-go-type: reservation.Resource
+      x-go-type-import:
+        path: tripfolio/server/internal/modules/travel/reservation
+    ReservationResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: '#/components/schemas/Reservation'
+    ReservationPage:
+      type: object
+      description: start_local 升序、空值最后，再按 id 升序
+      required:
+        - items
+        - next_cursor
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Reservation'
+        next_cursor:
+          type: string
+          nullable: true
+    ReservationCreate:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - kind
+        - title
+      properties:
+        id:
+          type: string
+          format: uuid
+        kind:
+          type: string
+          enum:
+            - transport
+            - lodging
+            - attraction
+            - other
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        booking_reference:
+          type: string
+          maxLength: 120
+        transport_number:
+          type: string
+          maxLength: 80
+          nullable: true
+        provider_name:
+          type: string
+          maxLength: 200
+          nullable: true
+        start_local:
+          type: string
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$
+          nullable: true
+        end_local:
+          type: string
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$
+          nullable: true
+        origin:
+          type: string
+          maxLength: 300
+          nullable: true
+        destination:
+          type: string
+          maxLength: 300
+          nullable: true
+        address:
+          type: string
+          maxLength: 500
+        contact_name:
+          type: string
+          maxLength: 120
+          nullable: true
+        contact_phone:
+          type: string
+          maxLength: 64
+          nullable: true
+        notes:
+          type: string
+          maxLength: 10000
+    ReservationPatch:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        kind:
+          type: string
+          enum:
+            - transport
+            - lodging
+            - attraction
+            - other
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        booking_reference:
+          type: string
+          maxLength: 120
+        transport_number:
+          type: string
+          maxLength: 80
+          nullable: true
+        provider_name:
+          type: string
+          maxLength: 200
+          nullable: true
+        start_local:
+          type: string
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$
+          nullable: true
+        end_local:
+          type: string
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$
+          nullable: true
+        origin:
+          type: string
+          maxLength: 300
+          nullable: true
+        destination:
+          type: string
+          maxLength: 300
+          nullable: true
+        address:
+          type: string
+          maxLength: 500
+        contact_name:
+          type: string
+          maxLength: 120
+          nullable: true
+        contact_phone:
+          type: string
+          maxLength: 64
+          nullable: true
+        notes:
+          type: string
+          maxLength: 10000
+      description: 修改 kind 为非 transport 时，必须在同一请求显式将 transport_number、origin、destination 设为 null。end_local 不得早于 start_local。
+    ReservationWriteResult:
+      type: object
+      description: 写操作的统一响应（接口设计 1.4）；data 为 primary 的当前规范资源
+      x-go-type: write.Result
+      x-go-type-import:
+        path: tripfolio/server/internal/foundation/write
+      required:
+        - operation_id
+        - primary
+        - affected
+        - commit_cursor
+        - warnings
+        - replayed
+        - data
+      properties:
+        operation_id:
+          type: string
+          format: uuid
+        primary:
+          type: object
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/EntityRef'
+        affected:
+          type: array
+          items:
+            $ref: '#/components/schemas/EntityRef'
+        commit_cursor:
+          type: string
+          nullable: true
+        warnings:
+          type: array
+          items:
+            type: string
+        replayed:
+          type: boolean
+        data:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/Reservation'
+          type: object
+    ReservationWriteResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: '#/components/schemas/ReservationWriteResult'
+    Document:
+      type: object
+      required:
+        - id
+        - trip_id
+        - title
+        - notes
+        - asset_id
+        - reservation_id
+        - version
+        - created_at
+        - updated_at
+        - deleted_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        trip_id:
+          type: string
+          format: uuid
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        notes:
+          type: string
+          maxLength: 4000
+        asset_id:
+          type: string
+          format: uuid
+        reservation_id:
+          type: string
+          format: uuid
+          nullable: true
+        version:
+          $ref: '#/components/schemas/Version'
+        created_at:
+          $ref: '#/components/schemas/Instant'
+        updated_at:
+          $ref: '#/components/schemas/Instant'
+        deleted_at:
+          type: string
+          format: date-time
+          nullable: true
+      x-go-type: document.Resource
+      x-go-type-import:
+        path: tripfolio/server/internal/modules/travel/document
+    DocumentResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: '#/components/schemas/Document'
+    DocumentPage:
+      type: object
+      description: created_at、id 均降序
+      required:
+        - items
+        - next_cursor
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Document'
+        next_cursor:
+          type: string
+          nullable: true
+    DocumentCreate:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - title
+        - asset_id
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        notes:
+          type: string
+          maxLength: 4000
+        asset_id:
+          type: string
+          format: uuid
+        reservation_id:
+          type: string
+          format: uuid
+          nullable: true
+    DocumentPatch:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        notes:
+          type: string
+          maxLength: 4000
+        asset_id:
+          type: string
+          format: uuid
+        reservation_id:
+          type: string
+          format: uuid
+          nullable: true
+    DocumentWriteResult:
+      type: object
+      description: 写操作的统一响应（接口设计 1.4）；data 为 primary 的当前规范资源
+      x-go-type: write.Result
+      x-go-type-import:
+        path: tripfolio/server/internal/foundation/write
+      required:
+        - operation_id
+        - primary
+        - affected
+        - commit_cursor
+        - warnings
+        - replayed
+        - data
+      properties:
+        operation_id:
+          type: string
+          format: uuid
+        primary:
+          type: object
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/EntityRef'
+        affected:
+          type: array
+          items:
+            $ref: '#/components/schemas/EntityRef'
+        commit_cursor:
+          type: string
+          nullable: true
+        warnings:
+          type: array
+          items:
+            type: string
+        replayed:
+          type: boolean
+        data:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/Document'
+          type: object
+    DocumentWriteResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: '#/components/schemas/DocumentWriteResult'
+    Photo:
+      type: object
+      required:
+        - id
+        - trip_id
+        - asset_id
+        - taken_at_local
+        - recorded_on
+        - caption
+        - sort_order
+        - place_name
+        - address
+        - latitude
+        - longitude
+        - version
+        - created_at
+        - updated_at
+        - deleted_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        trip_id:
+          type: string
+          format: uuid
+        asset_id:
+          type: string
+          format: uuid
+        taken_at_local:
+          type: string
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$
+          nullable: true
+        recorded_on:
+          type: string
+          pattern: ^\d{4}-\d{2}-\d{2}$
+        caption:
+          type: string
+          maxLength: 2000
+        sort_order:
+          type: integer
+          minimum: 0
+          maximum: 2147483647
+        place_name:
+          type: string
+          maxLength: 200
+        address:
+          type: string
+          maxLength: 500
+        latitude:
+          type: number
+          nullable: true
+          minimum: -90
+          maximum: 90
+        longitude:
+          type: number
+          nullable: true
+          minimum: -180
+          maximum: 180
+        version:
+          $ref: '#/components/schemas/Version'
+        created_at:
+          $ref: '#/components/schemas/Instant'
+        updated_at:
+          $ref: '#/components/schemas/Instant'
+        deleted_at:
+          type: string
+          format: date-time
+          nullable: true
+      x-go-type: album.Resource
+      x-go-type-import:
+        path: tripfolio/server/internal/modules/travel/album
+    PhotoResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: '#/components/schemas/Photo'
+    PhotoPage:
+      type: object
+      description: recorded_on 降序；同日 taken_at_local 升序、空值最后，再按 sort_order、id 升序
+      required:
+        - items
+        - next_cursor
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Photo'
+        next_cursor:
+          type: string
+          nullable: true
+    PhotoAssetCreate:
+      type: object
+      additionalProperties: false
+      required:
+        - original_name
+        - expected_size
+        - declared_media_type
+      properties:
+        original_name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        expected_size:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 20971520
+        declared_media_type:
+          type: string
+          enum:
+            - image/jpeg
+            - image/png
+            - image/webp
+        client_sha256:
+          type: string
+          pattern: ^[0-9a-f]{64}$
+    PhotoCreate:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+      properties:
+        id:
+          type: string
+          format: uuid
+        asset_id:
+          type: string
+          format: uuid
+        taken_at_local:
+          type: string
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$
+          nullable: true
+        recorded_on:
+          type: string
+          pattern: ^\d{4}-\d{2}-\d{2}$
+        caption:
+          type: string
+          maxLength: 2000
+        sort_order:
+          type: integer
+          minimum: 0
+          maximum: 2147483647
+        place_name:
+          type: string
+          maxLength: 200
+        address:
+          type: string
+          maxLength: 500
+        latitude:
+          type: number
+          nullable: true
+          minimum: -90
+          maximum: 90
+        longitude:
+          type: number
+          nullable: true
+          minimum: -180
+          maximum: 180
+        asset:
+          $ref: '#/components/schemas/PhotoAssetCreate'
+      oneOf:
+        - required:
+            - asset_id
+          not:
+            required:
+              - asset
+            properties:
+              asset: {}
+        - required:
+            - asset
+          not:
+            required:
+              - asset_id
+            properties:
+              asset_id: {}
+      description: asset_id 与内嵌 asset 二选一；引用无需等待 ready。recorded_on 缺省取拍摄日期，否则旅行时区今天。
+    PhotoPatch:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        asset_id:
+          type: string
+          format: uuid
+        taken_at_local:
+          type: string
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$
+          nullable: true
+        recorded_on:
+          type: string
+          pattern: ^\d{4}-\d{2}-\d{2}$
+        caption:
+          type: string
+          maxLength: 2000
+        sort_order:
+          type: integer
+          minimum: 0
+          maximum: 2147483647
+        place_name:
+          type: string
+          maxLength: 200
+        address:
+          type: string
+          maxLength: 500
+        latitude:
+          type: number
+          nullable: true
+          minimum: -90
+          maximum: 90
+        longitude:
+          type: number
+          nullable: true
+          minimum: -180
+          maximum: 180
+      description: 提交 taken_at_local 且未提交 recorded_on 时，同时派生日期；清空拍摄时刻时保持原分组日期。经纬度必须成对。
+    PhotoWriteResult:
+      type: object
+      description: 写操作的统一响应（接口设计 1.4）；data 为 primary 的当前规范资源
+      x-go-type: album.WriteResult
+      x-go-type-import:
+        path: tripfolio/server/internal/modules/travel/album
+      required:
+        - operation_id
+        - primary
+        - affected
+        - commit_cursor
+        - warnings
+        - replayed
+        - data
+        - upload_authorization
+      properties:
+        operation_id:
+          type: string
+          format: uuid
+        primary:
+          type: object
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/EntityRef'
+        affected:
+          type: array
+          items:
+            $ref: '#/components/schemas/EntityRef'
+        commit_cursor:
+          type: string
+          nullable: true
+        warnings:
+          type: array
+          items:
+            type: string
+        replayed:
+          type: boolean
+        data:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/Photo'
+          type: object
+        upload_authorization:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/UploadAuthorization'
+          type: object
+    PhotoWriteResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: '#/components/schemas/PhotoWriteResult'
     SplitMode:
       type: string
       description: 分摊模式；even 按参与人等分，ratio 按参与人的成员百分比归一化，personal 由「我」支付并承担全额，不计入成员结算

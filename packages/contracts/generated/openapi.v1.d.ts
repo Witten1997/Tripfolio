@@ -698,6 +698,48 @@ export type paths = {
         patch?: never;
         trace?: never;
     };
+    "/trips/{trip_id}/documents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        /** created_at、id 均降序Document */
+        get: operations["listDocuments"];
+        put?: never;
+        /** 创建Document */
+        post: operations["createDocument"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/trips/{trip_id}/documents/{document_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                document_id: string;
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        /** 读取Document */
+        get: operations["getDocument"];
+        put?: never;
+        post?: never;
+        /** 删除Document */
+        delete: operations["deleteDocument"];
+        options?: never;
+        head?: never;
+        /** 更新Document */
+        patch: operations["updateDocument"];
+        trace?: never;
+    };
     "/trips/{trip_id}/itinerary-items": {
         parameters: {
             query?: never;
@@ -937,6 +979,90 @@ export type paths = {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/trips/{trip_id}/photos": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        /** recorded_on 降序；同日 taken_at_local 升序、空值最后，再按 sort_order、id 升序Photo */
+        get: operations["listPhotos"];
+        put?: never;
+        /** 创建Photo */
+        post: operations["createPhoto"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/trips/{trip_id}/photos/{photo_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                photo_id: string;
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        /** 读取Photo */
+        get: operations["getPhoto"];
+        put?: never;
+        post?: never;
+        /** 删除Photo */
+        delete: operations["deletePhoto"];
+        options?: never;
+        head?: never;
+        /** 更新Photo */
+        patch: operations["updatePhoto"];
+        trace?: never;
+    };
+    "/trips/{trip_id}/reservations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        /** start_local 升序、空值最后，再按 id 升序Reservation */
+        get: operations["listReservations"];
+        put?: never;
+        /** 创建Reservation */
+        post: operations["createReservation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/trips/{trip_id}/reservations/{reservation_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                reservation_id: string;
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        /** 读取Reservation */
+        get: operations["getReservation"];
+        put?: never;
+        post?: never;
+        /** 删除Reservation */
+        delete: operations["deleteReservation"];
+        options?: never;
+        head?: never;
+        /** 更新Reservation */
+        patch: operations["updateReservation"];
         trace?: never;
     };
     "/trips/{trip_id}/route-legs/{leg_id}": {
@@ -1407,6 +1533,63 @@ export type components = {
          * @example 2026-10-01
          */
         Date: string;
+        Document: {
+            /** Format: uuid */
+            asset_id: string;
+            created_at: components["schemas"]["Instant"];
+            /** Format: date-time */
+            deleted_at: string | null;
+            /** Format: uuid */
+            id: string;
+            notes: string;
+            /** Format: uuid */
+            reservation_id: string | null;
+            title: string;
+            /** Format: uuid */
+            trip_id: string;
+            updated_at: components["schemas"]["Instant"];
+            version: components["schemas"]["Version"];
+        };
+        DocumentCreate: {
+            /** Format: uuid */
+            asset_id: string;
+            /** Format: uuid */
+            id: string;
+            notes?: string;
+            /** Format: uuid */
+            reservation_id?: string | null;
+            title: string;
+        };
+        /** @description created_at、id 均降序 */
+        DocumentPage: {
+            items: components["schemas"]["Document"][];
+            next_cursor: string | null;
+        };
+        DocumentPatch: {
+            /** Format: uuid */
+            asset_id?: string;
+            notes?: string;
+            /** Format: uuid */
+            reservation_id?: string | null;
+            title?: string;
+        };
+        DocumentResponse: {
+            data: components["schemas"]["Document"];
+        };
+        DocumentWriteResponse: {
+            data: components["schemas"]["DocumentWriteResult"];
+        };
+        /** @description 写操作的统一响应（接口设计 1.4）；data 为 primary 的当前规范资源 */
+        DocumentWriteResult: {
+            affected: components["schemas"]["EntityRef"][];
+            commit_cursor: string | null;
+            data: components["schemas"]["Document"] | null;
+            /** Format: uuid */
+            operation_id: string;
+            primary: components["schemas"]["EntityRef"] | null;
+            replayed: boolean;
+            warnings: string[];
+        };
         /**
          * @description 单个资产的下载授权。仅 ready 且所请求变体可用时 url 非空。
          *     原图与 PDF 有效 60 秒，缩略图 15 分钟；响应带 Cache-Control: no-store。
@@ -2048,6 +2231,87 @@ export type components = {
          * @enum {string}
          */
         PackingStatus: "pending" | "ready" | "packed";
+        Photo: {
+            address: string;
+            /** Format: uuid */
+            asset_id: string;
+            caption: string;
+            created_at: components["schemas"]["Instant"];
+            /** Format: date-time */
+            deleted_at: string | null;
+            /** Format: uuid */
+            id: string;
+            latitude: number | null;
+            longitude: number | null;
+            place_name: string;
+            recorded_on: string;
+            sort_order: number;
+            taken_at_local: string | null;
+            /** Format: uuid */
+            trip_id: string;
+            updated_at: components["schemas"]["Instant"];
+            version: components["schemas"]["Version"];
+        };
+        PhotoAssetCreate: {
+            client_sha256?: string;
+            /** @enum {string} */
+            declared_media_type: "image/jpeg" | "image/png" | "image/webp";
+            /** Format: int64 */
+            expected_size: number;
+            original_name: string;
+        };
+        /** @description asset_id 与内嵌 asset 二选一；引用无需等待 ready。recorded_on 缺省取拍摄日期，否则旅行时区今天。 */
+        PhotoCreate: {
+            address?: string;
+            asset?: components["schemas"]["PhotoAssetCreate"];
+            /** Format: uuid */
+            asset_id?: string;
+            caption?: string;
+            /** Format: uuid */
+            id: string;
+            latitude?: number | null;
+            longitude?: number | null;
+            place_name?: string;
+            recorded_on?: string;
+            sort_order?: number;
+            taken_at_local?: string | null;
+        } & (unknown | unknown);
+        /** @description recorded_on 降序；同日 taken_at_local 升序、空值最后，再按 sort_order、id 升序 */
+        PhotoPage: {
+            items: components["schemas"]["Photo"][];
+            next_cursor: string | null;
+        };
+        /** @description 提交 taken_at_local 且未提交 recorded_on 时，同时派生日期；清空拍摄时刻时保持原分组日期。经纬度必须成对。 */
+        PhotoPatch: {
+            address?: string;
+            /** Format: uuid */
+            asset_id?: string;
+            caption?: string;
+            latitude?: number | null;
+            longitude?: number | null;
+            place_name?: string;
+            recorded_on?: string;
+            sort_order?: number;
+            taken_at_local?: string | null;
+        };
+        PhotoResponse: {
+            data: components["schemas"]["Photo"];
+        };
+        PhotoWriteResponse: {
+            data: components["schemas"]["PhotoWriteResult"];
+        };
+        /** @description 写操作的统一响应（接口设计 1.4）；data 为 primary 的当前规范资源 */
+        PhotoWriteResult: {
+            affected: components["schemas"]["EntityRef"][];
+            commit_cursor: string | null;
+            data: components["schemas"]["Photo"] | null;
+            /** Format: uuid */
+            operation_id: string;
+            primary: components["schemas"]["EntityRef"] | null;
+            replayed: boolean;
+            upload_authorization: components["schemas"]["UploadAuthorization"] | null;
+            warnings: string[];
+        };
         /** @description 统一错误响应，媒体类型 application/problem+json；代码清单见接口设计 1.4 */
         Problem: {
             /** @description 稳定的错误代码，例如 VERSION_CONFLICT */
@@ -2150,6 +2414,88 @@ export type components = {
             email: string;
             nickname: string;
             password: string;
+        };
+        Reservation: {
+            address: string;
+            booking_reference: string;
+            contact_name: string | null;
+            contact_phone: string | null;
+            created_at: components["schemas"]["Instant"];
+            /** Format: date-time */
+            deleted_at: string | null;
+            destination: string | null;
+            end_local: string | null;
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            kind: "transport" | "lodging" | "attraction" | "other";
+            notes: string;
+            origin: string | null;
+            provider_name: string | null;
+            start_local: string | null;
+            title: string;
+            transport_number: string | null;
+            /** Format: uuid */
+            trip_id: string;
+            updated_at: components["schemas"]["Instant"];
+            version: components["schemas"]["Version"];
+        };
+        ReservationCreate: {
+            address?: string;
+            booking_reference?: string;
+            contact_name?: string | null;
+            contact_phone?: string | null;
+            destination?: string | null;
+            end_local?: string | null;
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            kind: "transport" | "lodging" | "attraction" | "other";
+            notes?: string;
+            origin?: string | null;
+            provider_name?: string | null;
+            start_local?: string | null;
+            title: string;
+            transport_number?: string | null;
+        };
+        /** @description start_local 升序、空值最后，再按 id 升序 */
+        ReservationPage: {
+            items: components["schemas"]["Reservation"][];
+            next_cursor: string | null;
+        };
+        /** @description 修改 kind 为非 transport 时，必须在同一请求显式将 transport_number、origin、destination 设为 null。end_local 不得早于 start_local。 */
+        ReservationPatch: {
+            address?: string;
+            booking_reference?: string;
+            contact_name?: string | null;
+            contact_phone?: string | null;
+            destination?: string | null;
+            end_local?: string | null;
+            /** @enum {string} */
+            kind?: "transport" | "lodging" | "attraction" | "other";
+            notes?: string;
+            origin?: string | null;
+            provider_name?: string | null;
+            start_local?: string | null;
+            title?: string;
+            transport_number?: string | null;
+        };
+        ReservationResponse: {
+            data: components["schemas"]["Reservation"];
+        };
+        ReservationWriteResponse: {
+            data: components["schemas"]["ReservationWriteResult"];
+        };
+        /** @description 写操作的统一响应（接口设计 1.4）；data 为 primary 的当前规范资源 */
+        ReservationWriteResult: {
+            affected: components["schemas"]["EntityRef"][];
+            commit_cursor: string | null;
+            data: components["schemas"]["Reservation"] | null;
+            /** Format: uuid */
+            operation_id: string;
+            primary: components["schemas"]["EntityRef"] | null;
+            replayed: boolean;
+            warnings: string[];
         };
         ResetPasswordRequest: {
             /** Format: uuid */
@@ -4049,6 +4395,195 @@ export interface operations {
             422: components["responses"]["ValidationFailed"];
         };
     };
+    listDocuments: {
+        parameters: {
+            query?: {
+                cursor?: string;
+                limit?: number;
+                reservation_id?: string;
+            };
+            header?: never;
+            path: {
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentPage"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            410: components["responses"]["Gone"];
+            412: components["responses"]["PreconditionFailed"];
+            422: components["responses"]["ValidationFailed"];
+            428: components["responses"]["VersionRequired"];
+            503: components["responses"]["DependencyUnavailable"];
+        };
+    };
+    createDocument: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 写请求的操作编号（UUID）；相同成功操作重试复用同一键 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DocumentCreate"];
+            };
+        };
+        responses: {
+            /** @description 成功 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentWriteResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            410: components["responses"]["Gone"];
+            412: components["responses"]["PreconditionFailed"];
+            422: components["responses"]["ValidationFailed"];
+            428: components["responses"]["VersionRequired"];
+            503: components["responses"]["DependencyUnavailable"];
+        };
+    };
+    getDocument: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                document_id: string;
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            410: components["responses"]["Gone"];
+            412: components["responses"]["PreconditionFailed"];
+            422: components["responses"]["ValidationFailed"];
+            428: components["responses"]["VersionRequired"];
+            503: components["responses"]["DependencyUnavailable"];
+        };
+    };
+    deleteDocument: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 写请求的操作编号（UUID）；相同成功操作重试复用同一键 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /** @description 客户端所基于的资源版本，形如 "7"（带引号） */
+                "If-Match"?: components["parameters"]["IfMatch"];
+            };
+            path: {
+                document_id: string;
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentWriteResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            410: components["responses"]["Gone"];
+            412: components["responses"]["PreconditionFailed"];
+            422: components["responses"]["ValidationFailed"];
+            428: components["responses"]["VersionRequired"];
+            503: components["responses"]["DependencyUnavailable"];
+        };
+    };
+    updateDocument: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 写请求的操作编号（UUID）；相同成功操作重试复用同一键 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /** @description 客户端所基于的资源版本，形如 "7"（带引号） */
+                "If-Match"?: components["parameters"]["IfMatch"];
+            };
+            path: {
+                document_id: string;
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DocumentPatch"];
+            };
+        };
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentWriteResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            410: components["responses"]["Gone"];
+            412: components["responses"]["PreconditionFailed"];
+            422: components["responses"]["ValidationFailed"];
+            428: components["responses"]["VersionRequired"];
+            503: components["responses"]["DependencyUnavailable"];
+        };
+    };
     listItineraryItems: {
         parameters: {
             query?: {
@@ -4793,6 +5328,385 @@ export interface operations {
             409: components["responses"]["Conflict"];
             410: components["responses"]["Gone"];
             422: components["responses"]["ValidationFailed"];
+        };
+    };
+    listPhotos: {
+        parameters: {
+            query?: {
+                cursor?: string;
+                date_from?: string;
+                date_to?: string;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PhotoPage"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            410: components["responses"]["Gone"];
+            412: components["responses"]["PreconditionFailed"];
+            422: components["responses"]["ValidationFailed"];
+            428: components["responses"]["VersionRequired"];
+            503: components["responses"]["DependencyUnavailable"];
+        };
+    };
+    createPhoto: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 写请求的操作编号（UUID）；相同成功操作重试复用同一键 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PhotoCreate"];
+            };
+        };
+        responses: {
+            /** @description 成功 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PhotoWriteResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            410: components["responses"]["Gone"];
+            412: components["responses"]["PreconditionFailed"];
+            422: components["responses"]["ValidationFailed"];
+            428: components["responses"]["VersionRequired"];
+            503: components["responses"]["DependencyUnavailable"];
+        };
+    };
+    getPhoto: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                photo_id: string;
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PhotoResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            410: components["responses"]["Gone"];
+            412: components["responses"]["PreconditionFailed"];
+            422: components["responses"]["ValidationFailed"];
+            428: components["responses"]["VersionRequired"];
+            503: components["responses"]["DependencyUnavailable"];
+        };
+    };
+    deletePhoto: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 写请求的操作编号（UUID）；相同成功操作重试复用同一键 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /** @description 客户端所基于的资源版本，形如 "7"（带引号） */
+                "If-Match"?: components["parameters"]["IfMatch"];
+            };
+            path: {
+                photo_id: string;
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PhotoWriteResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            410: components["responses"]["Gone"];
+            412: components["responses"]["PreconditionFailed"];
+            422: components["responses"]["ValidationFailed"];
+            428: components["responses"]["VersionRequired"];
+            503: components["responses"]["DependencyUnavailable"];
+        };
+    };
+    updatePhoto: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 写请求的操作编号（UUID）；相同成功操作重试复用同一键 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /** @description 客户端所基于的资源版本，形如 "7"（带引号） */
+                "If-Match"?: components["parameters"]["IfMatch"];
+            };
+            path: {
+                photo_id: string;
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PhotoPatch"];
+            };
+        };
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PhotoWriteResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            410: components["responses"]["Gone"];
+            412: components["responses"]["PreconditionFailed"];
+            422: components["responses"]["ValidationFailed"];
+            428: components["responses"]["VersionRequired"];
+            503: components["responses"]["DependencyUnavailable"];
+        };
+    };
+    listReservations: {
+        parameters: {
+            query?: {
+                cursor?: string;
+                kind?: "transport" | "lodging" | "attraction" | "other";
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReservationPage"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            410: components["responses"]["Gone"];
+            412: components["responses"]["PreconditionFailed"];
+            422: components["responses"]["ValidationFailed"];
+            428: components["responses"]["VersionRequired"];
+            503: components["responses"]["DependencyUnavailable"];
+        };
+    };
+    createReservation: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 写请求的操作编号（UUID）；相同成功操作重试复用同一键 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReservationCreate"];
+            };
+        };
+        responses: {
+            /** @description 成功 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReservationWriteResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            410: components["responses"]["Gone"];
+            412: components["responses"]["PreconditionFailed"];
+            422: components["responses"]["ValidationFailed"];
+            428: components["responses"]["VersionRequired"];
+            503: components["responses"]["DependencyUnavailable"];
+        };
+    };
+    getReservation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                reservation_id: string;
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReservationResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            410: components["responses"]["Gone"];
+            412: components["responses"]["PreconditionFailed"];
+            422: components["responses"]["ValidationFailed"];
+            428: components["responses"]["VersionRequired"];
+            503: components["responses"]["DependencyUnavailable"];
+        };
+    };
+    deleteReservation: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 写请求的操作编号（UUID）；相同成功操作重试复用同一键 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /** @description 客户端所基于的资源版本，形如 "7"（带引号） */
+                "If-Match"?: components["parameters"]["IfMatch"];
+            };
+            path: {
+                reservation_id: string;
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReservationWriteResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            410: components["responses"]["Gone"];
+            412: components["responses"]["PreconditionFailed"];
+            422: components["responses"]["ValidationFailed"];
+            428: components["responses"]["VersionRequired"];
+            503: components["responses"]["DependencyUnavailable"];
+        };
+    };
+    updateReservation: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 写请求的操作编号（UUID）；相同成功操作重试复用同一键 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /** @description 客户端所基于的资源版本，形如 "7"（带引号） */
+                "If-Match"?: components["parameters"]["IfMatch"];
+            };
+            path: {
+                reservation_id: string;
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReservationPatch"];
+            };
+        };
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReservationWriteResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            410: components["responses"]["Gone"];
+            412: components["responses"]["PreconditionFailed"];
+            422: components["responses"]["ValidationFailed"];
+            428: components["responses"]["VersionRequired"];
+            503: components["responses"]["DependencyUnavailable"];
         };
     };
     updateRouteLegMode: {

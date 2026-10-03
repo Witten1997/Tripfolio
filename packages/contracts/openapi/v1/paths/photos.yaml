@@ -1,0 +1,224 @@
+collection:
+  parameters:
+    - &id002
+      name: trip_id
+      in: path
+      required: true
+      schema: &id003
+        type: string
+        format: uuid
+  get:
+    tags:
+      - travel
+    operationId: listPhotos
+    summary: recorded_on 降序；同日 taken_at_local 升序、空值最后，再按 sort_order、id 升序Photo
+    parameters:
+      - name: date_from
+        in: query
+        required: false
+        schema: &id001
+          type: string
+          pattern: ^\d{4}-\d{2}-\d{2}$
+      - name: date_to
+        in: query
+        required: false
+        schema: *id001
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 50
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+    responses:
+      '200':
+        description: 成功
+        content:
+          application/json:
+            schema:
+              $ref: ../openapi.yaml#/components/schemas/PhotoPage
+      '400':
+        $ref: ../openapi.yaml#/components/responses/BadRequest
+      '401':
+        $ref: ../openapi.yaml#/components/responses/Unauthorized
+      '403':
+        $ref: ../openapi.yaml#/components/responses/Forbidden
+      '404':
+        $ref: ../openapi.yaml#/components/responses/NotFound
+      '409':
+        $ref: ../openapi.yaml#/components/responses/Conflict
+      '410':
+        $ref: ../openapi.yaml#/components/responses/Gone
+      '412':
+        $ref: ../openapi.yaml#/components/responses/PreconditionFailed
+      '422':
+        $ref: ../openapi.yaml#/components/responses/ValidationFailed
+      '428':
+        $ref: ../openapi.yaml#/components/responses/VersionRequired
+      '503':
+        $ref: ../openapi.yaml#/components/responses/DependencyUnavailable
+  post:
+    tags:
+      - travel
+    operationId: createPhoto
+    summary: 创建Photo
+    parameters:
+      - $ref: ../openapi.yaml#/components/parameters/IdempotencyKey
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: ../openapi.yaml#/components/schemas/PhotoCreate
+    responses:
+      '201':
+        description: 成功
+        content:
+          application/json:
+            schema:
+              $ref: ../openapi.yaml#/components/schemas/PhotoWriteResponse
+      '400':
+        $ref: ../openapi.yaml#/components/responses/BadRequest
+      '401':
+        $ref: ../openapi.yaml#/components/responses/Unauthorized
+      '403':
+        $ref: ../openapi.yaml#/components/responses/Forbidden
+      '404':
+        $ref: ../openapi.yaml#/components/responses/NotFound
+      '409':
+        $ref: ../openapi.yaml#/components/responses/Conflict
+      '410':
+        $ref: ../openapi.yaml#/components/responses/Gone
+      '412':
+        $ref: ../openapi.yaml#/components/responses/PreconditionFailed
+      '422':
+        $ref: ../openapi.yaml#/components/responses/ValidationFailed
+      '428':
+        $ref: ../openapi.yaml#/components/responses/VersionRequired
+      '503':
+        $ref: ../openapi.yaml#/components/responses/DependencyUnavailable
+item:
+  parameters:
+    - *id002
+    - name: photo_id
+      in: path
+      required: true
+      schema: *id003
+  get:
+    tags:
+      - travel
+    operationId: getPhoto
+    summary: 读取Photo
+    responses:
+      '200':
+        description: 成功
+        content:
+          application/json:
+            schema:
+              $ref: ../openapi.yaml#/components/schemas/PhotoResponse
+        headers:
+          ETag:
+            schema:
+              type: string
+      '400':
+        $ref: ../openapi.yaml#/components/responses/BadRequest
+      '401':
+        $ref: ../openapi.yaml#/components/responses/Unauthorized
+      '403':
+        $ref: ../openapi.yaml#/components/responses/Forbidden
+      '404':
+        $ref: ../openapi.yaml#/components/responses/NotFound
+      '409':
+        $ref: ../openapi.yaml#/components/responses/Conflict
+      '410':
+        $ref: ../openapi.yaml#/components/responses/Gone
+      '412':
+        $ref: ../openapi.yaml#/components/responses/PreconditionFailed
+      '422':
+        $ref: ../openapi.yaml#/components/responses/ValidationFailed
+      '428':
+        $ref: ../openapi.yaml#/components/responses/VersionRequired
+      '503':
+        $ref: ../openapi.yaml#/components/responses/DependencyUnavailable
+  patch:
+    tags:
+      - travel
+    operationId: updatePhoto
+    summary: 更新Photo
+    parameters:
+      - $ref: ../openapi.yaml#/components/parameters/IdempotencyKey
+      - $ref: ../openapi.yaml#/components/parameters/IfMatch
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: ../openapi.yaml#/components/schemas/PhotoPatch
+    responses:
+      '200':
+        description: 成功
+        content:
+          application/json:
+            schema:
+              $ref: ../openapi.yaml#/components/schemas/PhotoWriteResponse
+      '400':
+        $ref: ../openapi.yaml#/components/responses/BadRequest
+      '401':
+        $ref: ../openapi.yaml#/components/responses/Unauthorized
+      '403':
+        $ref: ../openapi.yaml#/components/responses/Forbidden
+      '404':
+        $ref: ../openapi.yaml#/components/responses/NotFound
+      '409':
+        $ref: ../openapi.yaml#/components/responses/Conflict
+      '410':
+        $ref: ../openapi.yaml#/components/responses/Gone
+      '412':
+        $ref: ../openapi.yaml#/components/responses/PreconditionFailed
+      '422':
+        $ref: ../openapi.yaml#/components/responses/ValidationFailed
+      '428':
+        $ref: ../openapi.yaml#/components/responses/VersionRequired
+      '503':
+        $ref: ../openapi.yaml#/components/responses/DependencyUnavailable
+  delete:
+    tags:
+      - travel
+    operationId: deletePhoto
+    summary: 删除Photo
+    parameters:
+      - $ref: ../openapi.yaml#/components/parameters/IdempotencyKey
+      - $ref: ../openapi.yaml#/components/parameters/IfMatch
+    responses:
+      '200':
+        description: 成功
+        content:
+          application/json:
+            schema:
+              $ref: ../openapi.yaml#/components/schemas/PhotoWriteResponse
+      '400':
+        $ref: ../openapi.yaml#/components/responses/BadRequest
+      '401':
+        $ref: ../openapi.yaml#/components/responses/Unauthorized
+      '403':
+        $ref: ../openapi.yaml#/components/responses/Forbidden
+      '404':
+        $ref: ../openapi.yaml#/components/responses/NotFound
+      '409':
+        $ref: ../openapi.yaml#/components/responses/Conflict
+      '410':
+        $ref: ../openapi.yaml#/components/responses/Gone
+      '412':
+        $ref: ../openapi.yaml#/components/responses/PreconditionFailed
+      '422':
+        $ref: ../openapi.yaml#/components/responses/ValidationFailed
+      '428':
+        $ref: ../openapi.yaml#/components/responses/VersionRequired
+      '503':
+        $ref: ../openapi.yaml#/components/responses/DependencyUnavailable

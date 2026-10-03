@@ -1,0 +1,219 @@
+Photo:
+  type: object
+  required:
+    - id
+    - trip_id
+    - asset_id
+    - taken_at_local
+    - recorded_on
+    - caption
+    - sort_order
+    - place_name
+    - address
+    - latitude
+    - longitude
+    - version
+    - created_at
+    - updated_at
+    - deleted_at
+  properties:
+    id: &id001
+      type: string
+      format: uuid
+    trip_id: *id001
+    asset_id: &id002
+      type: string
+      format: uuid
+    taken_at_local: &id003
+      type: string
+      pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$
+      nullable: true
+    recorded_on: &id004
+      type: string
+      pattern: ^\d{4}-\d{2}-\d{2}$
+    caption: &id005
+      type: string
+      maxLength: 2000
+    sort_order: &id006
+      type: integer
+      minimum: 0
+      maximum: 2147483647
+    place_name: &id007
+      type: string
+      maxLength: 200
+    address: &id008
+      type: string
+      maxLength: 500
+    latitude: &id009
+      type: number
+      nullable: true
+      minimum: -90
+      maximum: 90
+    longitude: &id010
+      type: number
+      nullable: true
+      minimum: -180
+      maximum: 180
+    version:
+      $ref: ./write.yaml#/Version
+    created_at:
+      $ref: ./write.yaml#/Instant
+    updated_at:
+      $ref: ./write.yaml#/Instant
+    deleted_at:
+      type: string
+      format: date-time
+      nullable: true
+  x-go-type: album.Resource
+  x-go-type-import:
+    path: tripfolio/server/internal/modules/travel/album
+PhotoResponse:
+  type: object
+  required:
+    - data
+  properties:
+    data:
+      $ref: '#/Photo'
+PhotoPage:
+  type: object
+  description: recorded_on 降序；同日 taken_at_local 升序、空值最后，再按 sort_order、id 升序
+  required:
+    - items
+    - next_cursor
+  properties:
+    items:
+      type: array
+      items:
+        $ref: '#/Photo'
+    next_cursor:
+      type: string
+      nullable: true
+PhotoAssetCreate:
+  type: object
+  additionalProperties: false
+  required:
+    - original_name
+    - expected_size
+    - declared_media_type
+  properties:
+    original_name:
+      type: string
+      minLength: 1
+      maxLength: 255
+    expected_size:
+      type: integer
+      format: int64
+      minimum: 1
+      maximum: 20971520
+    declared_media_type:
+      type: string
+      enum:
+        - image/jpeg
+        - image/png
+        - image/webp
+    client_sha256:
+      type: string
+      pattern: ^[0-9a-f]{64}$
+PhotoCreate:
+  type: object
+  additionalProperties: false
+  required:
+    - id
+  properties:
+    id: *id001
+    asset_id: *id002
+    taken_at_local: *id003
+    recorded_on: *id004
+    caption: *id005
+    sort_order: *id006
+    place_name: *id007
+    address: *id008
+    latitude: *id009
+    longitude: *id010
+    asset:
+      $ref: '#/PhotoAssetCreate'
+  oneOf:
+    - required:
+        - asset_id
+      not:
+        required:
+          - asset
+        properties:
+          asset: {}
+    - required:
+        - asset
+      not:
+        required:
+          - asset_id
+        properties:
+          asset_id: {}
+  description: asset_id 与内嵌 asset 二选一；引用无需等待 ready。recorded_on 缺省取拍摄日期，否则旅行时区今天。
+PhotoPatch:
+  type: object
+  additionalProperties: false
+  minProperties: 1
+  properties:
+    asset_id: *id002
+    taken_at_local: *id003
+    recorded_on: *id004
+    caption: *id005
+    sort_order: *id006
+    place_name: *id007
+    address: *id008
+    latitude: *id009
+    longitude: *id010
+  description: 提交 taken_at_local 且未提交 recorded_on 时，同时派生日期；清空拍摄时刻时保持原分组日期。经纬度必须成对。
+PhotoWriteResult:
+  type: object
+  description: 写操作的统一响应（接口设计 1.4）；data 为 primary 的当前规范资源
+  x-go-type: album.WriteResult
+  x-go-type-import:
+    path: tripfolio/server/internal/modules/travel/album
+  required:
+    - operation_id
+    - primary
+    - affected
+    - commit_cursor
+    - warnings
+    - replayed
+    - data
+    - upload_authorization
+  properties:
+    operation_id:
+      type: string
+      format: uuid
+    primary:
+      type: object
+      nullable: true
+      allOf:
+        - $ref: ./write.yaml#/EntityRef
+    affected:
+      type: array
+      items:
+        $ref: ./write.yaml#/EntityRef
+    commit_cursor:
+      type: string
+      nullable: true
+    warnings:
+      type: array
+      items:
+        type: string
+    replayed:
+      type: boolean
+    data:
+      nullable: true
+      allOf:
+        - $ref: '#/Photo'
+      type: object
+    upload_authorization:
+      nullable: true
+      allOf:
+        - $ref: ./asset.yaml#/UploadAuthorization
+      type: object
+PhotoWriteResponse:
+  type: object
+  required:
+    - data
+  properties:
+    data:
+      $ref: '#/PhotoWriteResult'

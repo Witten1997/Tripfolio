@@ -1,0 +1,136 @@
+Document:
+  type: object
+  required:
+    - id
+    - trip_id
+    - title
+    - notes
+    - asset_id
+    - reservation_id
+    - version
+    - created_at
+    - updated_at
+    - deleted_at
+  properties:
+    id: &id001
+      type: string
+      format: uuid
+    trip_id: *id001
+    title: &id002
+      type: string
+      minLength: 1
+      maxLength: 200
+    notes: &id003
+      type: string
+      maxLength: 4000
+    asset_id: &id004
+      type: string
+      format: uuid
+    reservation_id: &id005
+      type: string
+      format: uuid
+      nullable: true
+    version:
+      $ref: ./write.yaml#/Version
+    created_at:
+      $ref: ./write.yaml#/Instant
+    updated_at:
+      $ref: ./write.yaml#/Instant
+    deleted_at:
+      type: string
+      format: date-time
+      nullable: true
+  x-go-type: document.Resource
+  x-go-type-import:
+    path: tripfolio/server/internal/modules/travel/document
+DocumentResponse:
+  type: object
+  required:
+    - data
+  properties:
+    data:
+      $ref: '#/Document'
+DocumentPage:
+  type: object
+  description: created_at、id 均降序
+  required:
+    - items
+    - next_cursor
+  properties:
+    items:
+      type: array
+      items:
+        $ref: '#/Document'
+    next_cursor:
+      type: string
+      nullable: true
+DocumentCreate:
+  type: object
+  additionalProperties: false
+  required:
+    - id
+    - title
+    - asset_id
+  properties:
+    id: *id001
+    title: *id002
+    notes: *id003
+    asset_id: *id004
+    reservation_id: *id005
+DocumentPatch:
+  type: object
+  additionalProperties: false
+  minProperties: 1
+  properties:
+    title: *id002
+    notes: *id003
+    asset_id: *id004
+    reservation_id: *id005
+DocumentWriteResult:
+  type: object
+  description: 写操作的统一响应（接口设计 1.4）；data 为 primary 的当前规范资源
+  x-go-type: write.Result
+  x-go-type-import:
+    path: tripfolio/server/internal/foundation/write
+  required:
+    - operation_id
+    - primary
+    - affected
+    - commit_cursor
+    - warnings
+    - replayed
+    - data
+  properties:
+    operation_id:
+      type: string
+      format: uuid
+    primary:
+      type: object
+      nullable: true
+      allOf:
+        - $ref: ./write.yaml#/EntityRef
+    affected:
+      type: array
+      items:
+        $ref: ./write.yaml#/EntityRef
+    commit_cursor:
+      type: string
+      nullable: true
+    warnings:
+      type: array
+      items:
+        type: string
+    replayed:
+      type: boolean
+    data:
+      nullable: true
+      allOf:
+        - $ref: '#/Document'
+      type: object
+DocumentWriteResponse:
+  type: object
+  required:
+    - data
+  properties:
+    data:
+      $ref: '#/DocumentWriteResult'

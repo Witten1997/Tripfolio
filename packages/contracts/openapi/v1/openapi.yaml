@@ -42,6 +42,18 @@ tags:
 security:
   - bearerAuth: []
 paths:
+  /trips/{trip_id}/photos:
+    $ref: ./paths/photos.yaml#/collection
+  /trips/{trip_id}/photos/{photo_id}:
+    $ref: ./paths/photos.yaml#/item
+  /trips/{trip_id}/documents:
+    $ref: ./paths/documents.yaml#/collection
+  /trips/{trip_id}/documents/{document_id}:
+    $ref: ./paths/documents.yaml#/item
+  /trips/{trip_id}/reservations:
+    $ref: ./paths/reservations.yaml#/collection
+  /trips/{trip_id}/reservations/{reservation_id}:
+    $ref: ./paths/reservations.yaml#/item
   /dashboard:
     $ref: ./paths/dashboard.yaml
   /geo/reverse-geocode:
@@ -490,6 +502,50 @@ components:
       $ref: ./schemas/share.yaml#/PublicRoutes
     PublicRoutesResponse:
       $ref: ./schemas/share.yaml#/PublicRoutesResponse
+    Reservation:
+      $ref: ./schemas/reservation.yaml#/Reservation
+    ReservationResponse:
+      $ref: ./schemas/reservation.yaml#/ReservationResponse
+    ReservationPage:
+      $ref: ./schemas/reservation.yaml#/ReservationPage
+    ReservationCreate:
+      $ref: ./schemas/reservation.yaml#/ReservationCreate
+    ReservationPatch:
+      $ref: ./schemas/reservation.yaml#/ReservationPatch
+    ReservationWriteResult:
+      $ref: ./schemas/reservation.yaml#/ReservationWriteResult
+    ReservationWriteResponse:
+      $ref: ./schemas/reservation.yaml#/ReservationWriteResponse
+    Document:
+      $ref: ./schemas/document.yaml#/Document
+    DocumentResponse:
+      $ref: ./schemas/document.yaml#/DocumentResponse
+    DocumentPage:
+      $ref: ./schemas/document.yaml#/DocumentPage
+    DocumentCreate:
+      $ref: ./schemas/document.yaml#/DocumentCreate
+    DocumentPatch:
+      $ref: ./schemas/document.yaml#/DocumentPatch
+    DocumentWriteResult:
+      $ref: ./schemas/document.yaml#/DocumentWriteResult
+    DocumentWriteResponse:
+      $ref: ./schemas/document.yaml#/DocumentWriteResponse
+    Photo:
+      $ref: ./schemas/photo.yaml#/Photo
+    PhotoResponse:
+      $ref: ./schemas/photo.yaml#/PhotoResponse
+    PhotoPage:
+      $ref: ./schemas/photo.yaml#/PhotoPage
+    PhotoAssetCreate:
+      $ref: ./schemas/photo.yaml#/PhotoAssetCreate
+    PhotoCreate:
+      $ref: ./schemas/photo.yaml#/PhotoCreate
+    PhotoPatch:
+      $ref: ./schemas/photo.yaml#/PhotoPatch
+    PhotoWriteResult:
+      $ref: ./schemas/photo.yaml#/PhotoWriteResult
+    PhotoWriteResponse:
+      $ref: ./schemas/photo.yaml#/PhotoWriteResponse
   responses:
     BadRequest:
       description: 请求无法解析、含未知字段或游标无效（MALFORMED_REQUEST、INVALID_CURSOR）
