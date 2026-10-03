@@ -112,6 +112,8 @@ type DeletionJobPage struct {
 
 func auditAction(value string) string {
 	switch value {
+	case "backup.settings.read", "backup.settings.update", "backup.request", "backup.retry", "backup.list", "backup.test", "backup.test.result", "backup.scheduled", "backup.started", "backup.completed", "backup.failed", "backup.prune.request", "backup.pruned":
+		return value
 	case "trip.edit", "trip.archive", "trip.trash", "trip.restore", "trip.purge", "trip.retry", "trip.purge.start", "trip.purge.complete", "trip.purge.failed", "trip.invalid", "login", "login.rate_limited", "authentication", "request.invalid", "request.origin", "request.csrf",
 		"session.current", "session.list", "session.revoke", "reauthenticate", "reauthenticate.rate_limited",
 		"principal.grant", "principal.revoke", "setup.initialize", "overview.read", "user.list", "user.read", "trip.list", "trip.read",
@@ -155,7 +157,7 @@ func (s *Service) Audits(ctx context.Context, sess Session, f AuditFilter, info 
 		ids = append(ids, entry.ID.String())
 		entry.Action = auditAction(entry.Action)
 		switch entry.ResourceType {
-		case "", "account", "trip", "admin_session", "admin_principal", "admin_audit", "job", "deletion_job":
+		case "", "account", "trip", "admin_session", "admin_principal", "admin_audit", "job", "deletion_job", "database_backup":
 		default:
 			entry.ResourceType = "unknown"
 		}
@@ -251,7 +253,7 @@ func (s *Service) Jobs(ctx context.Context, sess Session, f JobFilter, info Requ
 		job := &out.Data[i]
 		ids = append(ids, job.ID)
 		switch job.Kind {
-		case "ping", "trip_purge", "asset_verify", "route_recalculate":
+		case "ping", "trip_purge", "asset_verify", "route_recalculate", "database_backup", "database_backup_schedule":
 		default:
 			job.Kind = "unknown"
 		}

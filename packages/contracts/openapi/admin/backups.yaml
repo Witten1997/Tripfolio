@@ -1,0 +1,193 @@
+SettingsPath:
+  get:
+    tags: [admin-operations]
+    operationId: adminBackupSettings
+    summary: 查看备份设置，密码只返回是否已设置
+    responses:
+      '200':
+        description: 当前设置
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [data]
+              properties:
+                data: { $ref: '#/BackupSettings' }
+      default: { $ref: './openapi.yaml#/components/responses/Problem' }
+  put:
+    tags: [admin-operations]
+    operationId: adminUpdateBackupSettings
+    summary: 保存备份设置，需近期密码复验
+    parameters:
+      - $ref: './openapi.yaml#/components/parameters/CSRF'
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/BackupUpdate' }
+    responses:
+      '200':
+        description: 已保存
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [data]
+              properties:
+                data: { $ref: '#/BackupSettings' }
+      default: { $ref: './openapi.yaml#/components/responses/Problem' }
+ProbePath:
+  post:
+    tags: [admin-operations]
+    operationId: adminTestBackupStorage
+    summary: 检查已保存 WebDAV 的创建、读写、校验及删除能力
+    parameters:
+      - $ref: './openapi.yaml#/components/parameters/CSRF'
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/BackupAction' }
+    responses:
+      '204': { description: WebDAV 检查通过 }
+      default: { $ref: './openapi.yaml#/components/responses/Problem' }
+RunsPath:
+  get:
+    tags: [admin-operations]
+    operationId: adminBackupRuns
+    summary: 分页查询备份记录
+    parameters:
+      - name: page
+        in: query
+        schema: { type: integer, minimum: 1, maximum: 10000, default: 1 }
+    responses:
+      '200':
+        description: 备份记录
+        content:
+          application/json:
+            schema: { $ref: '#/BackupPage' }
+      default: { $ref: './openapi.yaml#/components/responses/Problem' }
+  post:
+    tags: [admin-operations]
+    operationId: adminRequestBackup
+    summary: 请求立即备份，需近期密码复验
+    parameters:
+      - $ref: './openapi.yaml#/components/parameters/CSRF'
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/BackupAction' }
+    responses:
+      '202':
+        description: 备份已入队
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [data]
+              properties:
+                data: { $ref: '#/BackupRun' }
+      default: { $ref: './openapi.yaml#/components/responses/Problem' }
+RetryPath:
+  post:
+    tags: [admin-operations]
+    operationId: adminRetryBackup
+    summary: 重试当前 WebDAV 目标中的失败备份
+    parameters:
+      - $ref: './openapi.yaml#/components/parameters/CSRF'
+      - name: backup_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/BackupAction' }
+    responses:
+      '202':
+        description: 重试已入队
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [data]
+              properties:
+                data: { $ref: '#/BackupRun' }
+      default: { $ref: './openapi.yaml#/components/responses/Problem' }
+BackupSettings:
+  type: object
+  required: [enabled, time, retain, url, username, password_set, version, next_at, ready, readiness]
+  properties:
+    enabled: { type: boolean }
+    time: { type: string }
+    retain: { type: integer }
+    url: { type: string }
+    username: { type: string }
+    password_set: { type: boolean }
+    version: { type: integer, format: int64 }
+    next_at: { type: string, format: date-time, nullable: true }
+    ready: { type: boolean }
+    readiness: { type: string }
+BackupUpdate:
+  type: object
+  additionalProperties: false
+  required: [enabled, time, retain, url, username, password, version, reason]
+  properties:
+    enabled: { type: boolean }
+    time: { type: string, pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$' }
+    retain: { type: integer, minimum: 1, maximum: 90 }
+    url: { type: string, maxLength: 2048 }
+    username: { type: string, maxLength: 256 }
+    password:
+      { type: string, maxLength: 2048, description: 留空保留已有密码；更换目标或用户名时必填 }
+    version: { type: integer, format: int64, minimum: 1 }
+    reason: { type: string, minLength: 1, maxLength: 500 }
+BackupAction:
+  type: object
+  additionalProperties: false
+  required: [reason]
+  properties:
+    reason: { type: string, minLength: 1, maxLength: 500 }
+BackupRun:
+  type: object
+  required:
+    [
+      id,
+      trigger,
+      state,
+      created_at,
+      started_at,
+      snapshot_at,
+      finished_at,
+      size_bytes,
+      sha256,
+      error_code,
+      cleanup_error,
+      remote_deleted_at,
+    ]
+  properties:
+    id: { type: string, format: uuid }
+    trigger: { type: string, enum: [manual, scheduled] }
+    state:
+      { type: string, enum: [queued, running, uploading, verifying, retrying, succeeded, failed] }
+    created_at: { type: string, format: date-time }
+    started_at: { type: string, format: date-time, nullable: true }
+    snapshot_at: { type: string, format: date-time, nullable: true }
+    finished_at: { type: string, format: date-time, nullable: true }
+    size_bytes: { type: integer, format: int64 }
+    sha256: { type: string }
+    error_code: { type: string }
+    cleanup_error: { type: string }
+    remote_deleted_at: { type: string, format: date-time, nullable: true }
+BackupPage:
+  type: object
+  required: [data, total, page, page_size]
+  properties:
+    data:
+      type: array
+      items: { $ref: '#/BackupRun' }
+    total: { type: integer, format: int64 }
+    page: { type: integer }
+    page_size: { type: integer }

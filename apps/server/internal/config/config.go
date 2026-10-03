@@ -57,6 +57,7 @@ func (c GeoConfig) Configured() bool { return c.AmapKey != "" }
 
 // Config 是 API、worker 与 migrate 共用的运行配置。
 type Config struct {
+	Backup BackupConfig
 	// Env 为 dev、test 或 prod，只影响日志与调试行为，不改变业务规则。
 	Env string
 	// HTTPAddr 是 API 监听地址，例如 ":8080"。
@@ -127,6 +128,11 @@ func Load(getenv func(string) string) (Config, error) {
 		errs = append(errs, err)
 	} else {
 		cfg.AdminPath = path
+	}
+	if backup, err := loadBackup(get); err != nil {
+		errs = append(errs, err)
+	} else {
+		cfg.Backup = backup
 	}
 
 	switch cfg.Env {

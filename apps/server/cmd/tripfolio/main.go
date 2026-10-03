@@ -38,6 +38,12 @@ func run(args []string) int {
 	}
 
 	switch command {
+	case "backup":
+		if err := bootstrap.RunBackupCLI(rest, os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		return 0
 	case "help", "-h", "--help":
 		usage(os.Stdout)
 		return 0
@@ -155,6 +161,8 @@ func usage(w io.Writer) {
   tripfolio migrate down             回退最近一次业务迁移（仅开发环境）
   tripfolio healthcheck              请求本机 /health/ready，供容器健康检查使用
   tripfolio version                  打印版本
+  tripfolio backup keygen            生成备份加密密钥（单独保管）
+  tripfolio backup decrypt --input 文件.dump.age --output 文件.dump   离线解密备份
   tripfolio admin grant --email 邮箱 --reason 原因   授予现有账号超级管理员资格
   tripfolio admin revoke --email 邮箱 --reason 原因  撤销资格（保留最后一个可用超级管理员）
 

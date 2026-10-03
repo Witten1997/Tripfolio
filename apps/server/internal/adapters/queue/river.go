@@ -4,6 +4,8 @@ package queue
 
 import (
 	"log/slog"
+	"time"
+	"tripfolio/server/internal/modules/backup"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -24,8 +26,12 @@ func NewWorkerClient(pool *pgxpool.Pool, logger *slog.Logger, workers *river.Wor
 	return river.NewClient(riverpgxv5.New(pool), &river.Config{
 		Logger: logger,
 		Queues: map[string]river.QueueConfig{
+			"backup":           {MaxWorkers: 1},
 			river.QueueDefault: {MaxWorkers: maxWorkers},
 		},
 		Workers: workers,
+		PeriodicJobs: []*river.PeriodicJob{river.NewPeriodicJob(river.PeriodicInterval(time.Minute), func() (river.JobArgs, *river.InsertOpts) {
+			return backup.TickArgs{}, &river.InsertOpts{UniqueOpts: river.UniqueOpts{ByPeriod: time.Minute}, MaxAttempts: 3}
+		}, &river.PeriodicJobOpts{RunOnStart: true})},
 	})
 }

@@ -60,11 +60,13 @@ COPY --from=web /src/apps/admin/dist ./internal/web/dist/wahaha
 RUN go build -ldflags="-s -w -X main.version=${VERSION}" -o /out/tripfolio ./cmd/tripfolio
 
 # ---------- 阶段 3：运行镜像 ----------
-FROM alpine:3.22
-RUN apk add --no-cache ca-certificates tzdata \
+FROM alpine:3.23
+RUN apk add --no-cache ca-certificates tzdata postgresql18-client \
  && addgroup -S app && adduser -S -G app -u 10001 app
 
 COPY --from=build /out/tripfolio /app/tripfolio
+RUN mkdir -p /var/lib/tripfolio/backups && chown app:app /var/lib/tripfolio/backups && chmod 700 /var/lib/tripfolio/backups
+ENV TRIPFOLIO_BACKUP_DIR=/var/lib/tripfolio/backups
 USER app
 WORKDIR /app
 

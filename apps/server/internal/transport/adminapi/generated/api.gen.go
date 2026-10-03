@@ -123,6 +123,57 @@ func (e AuditEntryResult) Valid() bool {
 	}
 }
 
+// Defines values for BackupRunState.
+const (
+	BackupRunStateFailed    BackupRunState = "failed"
+	BackupRunStateQueued    BackupRunState = "queued"
+	BackupRunStateRetrying  BackupRunState = "retrying"
+	BackupRunStateRunning   BackupRunState = "running"
+	BackupRunStateSucceeded BackupRunState = "succeeded"
+	BackupRunStateUploading BackupRunState = "uploading"
+	BackupRunStateVerifying BackupRunState = "verifying"
+)
+
+// Valid indicates whether the value is a known member of the BackupRunState enum.
+func (e BackupRunState) Valid() bool {
+	switch e {
+	case BackupRunStateFailed:
+		return true
+	case BackupRunStateQueued:
+		return true
+	case BackupRunStateRetrying:
+		return true
+	case BackupRunStateRunning:
+		return true
+	case BackupRunStateSucceeded:
+		return true
+	case BackupRunStateUploading:
+		return true
+	case BackupRunStateVerifying:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for BackupRunTrigger.
+const (
+	Manual    BackupRunTrigger = "manual"
+	Scheduled BackupRunTrigger = "scheduled"
+)
+
+// Valid indicates whether the value is a known member of the BackupRunTrigger enum.
+func (e BackupRunTrigger) Valid() bool {
+	switch e {
+	case Manual:
+		return true
+	case Scheduled:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ComponentStatusName.
 const (
 	ComponentStatusNameApi         ComponentStatusName = "api"
@@ -639,6 +690,69 @@ type AuditPage struct {
 	Total    int64        `json:"total"`
 }
 
+// BackupAction defines model for BackupAction.
+type BackupAction struct {
+	Reason string `json:"reason"`
+}
+
+// BackupPage defines model for BackupPage.
+type BackupPage struct {
+	Data     []BackupRun `json:"data"`
+	Page     int         `json:"page"`
+	PageSize int         `json:"page_size"`
+	Total    int64       `json:"total"`
+}
+
+// BackupRun defines model for BackupRun.
+type BackupRun struct {
+	CleanupError    string                       `json:"cleanup_error"`
+	CreatedAt       time.Time                    `json:"created_at"`
+	ErrorCode       string                       `json:"error_code"`
+	FinishedAt      nullable.Nullable[time.Time] `json:"finished_at"`
+	Id              openapi_types.UUID           `json:"id"`
+	RemoteDeletedAt nullable.Nullable[time.Time] `json:"remote_deleted_at"`
+	Sha256          string                       `json:"sha256"`
+	SizeBytes       int64                        `json:"size_bytes"`
+	SnapshotAt      nullable.Nullable[time.Time] `json:"snapshot_at"`
+	StartedAt       nullable.Nullable[time.Time] `json:"started_at"`
+	State           BackupRunState               `json:"state"`
+	Trigger         BackupRunTrigger             `json:"trigger"`
+}
+
+// BackupRunState defines model for BackupRun.State.
+type BackupRunState string
+
+// BackupRunTrigger defines model for BackupRun.Trigger.
+type BackupRunTrigger string
+
+// BackupSettings defines model for BackupSettings.
+type BackupSettings struct {
+	Enabled     bool                         `json:"enabled"`
+	NextAt      nullable.Nullable[time.Time] `json:"next_at"`
+	PasswordSet bool                         `json:"password_set"`
+	Readiness   string                       `json:"readiness"`
+	Ready       bool                         `json:"ready"`
+	Retain      int                          `json:"retain"`
+	Time        string                       `json:"time"`
+	Url         string                       `json:"url"`
+	Username    string                       `json:"username"`
+	Version     int64                        `json:"version"`
+}
+
+// BackupUpdate defines model for BackupUpdate.
+type BackupUpdate struct {
+	Enabled bool `json:"enabled"`
+
+	// Password 留空保留已有密码；更换目标或用户名时必填
+	Password string `json:"password"`
+	Reason   string `json:"reason"`
+	Retain   int    `json:"retain"`
+	Time     string `json:"time"`
+	Url      string `json:"url"`
+	Username string `json:"username"`
+	Version  int64  `json:"version"`
+}
+
 // ComponentStatus defines model for ComponentStatus.
 type ComponentStatus struct {
 	Name    ComponentStatusName   `json:"name"`
@@ -951,6 +1065,35 @@ type AdminAuditsParams struct {
 // AdminAuditsParamsResult defines parameters for AdminAudits.
 type AdminAuditsParamsResult string
 
+// AdminUpdateBackupSettingsParams defines parameters for AdminUpdateBackupSettings.
+type AdminUpdateBackupSettingsParams struct {
+	// XAdminCSRF 登录或当前身份响应返回的后台请求防伪令牌
+	XAdminCSRF CSRF `json:"X-Admin-CSRF"`
+}
+
+// AdminTestBackupStorageParams defines parameters for AdminTestBackupStorage.
+type AdminTestBackupStorageParams struct {
+	// XAdminCSRF 登录或当前身份响应返回的后台请求防伪令牌
+	XAdminCSRF CSRF `json:"X-Admin-CSRF"`
+}
+
+// AdminBackupRunsParams defines parameters for AdminBackupRuns.
+type AdminBackupRunsParams struct {
+	Page *int `form:"page,omitempty" json:"page,omitempty"`
+}
+
+// AdminRequestBackupParams defines parameters for AdminRequestBackup.
+type AdminRequestBackupParams struct {
+	// XAdminCSRF 登录或当前身份响应返回的后台请求防伪令牌
+	XAdminCSRF CSRF `json:"X-Admin-CSRF"`
+}
+
+// AdminRetryBackupParams defines parameters for AdminRetryBackup.
+type AdminRetryBackupParams struct {
+	// XAdminCSRF 登录或当前身份响应返回的后台请求防伪令牌
+	XAdminCSRF CSRF `json:"X-Admin-CSRF"`
+}
+
 // AdminDeletionJobsParams defines parameters for AdminDeletionJobs.
 type AdminDeletionJobsParams struct {
 	State    *AdminDeletionJobsParamsState `form:"state,omitempty" json:"state,omitempty"`
@@ -1066,6 +1209,18 @@ type AdminUnbanUserParams struct {
 	XAdminCSRF CSRF `json:"X-Admin-CSRF"`
 }
 
+// AdminUpdateBackupSettingsJSONRequestBody defines body for AdminUpdateBackupSettings for application/json ContentType.
+type AdminUpdateBackupSettingsJSONRequestBody = BackupUpdate
+
+// AdminTestBackupStorageJSONRequestBody defines body for AdminTestBackupStorage for application/json ContentType.
+type AdminTestBackupStorageJSONRequestBody = BackupAction
+
+// AdminRequestBackupJSONRequestBody defines body for AdminRequestBackup for application/json ContentType.
+type AdminRequestBackupJSONRequestBody = BackupAction
+
+// AdminRetryBackupJSONRequestBody defines body for AdminRetryBackup for application/json ContentType.
+type AdminRetryBackupJSONRequestBody = BackupAction
+
 // AdminLoginJSONRequestBody defines body for AdminLogin for application/json ContentType.
 type AdminLoginJSONRequestBody = LoginRequest
 
@@ -1095,6 +1250,24 @@ type ServerInterface interface {
 	// AdminAudits 按操作者、所属账号、操作、结果和北京时间日期查询审计
 	// (GET /audits)
 	AdminAudits(w http.ResponseWriter, r *http.Request, params AdminAuditsParams)
+	// AdminBackupSettings 查看备份设置，密码只返回是否已设置
+	// (GET /backup-settings)
+	AdminBackupSettings(w http.ResponseWriter, r *http.Request)
+	// AdminUpdateBackupSettings 保存备份设置，需近期密码复验
+	// (PUT /backup-settings)
+	AdminUpdateBackupSettings(w http.ResponseWriter, r *http.Request, params AdminUpdateBackupSettingsParams)
+	// AdminTestBackupStorage 检查已保存 WebDAV 的创建、读写、校验及删除能力
+	// (POST /backup-settings/test)
+	AdminTestBackupStorage(w http.ResponseWriter, r *http.Request, params AdminTestBackupStorageParams)
+	// AdminBackupRuns 分页查询备份记录
+	// (GET /backups)
+	AdminBackupRuns(w http.ResponseWriter, r *http.Request, params AdminBackupRunsParams)
+	// AdminRequestBackup 请求立即备份，需近期密码复验
+	// (POST /backups)
+	AdminRequestBackup(w http.ResponseWriter, r *http.Request, params AdminRequestBackupParams)
+	// AdminRetryBackup 重试当前 WebDAV 目标中的失败备份
+	// (POST /backups/{backup_id}/retry)
+	AdminRetryBackup(w http.ResponseWriter, r *http.Request, backupId openapi_types.UUID, params AdminRetryBackupParams)
 	// AdminDeletionJobs 分页查询清理任务进度，不提供触发或重试操作
 	// (GET /deletion-jobs)
 	AdminDeletionJobs(w http.ResponseWriter, r *http.Request, params AdminDeletionJobsParams)
@@ -1170,6 +1343,42 @@ type Unimplemented struct{}
 // AdminAudits 按操作者、所属账号、操作、结果和北京时间日期查询审计
 // (GET /audits)
 func (_ Unimplemented) AdminAudits(w http.ResponseWriter, r *http.Request, params AdminAuditsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// AdminBackupSettings 查看备份设置，密码只返回是否已设置
+// (GET /backup-settings)
+func (_ Unimplemented) AdminBackupSettings(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// AdminUpdateBackupSettings 保存备份设置，需近期密码复验
+// (PUT /backup-settings)
+func (_ Unimplemented) AdminUpdateBackupSettings(w http.ResponseWriter, r *http.Request, params AdminUpdateBackupSettingsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// AdminTestBackupStorage 检查已保存 WebDAV 的创建、读写、校验及删除能力
+// (POST /backup-settings/test)
+func (_ Unimplemented) AdminTestBackupStorage(w http.ResponseWriter, r *http.Request, params AdminTestBackupStorageParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// AdminBackupRuns 分页查询备份记录
+// (GET /backups)
+func (_ Unimplemented) AdminBackupRuns(w http.ResponseWriter, r *http.Request, params AdminBackupRunsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// AdminRequestBackup 请求立即备份，需近期密码复验
+// (POST /backups)
+func (_ Unimplemented) AdminRequestBackup(w http.ResponseWriter, r *http.Request, params AdminRequestBackupParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// AdminRetryBackup 重试当前 WebDAV 目标中的失败备份
+// (POST /backups/{backup_id}/retry)
+func (_ Unimplemented) AdminRetryBackup(w http.ResponseWriter, r *http.Request, backupId openapi_types.UUID, params AdminRetryBackupParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -1442,6 +1651,242 @@ func (siw *ServerInterfaceWrapper) AdminAudits(w http.ResponseWriter, r *http.Re
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.AdminAudits(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AdminBackupSettings operation middleware
+func (siw *ServerInterfaceWrapper) AdminBackupSettings(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AdminBackupSettings(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AdminUpdateBackupSettings operation middleware
+func (siw *ServerInterfaceWrapper) AdminUpdateBackupSettings(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params AdminUpdateBackupSettingsParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-Admin-CSRF" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Admin-CSRF")]; found {
+		var XAdminCSRF CSRF
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-Admin-CSRF", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Admin-CSRF", valueList[0], &XAdminCSRF, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-Admin-CSRF", Err: err})
+			return
+		}
+
+		params.XAdminCSRF = XAdminCSRF
+
+	} else {
+		err := fmt.Errorf("Header parameter X-Admin-CSRF is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-Admin-CSRF", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AdminUpdateBackupSettings(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AdminTestBackupStorage operation middleware
+func (siw *ServerInterfaceWrapper) AdminTestBackupStorage(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params AdminTestBackupStorageParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-Admin-CSRF" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Admin-CSRF")]; found {
+		var XAdminCSRF CSRF
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-Admin-CSRF", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Admin-CSRF", valueList[0], &XAdminCSRF, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-Admin-CSRF", Err: err})
+			return
+		}
+
+		params.XAdminCSRF = XAdminCSRF
+
+	} else {
+		err := fmt.Errorf("Header parameter X-Admin-CSRF is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-Admin-CSRF", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AdminTestBackupStorage(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AdminBackupRuns operation middleware
+func (siw *ServerInterfaceWrapper) AdminBackupRuns(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params AdminBackupRunsParams
+
+	// ------------- Optional query parameter "page" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "page", r.URL.Query(), &params.Page, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "page"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "page", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AdminBackupRuns(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AdminRequestBackup operation middleware
+func (siw *ServerInterfaceWrapper) AdminRequestBackup(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params AdminRequestBackupParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-Admin-CSRF" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Admin-CSRF")]; found {
+		var XAdminCSRF CSRF
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-Admin-CSRF", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Admin-CSRF", valueList[0], &XAdminCSRF, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-Admin-CSRF", Err: err})
+			return
+		}
+
+		params.XAdminCSRF = XAdminCSRF
+
+	} else {
+		err := fmt.Errorf("Header parameter X-Admin-CSRF is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-Admin-CSRF", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AdminRequestBackup(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AdminRetryBackup operation middleware
+func (siw *ServerInterfaceWrapper) AdminRetryBackup(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "backup_id" -------------
+	var backupId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "backup_id", chi.URLParam(r, "backup_id"), &backupId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "backup_id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params AdminRetryBackupParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-Admin-CSRF" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Admin-CSRF")]; found {
+		var XAdminCSRF CSRF
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-Admin-CSRF", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Admin-CSRF", valueList[0], &XAdminCSRF, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-Admin-CSRF", Err: err})
+			return
+		}
+
+		params.XAdminCSRF = XAdminCSRF
+
+	} else {
+		err := fmt.Errorf("Header parameter X-Admin-CSRF is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-Admin-CSRF", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AdminRetryBackup(w, r, backupId, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -2533,6 +2978,24 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		ErrorHandlerFunc:   options.ErrorHandlerFunc,
 	}
 
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/backup-settings", wrapper.AdminBackupSettings)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/backup-settings", wrapper.AdminUpdateBackupSettings)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/backup-settings/test", wrapper.AdminTestBackupStorage)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/backups", wrapper.AdminBackupRuns)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/backups", wrapper.AdminRequestBackup)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/backups/{backup_id}/retry", wrapper.AdminRetryBackup)
+	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/setup", wrapper.AdminSetupStatus)
 	})

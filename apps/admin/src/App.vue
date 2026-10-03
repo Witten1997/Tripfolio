@@ -11,6 +11,7 @@ import {
   Map,
   ScrollText,
   Activity,
+  DatabaseBackup,
 } from '@lucide/vue'
 import { ElMessage } from 'element-plus'
 import { identity, logout } from './api'
@@ -26,6 +27,7 @@ const titles: Record<string, string> = {
   trip: '旅行概况',
   audits: '审计中心',
   runtime: '运行状态',
+  backups: '数据库备份',
 }
 const pageTitle = computed(() => titles[String(route.name)] || '管理后台')
 watch(identity, (value) => {
@@ -75,6 +77,9 @@ async function signOut() {
         >
         <RouterLink to="/runtime" class="nav-item"
           ><Activity :size="18" aria-hidden="true" />运行状态</RouterLink
+        >
+        <RouterLink to="/backups" class="nav-item"
+          ><DatabaseBackup :size="18" aria-hidden="true" />数据库备份</RouterLink
         >
       </nav>
       <div class="sidebar-bottom">

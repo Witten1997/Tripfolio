@@ -21,6 +21,76 @@ export type paths = {
         patch?: never;
         trace?: never;
     };
+    "/backup-settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 查看备份设置，密码只返回是否已设置 */
+        get: operations["adminBackupSettings"];
+        /** 保存备份设置，需近期密码复验 */
+        put: operations["adminUpdateBackupSettings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/backup-settings/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 检查已保存 WebDAV 的创建、读写、校验及删除能力 */
+        post: operations["adminTestBackupStorage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/backups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 分页查询备份记录 */
+        get: operations["adminBackupRuns"];
+        put?: never;
+        /** 请求立即备份，需近期密码复验 */
+        post: operations["adminRequestBackup"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/backups/{backup_id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 重试当前 WebDAV 目标中的失败备份 */
+        post: operations["adminRetryBackup"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/deletion-jobs": {
         parameters: {
             query?: never;
@@ -515,6 +585,65 @@ export type components = {
             /** Format: int64 */
             total: number;
         };
+        BackupAction: {
+            reason: string;
+        };
+        BackupPage: {
+            data: components["schemas"]["BackupRun"][];
+            page: number;
+            page_size: number;
+            /** Format: int64 */
+            total: number;
+        };
+        BackupRun: {
+            cleanup_error: string;
+            /** Format: date-time */
+            created_at: string;
+            error_code: string;
+            /** Format: date-time */
+            finished_at: string | null;
+            /** Format: uuid */
+            id: string;
+            /** Format: date-time */
+            remote_deleted_at: string | null;
+            sha256: string;
+            /** Format: int64 */
+            size_bytes: number;
+            /** Format: date-time */
+            snapshot_at: string | null;
+            /** Format: date-time */
+            started_at: string | null;
+            /** @enum {string} */
+            state: "queued" | "running" | "uploading" | "verifying" | "retrying" | "succeeded" | "failed";
+            /** @enum {string} */
+            trigger: "manual" | "scheduled";
+        };
+        BackupSettings: {
+            enabled: boolean;
+            /** Format: date-time */
+            next_at: string | null;
+            password_set: boolean;
+            readiness: string;
+            ready: boolean;
+            retain: number;
+            time: string;
+            url: string;
+            username: string;
+            /** Format: int64 */
+            version: number;
+        };
+        BackupUpdate: {
+            enabled: boolean;
+            /** @description 留空保留已有密码；更换目标或用户名时必填 */
+            password: string;
+            reason: string;
+            retain: number;
+            time: string;
+            url: string;
+            username: string;
+            /** Format: int64 */
+            version: number;
+        };
         ComponentStatus: {
             /** @enum {string} */
             name: "api" | "database" | "worker" | "object_store" | "maps" | "mail" | "trip_purge";
@@ -827,6 +956,170 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AuditPage"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    adminBackupSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 当前设置 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["BackupSettings"];
+                    };
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    adminUpdateBackupSettings: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 登录或当前身份响应返回的后台请求防伪令牌 */
+                "X-Admin-CSRF": components["parameters"]["CSRF"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BackupUpdate"];
+            };
+        };
+        responses: {
+            /** @description 已保存 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["BackupSettings"];
+                    };
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    adminTestBackupStorage: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 登录或当前身份响应返回的后台请求防伪令牌 */
+                "X-Admin-CSRF": components["parameters"]["CSRF"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BackupAction"];
+            };
+        };
+        responses: {
+            /** @description WebDAV 检查通过 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    adminBackupRuns: {
+        parameters: {
+            query?: {
+                page?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 备份记录 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackupPage"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    adminRequestBackup: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 登录或当前身份响应返回的后台请求防伪令牌 */
+                "X-Admin-CSRF": components["parameters"]["CSRF"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BackupAction"];
+            };
+        };
+        responses: {
+            /** @description 备份已入队 */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["BackupRun"];
+                    };
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    adminRetryBackup: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 登录或当前身份响应返回的后台请求防伪令牌 */
+                "X-Admin-CSRF": components["parameters"]["CSRF"];
+            };
+            path: {
+                backup_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BackupAction"];
+            };
+        };
+        responses: {
+            /** @description 重试已入队 */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["BackupRun"];
+                    };
                 };
             };
             default: components["responses"]["Problem"];

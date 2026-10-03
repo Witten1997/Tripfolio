@@ -24,6 +24,14 @@ tags:
 security:
   - adminSession: []
 paths:
+  /backup-settings:
+    $ref: ./backups.yaml#/SettingsPath
+  /backup-settings/test:
+    $ref: ./backups.yaml#/ProbePath
+  /backups:
+    $ref: ./backups.yaml#/RunsPath
+  /backups/{backup_id}/retry:
+    $ref: ./backups.yaml#/RetryPath
   /setup:
     $ref: ./setup.yaml#/SetupPath
   /trips/{trip_id}/lifecycle:
@@ -267,6 +275,14 @@ components:
           schema:
             $ref: ../v1/schemas/common.yaml#/Problem
   schemas:
+    BackupSettings:
+      $ref: ./backups.yaml#/BackupSettings
+    BackupUpdate:
+      $ref: ./backups.yaml#/BackupUpdate
+    BackupRun:
+      $ref: ./backups.yaml#/BackupRun
+    BackupPage:
+      $ref: ./backups.yaml#/BackupPage
     SharingRestriction:
       $ref: ./controls.yaml#/SharingRestriction
     SharingControl:

@@ -15,9 +15,12 @@ import (
 	"tripfolio/server/internal/foundation/apperr"
 	"tripfolio/server/internal/foundation/clock"
 	"tripfolio/server/internal/modules/account"
+	"tripfolio/server/internal/modules/backup"
 )
 
 type Service struct {
+	backups       BackupStore
+	backupRunner  *backup.Service
 	tripLifecycle TripLifecycleStore
 	store         Store
 	hasher        *security.PasswordHasher

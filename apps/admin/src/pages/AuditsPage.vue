@@ -23,6 +23,19 @@ const page = ref(1)
 const asOf = ref('')
 let request = 0
 const actions: Record<string, string> = {
+  'backup.settings.read': '查看备份设置',
+  'backup.settings.update': '修改备份设置',
+  'backup.request': '手动备份',
+  'backup.retry': '重试备份',
+  'backup.list': '查询备份记录',
+  'backup.test': '测试 WebDAV',
+  'backup.test.result': 'WebDAV 测试结果',
+  'backup.scheduled': '定时备份入队',
+  'backup.started': '备份开始',
+  'backup.completed': '备份完成',
+  'backup.failed': '备份失败',
+  'backup.pruned': '清理过期备份',
+  'backup.prune.request': '开始清理过期备份',
   login: '后台登录',
   'login.rate_limited': '登录限流',
   authentication: '身份验证',
@@ -64,6 +77,7 @@ const actions: Record<string, string> = {
 }
 const results: Record<string, string> = { success: '成功', failure: '失败', denied: '已拒绝' }
 const resources: Record<string, string> = {
+  database_backup: '数据库备份',
   account: '账号',
   trip: '旅行',
   admin_session: '后台会话',

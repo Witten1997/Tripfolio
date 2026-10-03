@@ -27,6 +27,7 @@ import (
 	"tripfolio/server/internal/modules/account"
 	"tripfolio/server/internal/modules/admin"
 	"tripfolio/server/internal/modules/assets"
+	"tripfolio/server/internal/modules/backup"
 	"tripfolio/server/internal/modules/finance"
 	geoservice "tripfolio/server/internal/modules/geo"
 	"tripfolio/server/internal/modules/metadata"
@@ -42,6 +43,7 @@ import (
 
 // Services 是 API 用到的全部业务服务；测试也用它在内存或真实数据库上组装。
 type Services struct {
+	Backups    *backup.Service
 	TripPurger *trip.Purger
 	Admin      *admin.Service
 	Dashboard  *dashboard.Service
@@ -150,9 +152,16 @@ func BuildServices(pool *pgxpool.Pool, cfg config.Config, logger *slog.Logger, m
 	if objects != nil {
 		purgeObjects = objects
 	}
+	backupStore := adminpg.NewBackupStore(pool, insertOnly)
+	backupURL := cfg.Backup.DatabaseURL
+	if backupURL == "" {
+		backupURL = cfg.DatabaseURL
+	}
+	backups := backup.New(backupStore, backup.Options{Key: cfg.Backup.Key, DatabaseURL: backupURL, Directory: cfg.Backup.Directory, MaxBytes: cfg.Backup.MaxBytes, Timeout: cfg.Backup.Timeout, AllowedHosts: cfg.Backup.AllowedHosts})
 	return Services{
+		Backups:    backups,
 		TripPurger: trip.NewPurger(adminpg.NewTripPurgeStore(pool), purgeObjects),
-		Admin:      admin.NewService(adminpg.NewStore(pool), hasher, clk).WithTripLifecycle(adminpg.NewTripLifecycleStore(pool, insertOnly, clk)),
+		Admin:      admin.NewService(adminpg.NewStore(pool), hasher, clk).WithTripLifecycle(adminpg.NewTripLifecycleStore(pool, insertOnly, clk)).WithBackups(backupStore, backups),
 		Dashboard:  dashboardSvc,
 		Identity:   identity, Sessions: sessions, Profile: profile, Categories: categories,
 		Trips: trips, Itinerary: itineraries, RoutePlans: routePlans, Packing: packings, Todos: todos, Members: members, Ledger: ledger, Statistics: statistics, Settlement: settlement,

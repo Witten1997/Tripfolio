@@ -43,6 +43,8 @@ const states: Record<string, string> = {
   failed: '失败',
 }
 const kinds: Record<string, string> = {
+  database_backup: '数据库备份',
+  database_backup_schedule: '备份计划检查',
   ping: '任务链路检查',
   trip_purge: '旅行清理',
   asset_verify: '文件校验',

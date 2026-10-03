@@ -239,7 +239,7 @@ func migrateBeforeServe(ctx context.Context, cfg config.Config, pool *pgxpool.Po
 
 func startWorker(ctx context.Context, pool *pgxpool.Pool, cfg config.Config, services Services, logger *slog.Logger) (*river.Client[pgx.Tx], error) {
 	workers := river.NewWorkers()
-	deps := riverjobs.Deps{Logger: logger, RouteRecalculator: services.RoutePlans}
+	deps := riverjobs.Deps{Logger: logger, RouteRecalculator: services.RoutePlans, Backups: services.Backups}
 	if services.TripPurger != nil {
 		deps.TripPurger = services.TripPurger
 	}
