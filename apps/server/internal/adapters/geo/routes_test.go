@@ -171,6 +171,10 @@ func TestLiveAmapSixPointRoute(t *testing.T) {
 		{Latitude: 39.94, Longitude: 116.387},
 	}
 	for i := 1; i < len(points); i++ {
+		// 真实服务有 QPS 配额，串行请求也需留出间隔；上游错误仍直接失败。
+		if i > 1 {
+			time.Sleep(time.Second)
+		}
 		route, err := client.CalculateRoute(context.Background(), "live-six", points[i-1], points[i], geodata.Walking)
 		if err != nil {
 			t.Fatalf("第 %d 段: %v", i, err)
