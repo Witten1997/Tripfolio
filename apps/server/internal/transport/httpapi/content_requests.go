@@ -35,10 +35,19 @@ func validateContentObject(body []byte, rule contentBodyRule) error {
 	for key, value := range obj {
 		nullable, ok := rule.fields[key]
 		if !ok {
-			return apperr.Validation(apperr.Field(key, "UNKNOWN_FIELD", "不允许的字段"))
+			switch key {
+			case "id", "account_id", "trip_id", "version", "created_at", "updated_at", "deleted_at":
+				return apperr.Validation(apperr.Field(key, "READ_ONLY", "字段不可写入"))
+			default:
+				return apperr.BadRequest("MALFORMED_REQUEST", "正文包含未知字段")
+			}
 		}
 		if !nullable && bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
 			return apperr.Validation(apperr.Field(key, "NOT_NULL", "字段不可为空"))
+		}
+		var text string
+		if json.Unmarshal(value, &text) == nil && strings.ContainsRune(text, '\x00') {
+			return apperr.Validation(apperr.Field(key, "INVALID", "文本不能包含空字符"))
 		}
 	}
 	for _, key := range rule.required {

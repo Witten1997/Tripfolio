@@ -64,7 +64,7 @@ func Text(field string, value *string, min, max int) error {
 		return nil
 	}
 	n := utf8.RuneCountInString(*value)
-	if !utf8.ValidString(*value) || n < min || n > max || (min > 0 && strings.TrimSpace(*value) == "") {
+	if !utf8.ValidString(*value) || strings.ContainsRune(*value, '\x00') || n < min || n > max || (min > 0 && strings.TrimSpace(*value) == "") {
 		return apperr.Validation(apperr.Field(field, "INVALID", "文本长度或内容无效"))
 	}
 	return nil
