@@ -16,6 +16,7 @@ import (
 	"tripfolio/server/internal/foundation/write"
 	"tripfolio/server/internal/modules/account"
 	"tripfolio/server/internal/modules/assets"
+	"tripfolio/server/internal/modules/deletion"
 	"tripfolio/server/internal/modules/finance"
 	"tripfolio/server/internal/modules/geo"
 	"tripfolio/server/internal/modules/travel/album"
@@ -35,6 +36,21 @@ import (
 	"github.com/oapi-codegen/runtime"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
+
+// Defines values for AccountDeletionRequestConfirm.
+const (
+	AccountDeletionRequestConfirmTrue AccountDeletionRequestConfirm = true
+)
+
+// Valid indicates whether the value is a known member of the AccountDeletionRequestConfirm enum.
+func (e AccountDeletionRequestConfirm) Valid() bool {
+	switch e {
+	case AccountDeletionRequestConfirmTrue:
+		return true
+	default:
+		return false
+	}
+}
 
 // Defines values for AssetScope.
 const (
@@ -744,6 +760,22 @@ func (e ListReservationsParamsKind) Valid() bool {
 // Account defines model for Account.
 type Account = account.AccountResource
 
+// AccountDeletionRequest defines model for AccountDeletionRequest.
+type AccountDeletionRequest struct {
+	Confirm AccountDeletionRequestConfirm `json:"confirm"`
+}
+
+// AccountDeletionRequestConfirm defines model for AccountDeletionRequest.Confirm.
+type AccountDeletionRequestConfirm bool
+
+// AccountDeletionResult defines model for AccountDeletionResult.
+type AccountDeletionResult = deletion.Result
+
+// AccountDeletionResultResponse defines model for AccountDeletionResultResponse.
+type AccountDeletionResultResponse struct {
+	Data AccountDeletionResult `json:"data"`
+}
+
 // AccountPatch 缺省字段保持原值；avatar_asset_id 显式 null 表示清空
 type AccountPatch struct {
 	AvatarAssetId   nullable.Nullable[openapi_types.UUID] `json:"avatar_asset_id,omitempty"`
@@ -1050,6 +1082,22 @@ type DashboardTrip struct {
 //
 // Example: 2026-10-01
 type Date = string
+
+// DeletionJob defines model for DeletionJob.
+type DeletionJob = deletion.Job
+
+// DeletionJobResponse defines model for DeletionJobResponse.
+type DeletionJobResponse struct {
+	Data DeletionJob `json:"data"`
+}
+
+// DeletionReceipt defines model for DeletionReceipt.
+type DeletionReceipt = deletion.Receipt
+
+// DeletionReceiptResponse defines model for DeletionReceiptResponse.
+type DeletionReceiptResponse struct {
+	Data DeletionReceipt `json:"data"`
+}
 
 // Document defines model for Document.
 type Document = document.Resource
@@ -2383,6 +2431,15 @@ type UpdateAccountParams struct {
 	IfMatch *IfMatch `json:"If-Match,omitempty"`
 }
 
+// RequestAccountDeletionParams defines parameters for RequestAccountDeletion.
+type RequestAccountDeletionParams struct {
+	// IdempotencyKey 写请求的操作编号（UUID）；相同成功操作重试复用同一键
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+
+	// IfMatch 客户端所基于的资源版本，形如 "7"（带引号）
+	IfMatch *IfMatch `json:"If-Match,omitempty"`
+}
+
 // CreateAssetParams defines parameters for CreateAsset.
 type CreateAssetParams struct {
 	// IdempotencyKey 写请求的操作编号（UUID）；相同成功操作重试复用同一键
@@ -2413,6 +2470,15 @@ type GetDashboardParams struct {
 	LocationAfter *string `form:"location_after,omitempty" json:"location_after,omitempty"`
 	DateFrom      *string `form:"date_from,omitempty" json:"date_from,omitempty"`
 	DateTo        *string `form:"date_to,omitempty" json:"date_to,omitempty"`
+}
+
+// RetryDeletionJobParams defines parameters for RetryDeletionJob.
+type RetryDeletionJobParams struct {
+	// IdempotencyKey 写请求的操作编号（UUID）；相同成功操作重试复用同一键
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+
+	// IfMatch 客户端所基于的资源版本，形如 "7"（带引号）
+	IfMatch *IfMatch `json:"If-Match,omitempty"`
 }
 
 // CreateExpenseCategoryParams defines parameters for CreateExpenseCategory.
@@ -2879,6 +2945,9 @@ type UpdateTodoParams struct {
 // UpdateAccountJSONRequestBody defines body for UpdateAccount for application/json ContentType.
 type UpdateAccountJSONRequestBody = AccountPatch
 
+// RequestAccountDeletionJSONRequestBody defines body for RequestAccountDeletion for application/json ContentType.
+type RequestAccountDeletionJSONRequestBody = AccountDeletionRequest
+
 // ChangePasswordJSONRequestBody defines body for ChangePassword for application/json ContentType.
 type ChangePasswordJSONRequestBody = ChangePasswordRequest
 
@@ -2908,6 +2977,9 @@ type RefreshSessionJSONRequestBody = RefreshRequest
 
 // RegisterAccountJSONRequestBody defines body for RegisterAccount for application/json ContentType.
 type RegisterAccountJSONRequestBody = RegisterRequest
+
+// RetryDeletionJobJSONRequestBody defines body for RetryDeletionJob for application/json ContentType.
+type RetryDeletionJobJSONRequestBody = AccountDeletionRequest
 
 // CreateExpenseCategoryJSONRequestBody defines body for CreateExpenseCategory for application/json ContentType.
 type CreateExpenseCategoryJSONRequestBody = ExpenseCategoryCreate
@@ -3223,6 +3295,15 @@ type ServerInterface interface {
 	// UpdateAccount 修改昵称、头像或默认时区
 	// (PATCH /account)
 	UpdateAccount(w http.ResponseWriter, r *http.Request, params UpdateAccountParams)
+	// RequestAccountDeletion 近期认证后注销本人账号；同幂等键重放返回同一任务并轮换查询凭证
+	// (POST /account/deletion)
+	RequestAccountDeletion(w http.ResponseWriter, r *http.Request, params RequestAccountDeletionParams)
+	// GetAccountDeletion 只凭 Deletion 查询凭证读取任务，账号删除后仍可查询
+	// (GET /account/deletion/{job_id})
+	GetAccountDeletion(w http.ResponseWriter, r *http.Request, jobId openapi_types.UUID)
+	// RenewDeletionReceipt 注销中凭原有效会话补领凭证；每次轮换，旧凭证立即失效
+	// (POST /account/deletion/{job_id}/receipt)
+	RenewDeletionReceipt(w http.ResponseWriter, r *http.Request, jobId openapi_types.UUID)
 	// ChangePassword 登录态修改密码；撤销其他会话，保留当前会话
 	// (POST /account/password)
 	ChangePassword(w http.ResponseWriter, r *http.Request)
@@ -3274,6 +3355,12 @@ type ServerInterface interface {
 	// GetDashboard 个人旅行看板，汇总已结束旅行的足迹、天数与分类花销
 	// (GET /dashboard)
 	GetDashboard(w http.ResponseWriter, r *http.Request, params GetDashboardParams)
+	// GetDeletionJob 本人旅行清理进度
+	// (GET /deletion-jobs/{job_id})
+	GetDeletionJob(w http.ResponseWriter, r *http.Request, jobId openapi_types.UUID)
+	// RetryDeletionJob 重试本人失败或中断的旅行清理；If-Match 为旅行当前版本，需近期认证
+	// (POST /deletion-jobs/{job_id}/retry)
+	RetryDeletionJob(w http.ResponseWriter, r *http.Request, jobId openapi_types.UUID, params RetryDeletionJobParams)
 	// ListExpenseCategories 本账号全部有效账单分类
 	// (GET /expense-categories)
 	ListExpenseCategories(w http.ResponseWriter, r *http.Request)
@@ -3322,6 +3409,9 @@ type ServerInterface interface {
 	// GetTrashedTrip 本人回收站中的旅行，提供最新版本；不在回收站的旅行返回 404
 	// (GET /recycle-bin/trips/{trip_id})
 	GetTrashedTrip(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID)
+	// GetTripDeletionJob 按旅行找回最近清理任务，清理完成后仍可查询
+	// (GET /recycle-bin/trips/{trip_id}/deletion-job)
+	GetTripDeletionJob(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID)
 	// PurgeTrip 请求永久清理；需要近期密码复验与明确确认，affected 中返回清理任务
 	// (POST /recycle-bin/trips/{trip_id}/purge)
 	PurgeTrip(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, params PurgeTripParams)
@@ -3520,6 +3610,24 @@ func (_ Unimplemented) UpdateAccount(w http.ResponseWriter, r *http.Request, par
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// RequestAccountDeletion 近期认证后注销本人账号；同幂等键重放返回同一任务并轮换查询凭证
+// (POST /account/deletion)
+func (_ Unimplemented) RequestAccountDeletion(w http.ResponseWriter, r *http.Request, params RequestAccountDeletionParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetAccountDeletion 只凭 Deletion 查询凭证读取任务，账号删除后仍可查询
+// (GET /account/deletion/{job_id})
+func (_ Unimplemented) GetAccountDeletion(w http.ResponseWriter, r *http.Request, jobId openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// RenewDeletionReceipt 注销中凭原有效会话补领凭证；每次轮换，旧凭证立即失效
+// (POST /account/deletion/{job_id}/receipt)
+func (_ Unimplemented) RenewDeletionReceipt(w http.ResponseWriter, r *http.Request, jobId openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // ChangePassword 登录态修改密码；撤销其他会话，保留当前会话
 // (POST /account/password)
 func (_ Unimplemented) ChangePassword(w http.ResponseWriter, r *http.Request) {
@@ -3622,6 +3730,18 @@ func (_ Unimplemented) GetDashboard(w http.ResponseWriter, r *http.Request, para
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// GetDeletionJob 本人旅行清理进度
+// (GET /deletion-jobs/{job_id})
+func (_ Unimplemented) GetDeletionJob(w http.ResponseWriter, r *http.Request, jobId openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// RetryDeletionJob 重试本人失败或中断的旅行清理；If-Match 为旅行当前版本，需近期认证
+// (POST /deletion-jobs/{job_id}/retry)
+func (_ Unimplemented) RetryDeletionJob(w http.ResponseWriter, r *http.Request, jobId openapi_types.UUID, params RetryDeletionJobParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // ListExpenseCategories 本账号全部有效账单分类
 // (GET /expense-categories)
 func (_ Unimplemented) ListExpenseCategories(w http.ResponseWriter, r *http.Request) {
@@ -3715,6 +3835,12 @@ func (_ Unimplemented) ListTrashedTrips(w http.ResponseWriter, r *http.Request, 
 // GetTrashedTrip 本人回收站中的旅行，提供最新版本；不在回收站的旅行返回 404
 // (GET /recycle-bin/trips/{trip_id})
 func (_ Unimplemented) GetTrashedTrip(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetTripDeletionJob 按旅行找回最近清理任务，清理完成后仍可查询
+// (GET /recycle-bin/trips/{trip_id}/deletion-job)
+func (_ Unimplemented) GetTripDeletionJob(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -4156,6 +4282,122 @@ func (siw *ServerInterfaceWrapper) UpdateAccount(w http.ResponseWriter, r *http.
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.UpdateAccount(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RequestAccountDeletion operation middleware
+func (siw *ServerInterfaceWrapper) RequestAccountDeletion(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params RequestAccountDeletionParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
+		return
+	}
+
+	// ------------- Optional header parameter "If-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
+		var IfMatch IfMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-Match", Err: err})
+			return
+		}
+
+		params.IfMatch = &IfMatch
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RequestAccountDeletion(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetAccountDeletion operation middleware
+func (siw *ServerInterfaceWrapper) GetAccountDeletion(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "job_id" -------------
+	var jobId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "job_id", chi.URLParam(r, "job_id"), &jobId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "job_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetAccountDeletion(w, r, jobId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RenewDeletionReceipt operation middleware
+func (siw *ServerInterfaceWrapper) RenewDeletionReceipt(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "job_id" -------------
+	var jobId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "job_id", chi.URLParam(r, "job_id"), &jobId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "job_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RenewDeletionReceipt(w, r, jobId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -4615,6 +4857,105 @@ func (siw *ServerInterfaceWrapper) GetDashboard(w http.ResponseWriter, r *http.R
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetDashboard(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetDeletionJob operation middleware
+func (siw *ServerInterfaceWrapper) GetDeletionJob(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "job_id" -------------
+	var jobId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "job_id", chi.URLParam(r, "job_id"), &jobId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "job_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetDeletionJob(w, r, jobId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RetryDeletionJob operation middleware
+func (siw *ServerInterfaceWrapper) RetryDeletionJob(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "job_id" -------------
+	var jobId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "job_id", chi.URLParam(r, "job_id"), &jobId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "job_id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params RetryDeletionJobParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
+		return
+	}
+
+	// ------------- Optional header parameter "If-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
+		var IfMatch IfMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-Match", Err: err})
+			return
+		}
+
+		params.IfMatch = &IfMatch
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RetryDeletionJob(w, r, jobId, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -5288,6 +5629,32 @@ func (siw *ServerInterfaceWrapper) GetTrashedTrip(w http.ResponseWriter, r *http
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetTrashedTrip(w, r, tripId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetTripDeletionJob operation middleware
+func (siw *ServerInterfaceWrapper) GetTripDeletionJob(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "trip_id" -------------
+	var tripId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "trip_id", chi.URLParam(r, "trip_id"), &tripId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "trip_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetTripDeletionJob(w, r, tripId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -9109,6 +9476,24 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	}
 
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/deletion-jobs/{job_id}", wrapper.GetDeletionJob)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/recycle-bin/trips/{trip_id}/deletion-job", wrapper.GetTripDeletionJob)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/deletion-jobs/{job_id}/retry", wrapper.RetryDeletionJob)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/account/deletion", wrapper.RequestAccountDeletion)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/account/deletion/{job_id}/receipt", wrapper.RenewDeletionReceipt)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/account/deletion/{job_id}", wrapper.GetAccountDeletion)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/trips/{trip_id}/photos", wrapper.ListPhotos)
 	})
 	r.Group(func(r chi.Router) {
@@ -9565,6 +9950,400 @@ func (response UpdateAccount428ApplicationProblemPlusJSONResponse) VisitUpdateAc
 	}
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(428)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RequestAccountDeletionRequestObject struct {
+	Params RequestAccountDeletionParams
+	Body   *RequestAccountDeletionJSONRequestBody
+}
+
+type RequestAccountDeletionResponseObject interface {
+	VisitRequestAccountDeletionResponse(w http.ResponseWriter) error
+}
+
+type RequestAccountDeletion202JSONResponse AccountDeletionResultResponse
+
+func (response RequestAccountDeletion202JSONResponse) VisitRequestAccountDeletionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(202)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RequestAccountDeletion400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response RequestAccountDeletion400ApplicationProblemPlusJSONResponse) VisitRequestAccountDeletionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RequestAccountDeletion401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response RequestAccountDeletion401ApplicationProblemPlusJSONResponse) VisitRequestAccountDeletionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RequestAccountDeletion403ApplicationProblemPlusJSONResponse struct {
+	ForbiddenApplicationProblemPlusJSONResponse
+}
+
+func (response RequestAccountDeletion403ApplicationProblemPlusJSONResponse) VisitRequestAccountDeletionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RequestAccountDeletion404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response RequestAccountDeletion404ApplicationProblemPlusJSONResponse) VisitRequestAccountDeletionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RequestAccountDeletion409ApplicationProblemPlusJSONResponse struct {
+	ConflictApplicationProblemPlusJSONResponse
+}
+
+func (response RequestAccountDeletion409ApplicationProblemPlusJSONResponse) VisitRequestAccountDeletionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RequestAccountDeletion412ApplicationProblemPlusJSONResponse struct {
+	PreconditionFailedApplicationProblemPlusJSONResponse
+}
+
+func (response RequestAccountDeletion412ApplicationProblemPlusJSONResponse) VisitRequestAccountDeletionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(412)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RequestAccountDeletion422ApplicationProblemPlusJSONResponse struct {
+	ValidationFailedApplicationProblemPlusJSONResponse
+}
+
+func (response RequestAccountDeletion422ApplicationProblemPlusJSONResponse) VisitRequestAccountDeletionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RequestAccountDeletion428ApplicationProblemPlusJSONResponse struct {
+	VersionRequiredApplicationProblemPlusJSONResponse
+}
+
+func (response RequestAccountDeletion428ApplicationProblemPlusJSONResponse) VisitRequestAccountDeletionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(428)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RequestAccountDeletion503ApplicationProblemPlusJSONResponse struct {
+	DependencyUnavailableApplicationProblemPlusJSONResponse
+}
+
+func (response RequestAccountDeletion503ApplicationProblemPlusJSONResponse) VisitRequestAccountDeletionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetAccountDeletionRequestObject struct {
+	JobId openapi_types.UUID `json:"job_id"`
+}
+
+type GetAccountDeletionResponseObject interface {
+	VisitGetAccountDeletionResponse(w http.ResponseWriter) error
+}
+
+type GetAccountDeletion200JSONResponse DeletionJobResponse
+
+func (response GetAccountDeletion200JSONResponse) VisitGetAccountDeletionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetAccountDeletion400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response GetAccountDeletion400ApplicationProblemPlusJSONResponse) VisitGetAccountDeletionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetAccountDeletion401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response GetAccountDeletion401ApplicationProblemPlusJSONResponse) VisitGetAccountDeletionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetAccountDeletion403ApplicationProblemPlusJSONResponse struct {
+	ForbiddenApplicationProblemPlusJSONResponse
+}
+
+func (response GetAccountDeletion403ApplicationProblemPlusJSONResponse) VisitGetAccountDeletionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetAccountDeletion404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response GetAccountDeletion404ApplicationProblemPlusJSONResponse) VisitGetAccountDeletionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetAccountDeletion410ApplicationProblemPlusJSONResponse Problem
+
+func (response GetAccountDeletion410ApplicationProblemPlusJSONResponse) VisitGetAccountDeletionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(410)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetAccountDeletion503ApplicationProblemPlusJSONResponse struct {
+	DependencyUnavailableApplicationProblemPlusJSONResponse
+}
+
+func (response GetAccountDeletion503ApplicationProblemPlusJSONResponse) VisitGetAccountDeletionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RenewDeletionReceiptRequestObject struct {
+	JobId openapi_types.UUID `json:"job_id"`
+}
+
+type RenewDeletionReceiptResponseObject interface {
+	VisitRenewDeletionReceiptResponse(w http.ResponseWriter) error
+}
+
+type RenewDeletionReceipt200JSONResponse DeletionReceiptResponse
+
+func (response RenewDeletionReceipt200JSONResponse) VisitRenewDeletionReceiptResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RenewDeletionReceipt400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response RenewDeletionReceipt400ApplicationProblemPlusJSONResponse) VisitRenewDeletionReceiptResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RenewDeletionReceipt401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response RenewDeletionReceipt401ApplicationProblemPlusJSONResponse) VisitRenewDeletionReceiptResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RenewDeletionReceipt403ApplicationProblemPlusJSONResponse struct {
+	ForbiddenApplicationProblemPlusJSONResponse
+}
+
+func (response RenewDeletionReceipt403ApplicationProblemPlusJSONResponse) VisitRenewDeletionReceiptResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RenewDeletionReceipt404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response RenewDeletionReceipt404ApplicationProblemPlusJSONResponse) VisitRenewDeletionReceiptResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RenewDeletionReceipt503ApplicationProblemPlusJSONResponse struct {
+	DependencyUnavailableApplicationProblemPlusJSONResponse
+}
+
+func (response RenewDeletionReceipt503ApplicationProblemPlusJSONResponse) VisitRenewDeletionReceiptResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(503)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -10762,6 +11541,282 @@ type GetDashboard503ApplicationProblemPlusJSONResponse struct {
 }
 
 func (response GetDashboard503ApplicationProblemPlusJSONResponse) VisitGetDashboardResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetDeletionJobRequestObject struct {
+	JobId openapi_types.UUID `json:"job_id"`
+}
+
+type GetDeletionJobResponseObject interface {
+	VisitGetDeletionJobResponse(w http.ResponseWriter) error
+}
+
+type GetDeletionJob200JSONResponse DeletionJobResponse
+
+func (response GetDeletionJob200JSONResponse) VisitGetDeletionJobResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetDeletionJob400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response GetDeletionJob400ApplicationProblemPlusJSONResponse) VisitGetDeletionJobResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetDeletionJob401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response GetDeletionJob401ApplicationProblemPlusJSONResponse) VisitGetDeletionJobResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetDeletionJob403ApplicationProblemPlusJSONResponse struct {
+	ForbiddenApplicationProblemPlusJSONResponse
+}
+
+func (response GetDeletionJob403ApplicationProblemPlusJSONResponse) VisitGetDeletionJobResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetDeletionJob404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response GetDeletionJob404ApplicationProblemPlusJSONResponse) VisitGetDeletionJobResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetDeletionJob503ApplicationProblemPlusJSONResponse struct {
+	DependencyUnavailableApplicationProblemPlusJSONResponse
+}
+
+func (response GetDeletionJob503ApplicationProblemPlusJSONResponse) VisitGetDeletionJobResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RetryDeletionJobRequestObject struct {
+	JobId  openapi_types.UUID `json:"job_id"`
+	Params RetryDeletionJobParams
+	Body   *RetryDeletionJobJSONRequestBody
+}
+
+type RetryDeletionJobResponseObject interface {
+	VisitRetryDeletionJobResponse(w http.ResponseWriter) error
+}
+
+type RetryDeletionJob202JSONResponse WriteResponse
+
+func (response RetryDeletionJob202JSONResponse) VisitRetryDeletionJobResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(202)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RetryDeletionJob400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response RetryDeletionJob400ApplicationProblemPlusJSONResponse) VisitRetryDeletionJobResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RetryDeletionJob401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response RetryDeletionJob401ApplicationProblemPlusJSONResponse) VisitRetryDeletionJobResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RetryDeletionJob403ApplicationProblemPlusJSONResponse struct {
+	ForbiddenApplicationProblemPlusJSONResponse
+}
+
+func (response RetryDeletionJob403ApplicationProblemPlusJSONResponse) VisitRetryDeletionJobResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RetryDeletionJob404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response RetryDeletionJob404ApplicationProblemPlusJSONResponse) VisitRetryDeletionJobResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RetryDeletionJob409ApplicationProblemPlusJSONResponse struct {
+	ConflictApplicationProblemPlusJSONResponse
+}
+
+func (response RetryDeletionJob409ApplicationProblemPlusJSONResponse) VisitRetryDeletionJobResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RetryDeletionJob412ApplicationProblemPlusJSONResponse struct {
+	PreconditionFailedApplicationProblemPlusJSONResponse
+}
+
+func (response RetryDeletionJob412ApplicationProblemPlusJSONResponse) VisitRetryDeletionJobResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(412)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RetryDeletionJob422ApplicationProblemPlusJSONResponse struct {
+	ValidationFailedApplicationProblemPlusJSONResponse
+}
+
+func (response RetryDeletionJob422ApplicationProblemPlusJSONResponse) VisitRetryDeletionJobResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RetryDeletionJob428ApplicationProblemPlusJSONResponse struct {
+	VersionRequiredApplicationProblemPlusJSONResponse
+}
+
+func (response RetryDeletionJob428ApplicationProblemPlusJSONResponse) VisitRetryDeletionJobResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(428)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RetryDeletionJob503ApplicationProblemPlusJSONResponse struct {
+	DependencyUnavailableApplicationProblemPlusJSONResponse
+}
+
+func (response RetryDeletionJob503ApplicationProblemPlusJSONResponse) VisitRetryDeletionJobResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -12294,6 +13349,111 @@ func (response GetTrashedTrip404ApplicationProblemPlusJSONResponse) VisitGetTras
 	}
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetTripDeletionJobRequestObject struct {
+	TripId openapi_types.UUID `json:"trip_id"`
+}
+
+type GetTripDeletionJobResponseObject interface {
+	VisitGetTripDeletionJobResponse(w http.ResponseWriter) error
+}
+
+type GetTripDeletionJob200JSONResponse DeletionJobResponse
+
+func (response GetTripDeletionJob200JSONResponse) VisitGetTripDeletionJobResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetTripDeletionJob400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response GetTripDeletionJob400ApplicationProblemPlusJSONResponse) VisitGetTripDeletionJobResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetTripDeletionJob401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response GetTripDeletionJob401ApplicationProblemPlusJSONResponse) VisitGetTripDeletionJobResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetTripDeletionJob403ApplicationProblemPlusJSONResponse struct {
+	ForbiddenApplicationProblemPlusJSONResponse
+}
+
+func (response GetTripDeletionJob403ApplicationProblemPlusJSONResponse) VisitGetTripDeletionJobResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetTripDeletionJob404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response GetTripDeletionJob404ApplicationProblemPlusJSONResponse) VisitGetTripDeletionJobResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetTripDeletionJob503ApplicationProblemPlusJSONResponse struct {
+	DependencyUnavailableApplicationProblemPlusJSONResponse
+}
+
+func (response GetTripDeletionJob503ApplicationProblemPlusJSONResponse) VisitGetTripDeletionJobResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(503)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -19532,6 +20692,15 @@ type StrictServerInterface interface {
 	// UpdateAccount 修改昵称、头像或默认时区
 	// (PATCH /account)
 	UpdateAccount(ctx context.Context, request UpdateAccountRequestObject) (UpdateAccountResponseObject, error)
+	// RequestAccountDeletion 近期认证后注销本人账号；同幂等键重放返回同一任务并轮换查询凭证
+	// (POST /account/deletion)
+	RequestAccountDeletion(ctx context.Context, request RequestAccountDeletionRequestObject) (RequestAccountDeletionResponseObject, error)
+	// GetAccountDeletion 只凭 Deletion 查询凭证读取任务，账号删除后仍可查询
+	// (GET /account/deletion/{job_id})
+	GetAccountDeletion(ctx context.Context, request GetAccountDeletionRequestObject) (GetAccountDeletionResponseObject, error)
+	// RenewDeletionReceipt 注销中凭原有效会话补领凭证；每次轮换，旧凭证立即失效
+	// (POST /account/deletion/{job_id}/receipt)
+	RenewDeletionReceipt(ctx context.Context, request RenewDeletionReceiptRequestObject) (RenewDeletionReceiptResponseObject, error)
 	// ChangePassword 登录态修改密码；撤销其他会话，保留当前会话
 	// (POST /account/password)
 	ChangePassword(ctx context.Context, request ChangePasswordRequestObject) (ChangePasswordResponseObject, error)
@@ -19583,6 +20752,12 @@ type StrictServerInterface interface {
 	// GetDashboard 个人旅行看板，汇总已结束旅行的足迹、天数与分类花销
 	// (GET /dashboard)
 	GetDashboard(ctx context.Context, request GetDashboardRequestObject) (GetDashboardResponseObject, error)
+	// GetDeletionJob 本人旅行清理进度
+	// (GET /deletion-jobs/{job_id})
+	GetDeletionJob(ctx context.Context, request GetDeletionJobRequestObject) (GetDeletionJobResponseObject, error)
+	// RetryDeletionJob 重试本人失败或中断的旅行清理；If-Match 为旅行当前版本，需近期认证
+	// (POST /deletion-jobs/{job_id}/retry)
+	RetryDeletionJob(ctx context.Context, request RetryDeletionJobRequestObject) (RetryDeletionJobResponseObject, error)
 	// ListExpenseCategories 本账号全部有效账单分类
 	// (GET /expense-categories)
 	ListExpenseCategories(ctx context.Context, request ListExpenseCategoriesRequestObject) (ListExpenseCategoriesResponseObject, error)
@@ -19631,6 +20806,9 @@ type StrictServerInterface interface {
 	// GetTrashedTrip 本人回收站中的旅行，提供最新版本；不在回收站的旅行返回 404
 	// (GET /recycle-bin/trips/{trip_id})
 	GetTrashedTrip(ctx context.Context, request GetTrashedTripRequestObject) (GetTrashedTripResponseObject, error)
+	// GetTripDeletionJob 按旅行找回最近清理任务，清理完成后仍可查询
+	// (GET /recycle-bin/trips/{trip_id}/deletion-job)
+	GetTripDeletionJob(ctx context.Context, request GetTripDeletionJobRequestObject) (GetTripDeletionJobResponseObject, error)
 	// PurgeTrip 请求永久清理；需要近期密码复验与明确确认，affected 中返回清理任务
 	// (POST /recycle-bin/trips/{trip_id}/purge)
 	PurgeTrip(ctx context.Context, request PurgeTripRequestObject) (PurgeTripResponseObject, error)
@@ -19902,6 +21080,91 @@ func (sh *strictHandler) UpdateAccount(w http.ResponseWriter, r *http.Request, p
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(UpdateAccountResponseObject); ok {
 		if err := validResponse.VisitUpdateAccountResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RequestAccountDeletion operation middleware
+func (sh *strictHandler) RequestAccountDeletion(w http.ResponseWriter, r *http.Request, params RequestAccountDeletionParams) {
+	var request RequestAccountDeletionRequestObject
+
+	request.Params = params
+
+	var body RequestAccountDeletionJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RequestAccountDeletion(ctx, request.(RequestAccountDeletionRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RequestAccountDeletion")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RequestAccountDeletionResponseObject); ok {
+		if err := validResponse.VisitRequestAccountDeletionResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetAccountDeletion operation middleware
+func (sh *strictHandler) GetAccountDeletion(w http.ResponseWriter, r *http.Request, jobId openapi_types.UUID) {
+	var request GetAccountDeletionRequestObject
+
+	request.JobId = jobId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetAccountDeletion(ctx, request.(GetAccountDeletionRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetAccountDeletion")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetAccountDeletionResponseObject); ok {
+		if err := validResponse.VisitGetAccountDeletionResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RenewDeletionReceipt operation middleware
+func (sh *strictHandler) RenewDeletionReceipt(w http.ResponseWriter, r *http.Request, jobId openapi_types.UUID) {
+	var request RenewDeletionReceiptRequestObject
+
+	request.JobId = jobId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RenewDeletionReceipt(ctx, request.(RenewDeletionReceiptRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RenewDeletionReceipt")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RenewDeletionReceiptResponseObject); ok {
+		if err := validResponse.VisitRenewDeletionReceiptResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -20407,6 +21670,66 @@ func (sh *strictHandler) GetDashboard(w http.ResponseWriter, r *http.Request, pa
 	}
 }
 
+// GetDeletionJob operation middleware
+func (sh *strictHandler) GetDeletionJob(w http.ResponseWriter, r *http.Request, jobId openapi_types.UUID) {
+	var request GetDeletionJobRequestObject
+
+	request.JobId = jobId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetDeletionJob(ctx, request.(GetDeletionJobRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetDeletionJob")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetDeletionJobResponseObject); ok {
+		if err := validResponse.VisitGetDeletionJobResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RetryDeletionJob operation middleware
+func (sh *strictHandler) RetryDeletionJob(w http.ResponseWriter, r *http.Request, jobId openapi_types.UUID, params RetryDeletionJobParams) {
+	var request RetryDeletionJobRequestObject
+
+	request.JobId = jobId
+	request.Params = params
+
+	var body RetryDeletionJobJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RetryDeletionJob(ctx, request.(RetryDeletionJobRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RetryDeletionJob")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RetryDeletionJobResponseObject); ok {
+		if err := validResponse.VisitRetryDeletionJobResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // ListExpenseCategories operation middleware
 func (sh *strictHandler) ListExpenseCategories(w http.ResponseWriter, r *http.Request) {
 	var request ListExpenseCategoriesRequestObject
@@ -20824,6 +22147,32 @@ func (sh *strictHandler) GetTrashedTrip(w http.ResponseWriter, r *http.Request, 
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetTrashedTripResponseObject); ok {
 		if err := validResponse.VisitGetTrashedTripResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetTripDeletionJob operation middleware
+func (sh *strictHandler) GetTripDeletionJob(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID) {
+	var request GetTripDeletionJobRequestObject
+
+	request.TripId = tripId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetTripDeletionJob(ctx, request.(GetTripDeletionJobRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetTripDeletionJob")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetTripDeletionJobResponseObject); ok {
+		if err := validResponse.VisitGetTripDeletionJobResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

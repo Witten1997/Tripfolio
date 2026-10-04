@@ -42,6 +42,220 @@ tags:
   - name: public
     description: 访客凭分享令牌读取的只读接口
 paths:
+  /deletion-jobs/{job_id}:
+    get:
+      tags:
+        - account
+      operationId: getDeletionJob
+      summary: 本人旅行清理进度
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: 查询结果
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeletionJobResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/DependencyUnavailable'
+  /recycle-bin/trips/{trip_id}/deletion-job:
+    get:
+      tags:
+        - account
+      operationId: getTripDeletionJob
+      summary: 按旅行找回最近清理任务，清理完成后仍可查询
+      parameters:
+        - name: trip_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: 查询结果
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeletionJobResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/DependencyUnavailable'
+  /deletion-jobs/{job_id}/retry:
+    post:
+      tags:
+        - account
+      operationId: retryDeletionJob
+      summary: 重试本人失败或中断的旅行清理；If-Match 为旅行当前版本，需近期认证
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AccountDeletionRequest'
+      responses:
+        '202':
+          description: 已受理
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WriteResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '412':
+          $ref: '#/components/responses/PreconditionFailed'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '428':
+          $ref: '#/components/responses/VersionRequired'
+        '503':
+          $ref: '#/components/responses/DependencyUnavailable'
+  /account/deletion:
+    post:
+      tags:
+        - account
+      operationId: requestAccountDeletion
+      summary: 近期认证后注销本人账号；同幂等键重放返回同一任务并轮换查询凭证
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AccountDeletionRequest'
+      responses:
+        '202':
+          description: 已受理
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountDeletionResultResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '412':
+          $ref: '#/components/responses/PreconditionFailed'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '428':
+          $ref: '#/components/responses/VersionRequired'
+        '503':
+          $ref: '#/components/responses/DependencyUnavailable'
+  /account/deletion/{job_id}/receipt:
+    post:
+      tags:
+        - account
+      operationId: renewDeletionReceipt
+      summary: 注销中凭原有效会话补领凭证；每次轮换，旧凭证立即失效
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: 查询结果
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeletionReceiptResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/DependencyUnavailable'
+  /account/deletion/{job_id}:
+    get:
+      tags:
+        - account
+      operationId: getAccountDeletion
+      summary: 只凭 Deletion 查询凭证读取任务，账号删除后仍可查询
+      security:
+        - deletionAuth: []
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: 查询结果
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeletionJobResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '410':
+          description: 凭证或任务已过期，完成七天后删除最小任务记录
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          $ref: '#/components/responses/DependencyUnavailable'
   /trips/{trip_id}/photos:
     parameters:
       - name: trip_id
@@ -3470,6 +3684,11 @@ paths:
           $ref: '#/components/responses/ValidationFailed'
 components:
   securitySchemes:
+    deletionAuth:
+      type: apiKey
+      in: header
+      name: Authorization
+      description: Deletion <receipt_token>，仅授权对应注销任务 GET。
     bearerAuth:
       type: http
       scheme: bearer
@@ -3498,6 +3717,142 @@ components:
         type: string
         pattern: ^"[1-9][0-9]*"$
   schemas:
+    DeletionJob:
+      type: object
+      x-go-type: deletion.Job
+      x-go-type-import:
+        path: tripfolio/server/internal/modules/deletion
+      required:
+        - id
+        - scope
+        - status
+        - stage
+        - processed_items
+        - total_items
+        - created_at
+        - started_at
+        - finished_at
+        - error_code
+        - retryable
+      properties:
+        id:
+          type: string
+          format: uuid
+        scope:
+          type: string
+          enum:
+            - trip
+            - account
+        status:
+          type: string
+          enum:
+            - queued
+            - running
+            - completed
+            - failed
+        stage:
+          type: string
+          enum:
+            - revoke_access
+            - remove_objects
+            - remove_rows
+            - finalize
+            - done
+        processed_items:
+          type: integer
+          format: int64
+          minimum: 0
+        total_items:
+          type: integer
+          format: int64
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        finished_at:
+          type: string
+          format: date-time
+          nullable: true
+        error_code:
+          type: string
+          nullable: true
+        retryable:
+          type: boolean
+          description: 旅行任务可由本人以近期认证重试；账号任务由服务端自动重试，只读凭证不能执行操作。
+    DeletionReceipt:
+      type: object
+      x-go-type: deletion.Receipt
+      x-go-type-import:
+        path: tripfolio/server/internal/modules/deletion
+      required:
+        - job_id
+        - receipt_token
+        - receipt_expires_at
+      properties:
+        job_id:
+          type: string
+          format: uuid
+        receipt_token:
+          type: string
+        receipt_expires_at:
+          type: string
+          format: date-time
+    AccountDeletionResult:
+      type: object
+      x-go-type: deletion.Result
+      x-go-type-import:
+        path: tripfolio/server/internal/modules/deletion
+      required:
+        - result
+        - job_id
+        - receipt_token
+        - receipt_expires_at
+      properties:
+        result:
+          $ref: '#/components/schemas/WriteResult'
+        job_id:
+          type: string
+          format: uuid
+        receipt_token:
+          type: string
+        receipt_expires_at:
+          type: string
+          format: date-time
+    AccountDeletionRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - confirm
+      properties:
+        confirm:
+          type: boolean
+          enum:
+            - true
+    DeletionJobResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: '#/components/schemas/DeletionJob'
+    DeletionReceiptResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: '#/components/schemas/DeletionReceipt'
+    AccountDeletionResultResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: '#/components/schemas/AccountDeletionResult'
     DashboardSnapshot:
       type: object
       x-go-type: dashboard.Snapshot

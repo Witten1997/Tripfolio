@@ -42,6 +42,18 @@ tags:
 security:
   - bearerAuth: []
 paths:
+  /deletion-jobs/{job_id}:
+    $ref: ./paths/deletion.yaml#/job
+  /recycle-bin/trips/{trip_id}/deletion-job:
+    $ref: ./paths/deletion.yaml#/trip-job
+  /deletion-jobs/{job_id}/retry:
+    $ref: ./paths/deletion.yaml#/retry
+  /account/deletion:
+    $ref: ./paths/deletion.yaml#/account
+  /account/deletion/{job_id}/receipt:
+    $ref: ./paths/deletion.yaml#/receipt
+  /account/deletion/{job_id}:
+    $ref: ./paths/deletion.yaml#/account-job
   /trips/{trip_id}/photos:
     $ref: ./paths/photos.yaml#/collection
   /trips/{trip_id}/photos/{photo_id}:
@@ -172,6 +184,11 @@ paths:
     $ref: ./paths/assets.yaml#/tripCollection
 components:
   securitySchemes:
+    deletionAuth:
+      type: apiKey
+      in: header
+      name: Authorization
+      description: Deletion <receipt_token>，仅授权对应注销任务 GET。
     bearerAuth:
       type: http
       scheme: bearer
@@ -188,6 +205,20 @@ components:
     IfMatch:
       $ref: ./schemas/write.yaml#/IfMatch
   schemas:
+    DeletionJob:
+      $ref: ./schemas/deletion.yaml#/DeletionJob
+    DeletionReceipt:
+      $ref: ./schemas/deletion.yaml#/DeletionReceipt
+    AccountDeletionResult:
+      $ref: ./schemas/deletion.yaml#/AccountDeletionResult
+    AccountDeletionRequest:
+      $ref: ./schemas/deletion.yaml#/AccountDeletionRequest
+    DeletionJobResponse:
+      $ref: ./schemas/deletion.yaml#/DeletionJobResponse
+    DeletionReceiptResponse:
+      $ref: ./schemas/deletion.yaml#/DeletionReceiptResponse
+    AccountDeletionResultResponse:
+      $ref: ./schemas/deletion.yaml#/AccountDeletionResultResponse
     DashboardSnapshot:
       $ref: ./schemas/dashboard.yaml#/DashboardSnapshot
     DashboardTrip:

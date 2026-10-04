@@ -1,0 +1,194 @@
+job:
+  get:
+    tags: [account]
+    operationId: getDeletionJob
+    summary: 本人旅行清理进度
+    parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    responses:
+      '200':
+        description: 查询结果
+        content:
+          application/json:
+            schema: { $ref: ../openapi.yaml#/components/schemas/DeletionJobResponse }
+      '400':
+        $ref: ../openapi.yaml#/components/responses/BadRequest
+      '401':
+        $ref: ../openapi.yaml#/components/responses/Unauthorized
+      '403':
+        $ref: ../openapi.yaml#/components/responses/Forbidden
+      '404':
+        $ref: ../openapi.yaml#/components/responses/NotFound
+      '503':
+        $ref: ../openapi.yaml#/components/responses/DependencyUnavailable
+
+trip-job:
+  get:
+    tags: [account]
+    operationId: getTripDeletionJob
+    summary: 按旅行找回最近清理任务，清理完成后仍可查询
+    parameters:
+      - name: trip_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    responses:
+      '200':
+        description: 查询结果
+        content:
+          application/json:
+            schema: { $ref: ../openapi.yaml#/components/schemas/DeletionJobResponse }
+      '400':
+        $ref: ../openapi.yaml#/components/responses/BadRequest
+      '401':
+        $ref: ../openapi.yaml#/components/responses/Unauthorized
+      '403':
+        $ref: ../openapi.yaml#/components/responses/Forbidden
+      '404':
+        $ref: ../openapi.yaml#/components/responses/NotFound
+      '503':
+        $ref: ../openapi.yaml#/components/responses/DependencyUnavailable
+
+retry:
+  post:
+    tags: [account]
+    operationId: retryDeletionJob
+    summary: 重试本人失败或中断的旅行清理；If-Match 为旅行当前版本，需近期认证
+    parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      - $ref: ../openapi.yaml#/components/parameters/IdempotencyKey
+      - $ref: ../openapi.yaml#/components/parameters/IfMatch
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: ../openapi.yaml#/components/schemas/AccountDeletionRequest }
+    responses:
+      '202':
+        description: 已受理
+        content:
+          application/json:
+            schema: { $ref: ../openapi.yaml#/components/schemas/WriteResponse }
+      '400':
+        $ref: ../openapi.yaml#/components/responses/BadRequest
+      '401':
+        $ref: ../openapi.yaml#/components/responses/Unauthorized
+      '403':
+        $ref: ../openapi.yaml#/components/responses/Forbidden
+      '404':
+        $ref: ../openapi.yaml#/components/responses/NotFound
+      '409':
+        $ref: ../openapi.yaml#/components/responses/Conflict
+      '412':
+        $ref: ../openapi.yaml#/components/responses/PreconditionFailed
+      '422':
+        $ref: ../openapi.yaml#/components/responses/ValidationFailed
+      '428':
+        $ref: ../openapi.yaml#/components/responses/VersionRequired
+      '503':
+        $ref: ../openapi.yaml#/components/responses/DependencyUnavailable
+
+account:
+  post:
+    tags: [account]
+    operationId: requestAccountDeletion
+    summary: 近期认证后注销本人账号；同幂等键重放返回同一任务并轮换查询凭证
+    parameters:
+      - $ref: ../openapi.yaml#/components/parameters/IdempotencyKey
+      - $ref: ../openapi.yaml#/components/parameters/IfMatch
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: ../openapi.yaml#/components/schemas/AccountDeletionRequest }
+    responses:
+      '202':
+        description: 已受理
+        content:
+          application/json:
+            schema: { $ref: ../openapi.yaml#/components/schemas/AccountDeletionResultResponse }
+      '400':
+        $ref: ../openapi.yaml#/components/responses/BadRequest
+      '401':
+        $ref: ../openapi.yaml#/components/responses/Unauthorized
+      '403':
+        $ref: ../openapi.yaml#/components/responses/Forbidden
+      '404':
+        $ref: ../openapi.yaml#/components/responses/NotFound
+      '409':
+        $ref: ../openapi.yaml#/components/responses/Conflict
+      '412':
+        $ref: ../openapi.yaml#/components/responses/PreconditionFailed
+      '422':
+        $ref: ../openapi.yaml#/components/responses/ValidationFailed
+      '428':
+        $ref: ../openapi.yaml#/components/responses/VersionRequired
+      '503':
+        $ref: ../openapi.yaml#/components/responses/DependencyUnavailable
+
+receipt:
+  post:
+    tags: [account]
+    operationId: renewDeletionReceipt
+    summary: 注销中凭原有效会话补领凭证；每次轮换，旧凭证立即失效
+    parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    responses:
+      '200':
+        description: 查询结果
+        content:
+          application/json:
+            schema: { $ref: ../openapi.yaml#/components/schemas/DeletionReceiptResponse }
+      '400':
+        $ref: ../openapi.yaml#/components/responses/BadRequest
+      '401':
+        $ref: ../openapi.yaml#/components/responses/Unauthorized
+      '403':
+        $ref: ../openapi.yaml#/components/responses/Forbidden
+      '404':
+        $ref: ../openapi.yaml#/components/responses/NotFound
+      '503':
+        $ref: ../openapi.yaml#/components/responses/DependencyUnavailable
+
+account-job:
+  get:
+    tags: [account]
+    operationId: getAccountDeletion
+    summary: 只凭 Deletion 查询凭证读取任务，账号删除后仍可查询
+    security:
+      - deletionAuth: []
+    parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    responses:
+      '200':
+        description: 查询结果
+        content:
+          application/json:
+            schema: { $ref: ../openapi.yaml#/components/schemas/DeletionJobResponse }
+      '400':
+        $ref: ../openapi.yaml#/components/responses/BadRequest
+      '401':
+        $ref: ../openapi.yaml#/components/responses/Unauthorized
+      '403':
+        $ref: ../openapi.yaml#/components/responses/Forbidden
+      '404':
+        $ref: ../openapi.yaml#/components/responses/NotFound
+      '503':
+        $ref: ../openapi.yaml#/components/responses/DependencyUnavailable
+      '410':
+        description: 凭证或任务已过期，完成七天后删除最小任务记录
+        content:
+          application/problem+json:
+            schema: { $ref: ../openapi.yaml#/components/schemas/Problem }

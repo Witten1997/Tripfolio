@@ -22,6 +22,57 @@ export type paths = {
         patch: operations["updateAccount"];
         trace?: never;
     };
+    "/account/deletion": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 近期认证后注销本人账号；同幂等键重放返回同一任务并轮换查询凭证 */
+        post: operations["requestAccountDeletion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/account/deletion/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 只凭 Deletion 查询凭证读取任务，账号删除后仍可查询 */
+        get: operations["getAccountDeletion"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/account/deletion/{job_id}/receipt": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 注销中凭原有效会话补领凭证；每次轮换，旧凭证立即失效 */
+        post: operations["renewDeletionReceipt"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/account/password": {
         parameters: {
             query?: never;
@@ -341,6 +392,40 @@ export type paths = {
         patch?: never;
         trace?: never;
     };
+    "/deletion-jobs/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 本人旅行清理进度 */
+        get: operations["getDeletionJob"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/deletion-jobs/{job_id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 重试本人失败或中断的旅行清理；If-Match 为旅行当前版本，需近期认证 */
+        post: operations["retryDeletionJob"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/expense-categories": {
         parameters: {
             query?: never;
@@ -575,6 +660,23 @@ export type paths = {
         };
         /** 本人回收站中的旅行，提供最新版本；不在回收站的旅行返回 404 */
         get: operations["getTrashedTrip"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/recycle-bin/trips/{trip_id}/deletion-job": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 按旅行找回最近清理任务，清理完成后仍可查询 */
+        get: operations["getTripDeletionJob"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1265,6 +1367,21 @@ export type components = {
             updated_at: components["schemas"]["Instant"];
             version: components["schemas"]["Version"];
         };
+        AccountDeletionRequest: {
+            /** @enum {boolean} */
+            confirm: true;
+        };
+        AccountDeletionResult: {
+            /** Format: uuid */
+            job_id: string;
+            /** Format: date-time */
+            receipt_expires_at: string;
+            receipt_token: string;
+            result: components["schemas"]["WriteResult"];
+        };
+        AccountDeletionResultResponse: {
+            data: components["schemas"]["AccountDeletionResult"];
+        };
         /** @description 缺省字段保持原值；avatar_asset_id 显式 null 表示清空 */
         AccountPatch: {
             /** Format: uuid */
@@ -1533,6 +1650,42 @@ export type components = {
          * @example 2026-10-01
          */
         Date: string;
+        DeletionJob: {
+            /** Format: date-time */
+            created_at: string;
+            error_code: string | null;
+            /** Format: date-time */
+            finished_at: string | null;
+            /** Format: uuid */
+            id: string;
+            /** Format: int64 */
+            processed_items: number;
+            /** @description 旅行任务可由本人以近期认证重试；账号任务由服务端自动重试，只读凭证不能执行操作。 */
+            retryable: boolean;
+            /** @enum {string} */
+            scope: "trip" | "account";
+            /** @enum {string} */
+            stage: "revoke_access" | "remove_objects" | "remove_rows" | "finalize" | "done";
+            /** Format: date-time */
+            started_at: string | null;
+            /** @enum {string} */
+            status: "queued" | "running" | "completed" | "failed";
+            /** Format: int64 */
+            total_items: number | null;
+        };
+        DeletionJobResponse: {
+            data: components["schemas"]["DeletionJob"];
+        };
+        DeletionReceipt: {
+            /** Format: uuid */
+            job_id: string;
+            /** Format: date-time */
+            receipt_expires_at: string;
+            receipt_token: string;
+        };
+        DeletionReceiptResponse: {
+            data: components["schemas"]["DeletionReceipt"];
+        };
         Document: {
             /** Format: uuid */
             asset_id: string;
@@ -3152,6 +3305,107 @@ export interface operations {
             428: components["responses"]["VersionRequired"];
         };
     };
+    requestAccountDeletion: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 写请求的操作编号（UUID）；相同成功操作重试复用同一键 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /** @description 客户端所基于的资源版本，形如 "7"（带引号） */
+                "If-Match"?: components["parameters"]["IfMatch"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AccountDeletionRequest"];
+            };
+        };
+        responses: {
+            /** @description 已受理 */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountDeletionResultResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["PreconditionFailed"];
+            422: components["responses"]["ValidationFailed"];
+            428: components["responses"]["VersionRequired"];
+            503: components["responses"]["DependencyUnavailable"];
+        };
+    };
+    getAccountDeletion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 查询结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeletionJobResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description 凭证或任务已过期，完成七天后删除最小任务记录 */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            503: components["responses"]["DependencyUnavailable"];
+        };
+    };
+    renewDeletionReceipt: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 查询结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeletionReceiptResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            503: components["responses"]["DependencyUnavailable"];
+        };
+    };
     changePassword: {
         parameters: {
             query?: never;
@@ -3655,6 +3909,73 @@ export interface operations {
             503: components["responses"]["DependencyUnavailable"];
         };
     };
+    getDeletionJob: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 查询结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeletionJobResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            503: components["responses"]["DependencyUnavailable"];
+        };
+    };
+    retryDeletionJob: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 写请求的操作编号（UUID）；相同成功操作重试复用同一键 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /** @description 客户端所基于的资源版本，形如 "7"（带引号） */
+                "If-Match"?: components["parameters"]["IfMatch"];
+            };
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AccountDeletionRequest"];
+            };
+        };
+        responses: {
+            /** @description 已受理 */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WriteResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["PreconditionFailed"];
+            422: components["responses"]["ValidationFailed"];
+            428: components["responses"]["VersionRequired"];
+            503: components["responses"]["DependencyUnavailable"];
+        };
+    };
     listExpenseCategories: {
         parameters: {
             query?: never;
@@ -4102,6 +4423,33 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    getTripDeletionJob: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                trip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 查询结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeletionJobResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            503: components["responses"]["DependencyUnavailable"];
         };
     };
     purgeTrip: {
