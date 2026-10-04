@@ -570,7 +570,7 @@ func (r *tripPurgeRun) accountBatch(ctx context.Context, table string) (int64, e
 	return tag.RowsAffected(), tx.Commit(ctx)
 }
 func (r *tripPurgeRun) complete(ctx context.Context, tx pgx.Tx, now time.Time) error {
-	tag, err := tx.Exec(ctx, `UPDATE deletion_jobs SET status='completed',stage='done',finished_at=$2,error_code=NULL,retain_until=CASE WHEN scope='account' THEN $2::timestamptz+interval '7 days' ELSE NULL END,receipt_expires_at=CASE WHEN scope='account' THEN greatest(receipt_expires_at,$2::timestamptz+interval '7 days') ELSE receipt_expires_at END WHERE id=$1 AND status='running'`, r.args.JobID, now)
+	tag, err := tx.Exec(ctx, `UPDATE deletion_jobs SET status='completed',stage='done',finished_at=$2,error_code=NULL,retain_until=CASE WHEN scope='account' THEN $2::timestamptz+interval '7 days' ELSE NULL END,receipt_expires_at=CASE WHEN scope='account' THEN least(receipt_expires_at,$2::timestamptz+interval '7 days') ELSE receipt_expires_at END WHERE id=$1 AND status='running'`, r.args.JobID, now)
 	if err != nil {
 		return err
 	}

@@ -56,6 +56,7 @@ type limitError string
 func (e limitError) Error() string { return string(e) }
 
 const (
+	ErrChallengeSuppressed    limitError = "challenge suppressed"
 	ErrChallengeTooSoon       limitError = "challenge requested too soon"
 	ErrChallengeQuotaExceeded limitError = "challenge hourly quota exceeded"
 )

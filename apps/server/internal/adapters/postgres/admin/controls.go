@@ -159,6 +159,13 @@ func (s *Store) sharingControlTx(ctx context.Context, sess admin.Session, id uui
 	}
 	a.SubjectID = &owner
 	if in != nil {
+		var status string
+		if err = tx.QueryRow(ctx, `SELECT status FROM accounts WHERE id=$1`, owner).Scan(&status); err != nil {
+			return result, err
+		}
+		if status == "deleting" {
+			return result, apperr.Forbidden("ACCOUNT_DELETING", "账号正在注销")
+		}
 		if in.Version != result.Version {
 			return result, apperr.New(412, "VERSION_CONFLICT", "分享限制已被修改，请刷新后重试")
 		}

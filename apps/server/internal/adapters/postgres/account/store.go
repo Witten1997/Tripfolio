@@ -346,8 +346,8 @@ func (s *Store) IssueChallengeTx(ctx context.Context, c account.Challenge, resen
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return account.Challenge{}, err
 	}
-	if status == "deleting" {
-		return account.Challenge{}, account.StatusError(status)
+	if status == "deleting" || (errors.Is(err, pgx.ErrNoRows) && c.Purpose == account.PurposeResetPassword) {
+		return account.Challenge{}, account.ErrChallengeSuppressed
 	}
 	q := dbgen.New(tx)
 	latest, err := q.LatestChallengeCreatedAt(ctx, dbgen.LatestChallengeCreatedAtParams{EmailKey: c.EmailKey, Purpose: string(c.Purpose)})
