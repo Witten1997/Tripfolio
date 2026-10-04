@@ -23,6 +23,7 @@ export interface LedgerDraft {
   payer_member_id: string
   split_mode: SplitMode
   participant_member_ids: string[]
+  attachment_asset_ids: string[]
 }
 
 /** 校验后的字段集合：契约创建正文去掉 id；金额始终携带币种。 */
@@ -38,6 +39,7 @@ export const ledgerFieldLabels: Record<string, string> = {
   payer_member_id: '付款人',
   split_mode: '分摊模式',
   participant_member_ids: '参与人',
+  attachment_asset_ids: '票据',
 }
 
 export function emptyLedgerDraft(): LedgerDraft {
@@ -51,6 +53,7 @@ export function emptyLedgerDraft(): LedgerDraft {
     payer_member_id: '',
     split_mode: 'personal',
     participant_member_ids: [],
+    attachment_asset_ids: [],
   }
 }
 
@@ -65,6 +68,7 @@ export function ledgerDraftFrom(entry: LedgerEntry): LedgerDraft {
     payer_member_id: entry.payer_member_id,
     split_mode: entry.split_mode,
     participant_member_ids: entry.splits.map((s) => s.member_id),
+    attachment_asset_ids: [...entry.attachment_asset_ids],
   }
 }
 
@@ -107,6 +111,9 @@ export function validateLedgerDraft(draft: LedgerDraft, money: TripMoney): Ledge
   if (!occurredOn) errors.occurred_on = '请选择实际日期'
   else if (!validDate(occurredOn)) errors.occurred_on = '请选择有效的实际日期'
   if (draft.notes.length > 4000) errors.notes = '备注最多 4000 个字符'
+  if (draft.attachment_asset_ids.length > 10) errors.attachment_asset_ids = '每笔账目最多 10 张票据'
+  if (new Set(draft.attachment_asset_ids).size !== draft.attachment_asset_ids.length)
+    errors.attachment_asset_ids = '不能重复添加同一张票据'
   if (!draft.payer_member_id) errors.payer_member_id = '请选择付款人'
   const participants =
     draft.split_mode === 'personal'
@@ -127,6 +134,7 @@ export function validateLedgerDraft(draft: LedgerDraft, money: TripMoney): Ledge
     payer_member_id: draft.payer_member_id,
     split_mode: draft.split_mode,
     participant_member_ids: participants,
+    attachment_asset_ids: [...draft.attachment_asset_ids],
   }
   return values
 }
@@ -154,6 +162,8 @@ export function changedLedgerFields(values: LedgerValues, baseline: LedgerEntry)
     if (next !== prev) patch[key] = next
   }
   if ('amount' in patch) patch.currency_code = values.currency_code
+  if (!sameIds(values.attachment_asset_ids ?? [], baseline.attachment_asset_ids))
+    patch.attachment_asset_ids = values.attachment_asset_ids ?? []
   const participants = values.participant_member_ids ?? []
   if (
     !sameIds(

@@ -95,9 +95,13 @@ const pages = {
     desktop: () => import('@/desktop/pages/trip/TripMapTab.vue'),
     mobile: () => import('@/desktop/pages/trip/TripMapTab.vue'),
   },
-  tripPlaceholder: {
-    desktop: () => import('@/desktop/pages/trip/PlaceholderTab.vue'),
-    mobile: () => import('@/desktop/pages/trip/PlaceholderTab.vue'),
+  tripAlbum: {
+    desktop: () => import('@/desktop/pages/trip/AlbumTab.vue'),
+    mobile: () => import('@/desktop/pages/trip/AlbumTab.vue'),
+  },
+  tripReservations: {
+    desktop: () => import('@/desktop/pages/trip/ReservationsTab.vue'),
+    mobile: () => import('@/desktop/pages/trip/ReservationsTab.vue'),
   },
 } satisfies Record<string, PagePair>
 
@@ -144,8 +148,12 @@ export function buildRoutes(shell: Shell): RouteRecordRaw[] {
         {
           path: 'album',
           name: 'trip-album',
-          component: pick(pages.tripPlaceholder),
-          props: { title: '相册', slice: '切片 5' },
+          component: pick(pages.tripAlbum),
+        },
+        {
+          path: 'reservations',
+          name: 'trip-reservations',
+          component: pick(pages.tripReservations),
         },
         { path: 'todos', name: 'trip-todos', component: pick(pages.tripTodos) },
       ],

@@ -21,6 +21,7 @@ describe('buildRoutes', () => {
       'trip-map',
       'trip-packing',
       'trip-album',
+      'trip-reservations',
       'trip-todos',
     ])
     expect(detail?.redirect).toEqual({ name: 'trip-itinerary' })

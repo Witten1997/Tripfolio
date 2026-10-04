@@ -66,7 +66,7 @@ function select(place: GeoPlace) {
   reverseGeneration++
   controller?.abort()
   locating.value = false
-  locatingMessage.value = '地点已选中，保存行程后将加入路线'
+  locatingMessage.value = '地点已选中，保存后生效'
   emit('select', place)
   // 已选结果只在摘要里显示，避免搜索列表长期占满编辑区。
   results.value = []
@@ -191,7 +191,7 @@ onScopeDispose(() => {
       <template v-if="loading">正在搜索地点…</template>
       <template v-else-if="searched && !error">{{
         results.length
-          ? `找到 ${results.length} 个地点，选择一个填入行程`
+          ? `找到 ${results.length} 个地点，选择一个填入记录`
           : '没有找到匹配地点，换个关键词或城市试试'
       }}</template>
     </p>

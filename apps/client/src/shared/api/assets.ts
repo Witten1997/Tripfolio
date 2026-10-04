@@ -132,7 +132,12 @@ export function putToObjectStore(
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
+    if (options.signal?.aborted) {
+      reject(new DOMException('已取消', 'AbortError'))
+      return
+    }
     xhr.open(authorization.method, authorization.url, true)
+    xhr.timeout = 120_000
     for (const [name, value] of Object.entries(authorization.required_headers)) {
       // 浏览器禁止脚本设置 Content-Length，它由 body 自动决定，跳过即可。
       if (name.toLowerCase() === 'content-length') continue
@@ -145,6 +150,12 @@ export function putToObjectStore(
     }
     xhr.addEventListener('load', () => {
       if (xhr.status >= 200 && xhr.status < 300) {
+        if (!xhr.getResponseHeader('ETag')) {
+          reject(
+            new Error('存储未返回可读取的 ETag，请检查直传 CORS 的 Expose-Headers 配置后重试。'),
+          )
+          return
+        }
         options.onProgress?.(1)
         resolve()
       } else {
@@ -152,8 +163,11 @@ export function putToObjectStore(
       }
     })
     xhr.addEventListener('error', () => reject(new Error('直传失败：网络错误')))
+    xhr.addEventListener('timeout', () => reject(new Error('直传超时，请检查网络后重试。')))
     xhr.addEventListener('abort', () => reject(new DOMException('已取消', 'AbortError')))
-    options.signal?.addEventListener('abort', () => xhr.abort(), { once: true })
+    const abort = () => xhr.abort()
+    options.signal?.addEventListener('abort', abort, { once: true })
+    xhr.addEventListener('loadend', () => options.signal?.removeEventListener('abort', abort))
     xhr.send(file)
   })
 }

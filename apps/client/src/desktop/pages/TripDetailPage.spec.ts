@@ -43,6 +43,7 @@ async function page(path: string) {
           ['trip-map', 'map'],
           ['trip-packing', 'packing'],
           ['trip-album', 'album'],
+          ['trip-reservations', 'reservations'],
           ['trip-todos', 'todos'],
         ].map(([name, path]) => ({ path, name, component: { template: '<div />' } })),
       },

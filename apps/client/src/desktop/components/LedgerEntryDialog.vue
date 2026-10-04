@@ -19,6 +19,7 @@ import { NotebookPen, Plus, Users, ChevronDown, X } from '@lucide/vue'
 import { computed, nextTick, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue'
 
 import LedgerAmountKeypad from '@/desktop/components/LedgerAmountKeypad.vue'
+import AssetPicker from '@/desktop/components/AssetPicker.vue'
 import CategoryCreateDrawer from '@/desktop/components/CategoryCreateDrawer.vue'
 import ResponsiveEditorShell from '@/desktop/components/ResponsiveEditorShell.vue'
 import SlidingSegmented from '@/desktop/components/SlidingSegmented.vue'
@@ -80,6 +81,7 @@ const context = useTripContext()
 const currency = computed(() => context.trip.value?.currency_code ?? 'CNY')
 const isMobile = ref(false)
 const notesFocused = ref(false)
+const preparingAttachments = ref(false)
 const splitSettingsOpened = ref(false)
 const refundOrigin = shallowRef<LedgerEntry | null>(null)
 let mobileMediaQuery: MediaQueryList | undefined
@@ -206,6 +208,7 @@ const categoryLocked = computed(() => draft.kind === 'refund' && !!draft.refunde
 const submitDisabled = computed(
   () =>
     loading.value ||
+    preparingAttachments.value ||
     (isEditing.value && (!baseline.value || !dirty.value)) ||
     (conflict.value && (!latest.value || loadingLatest.value)),
 )
@@ -241,6 +244,8 @@ const conflictRows = computed(() => {
     if (field === 'kind') return ledgerKindLabels[value as LedgerKind] ?? value
     if (field === 'category_id') return value ? categoryName(value) : '（空）'
     if (field === 'refunded_entry_id') return value ? '已关联原支出' : '未关联'
+    if (field === 'attachment_asset_ids')
+      return value ? `${value.split(',').length} 张票据` : '无票据'
     if (field === 'amount') return value ? `${formatMoney(value)} ${currency.value}` : '（空）'
     if (field === 'payer_member_id') return memberName(members.value, value) || '（空）'
     if (field === 'split_mode') return splitModeLabels[value as SplitMode] ?? value
@@ -305,6 +310,7 @@ async function adoptLatest() {
 }
 
 async function save(againstLatest = false) {
+  if (preparingAttachments.value) return
   if (isMobile.value && !uncertainCreate.value && draft.amount.endsWith('.'))
     draft.amount = draft.amount.slice(0, -1)
   const outcome = await editor.save(againstLatest)
@@ -628,6 +634,15 @@ defineExpose({ open, openRefund, refreshMembers })
             placeholder="可选"
           />
         </ElFormItem>
+        <ElFormItem label="票据" :error="errors.attachment_asset_ids">
+          <AssetPicker
+            v-model="draft.attachment_asset_ids"
+            :trip-id="context.tripId"
+            :max="10"
+            :disabled="saving || uncertainCreate || loading"
+            @busy="preparingAttachments = $event"
+          />
+        </ElFormItem>
         <button type="submit" class="visually-hidden" tabindex="-1" aria-hidden="true">保存</button>
       </ElForm>
       <section v-if="conflict" class="conflict-panel" aria-live="polite">
@@ -726,7 +741,7 @@ defineExpose({ open, openRefund, refreshMembers })
           v-if="conflict"
           type="primary"
           :loading="saving"
-          :disabled="!latest || loadingLatest"
+          :disabled="!latest || loadingLatest || preparingAttachments"
           @click="save(true)"
           >确认用我的改动更新最新版本</ElButton
         >
@@ -734,7 +749,7 @@ defineExpose({ open, openRefund, refreshMembers })
           v-else
           type="primary"
           :loading="saving"
-          :disabled="loading || (isEditing && (!baseline || !dirty))"
+          :disabled="submitDisabled"
           @click="save()"
           >{{ uncertainCreate ? '重试保存' : isEditing ? '保存修改' : '保存' }}</ElButton
         >

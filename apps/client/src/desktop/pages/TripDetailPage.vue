@@ -13,11 +13,13 @@ import { writeWarnings, type WriteOutcome } from '@/shared/api/writes'
 import { useMetadataStore } from '@/shared/stores/metadata'
 import { provideTripContext } from '@/shared/travel/tripContext'
 import { todayIn } from '@/shared/travel/tripDays'
+import { provideTripTransfers } from '@/shared/travel/useTripTransfers'
 
 const route = useRoute()
 const metadata = useMetadataStore()
 const tripId = String(route.params.tripId)
 const context = provideTripContext(tripId)
+provideTripTransfers()
 const { trip, loading, error, errorCode } = context
 const editor = ref<InstanceType<typeof TripEditorDialog>>()
 const shareDialog = ref<InstanceType<typeof TripShareDialog>>()
@@ -31,6 +33,8 @@ const feedbackType = ref<'success' | 'warning'>('success')
 const tabs = [
   { name: 'trip-itinerary', label: '行程' },
   { name: 'trip-ledger', label: '账单' },
+  { name: 'trip-album', label: '相册' },
+  { name: 'trip-reservations', label: '预订与资料' },
   { name: 'trip-packing', label: '行李清单' },
   { name: 'trip-todos', label: '待办' },
 ] as const

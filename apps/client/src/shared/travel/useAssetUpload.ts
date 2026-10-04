@@ -1,5 +1,4 @@
-﻿import { reactive, ref } from 'vue'
-
+import { reactive } from 'vue'
 import {
   assetFailureMessage,
   authorizeAssetUpload,
@@ -9,15 +8,14 @@ import {
   putToObjectStore,
   sha256Hex,
   type Asset,
+  type AssetCreate,
   type AssetScope,
   type UploadAuthorization,
 } from '@/shared/api/assets'
 import { ApiError } from '@/shared/api/auth'
 import { randomId } from '@/shared/randomId'
 
-/** 一次上传的界面状态。progress 是 0–1；只有 uploading 阶段有意义。 */
 export type UploadPhase = 'idle' | 'preparing' | 'uploading' | 'processing' | 'ready' | 'failed'
-
 export interface UploadState {
   phase: UploadPhase
   progress: number
@@ -25,26 +23,13 @@ export interface UploadState {
   asset: Asset | null
   error: string | null
 }
-
 export interface StartUploadInput {
   file: File
   scope: AssetScope
   tripId?: string
 }
 
-/** 轮询 worker 处理结果的间隔与上限：校验通常在一秒内完成，缩略图稍慢。 */
-const POLL_INTERVAL_MS = 800
-const POLL_TIMEOUT_MS = 60_000
-
-/**
- * 驱动完整上传链路：登记资产 → 直传对象存储 → 确认 → 轮询处理结果。
- *
- * 关键点：
- *   - 服务端不信任「上传成功」声明，确认后必须等 worker 校验，因此要轮询到 ready/failed。
- *   - 直传或确认失败后不重建资产：调用 retry 用 upload-authorization 开新尝试，
- *     资产 ID 与已建立的引用（照片说明、票据关联）都保持不变。
- */
-export function useAssetUpload() {
+export function useAssetUpload(onRegistered?: (assetId: string) => void) {
   const state = reactive<UploadState>({
     phase: 'idle',
     progress: 0,
@@ -52,147 +37,187 @@ export function useAssetUpload() {
     asset: null,
     error: null,
   })
-  const pending = ref<{ file: File; scope: AssetScope; tripId?: string } | null>(null)
+  let file: File | null = null
+  let input: StartUploadInput | null = null
+  let creation: { body: AssetCreate; operationId: string } | null = null
   let controller: AbortController | null = null
-  let cancelled = false
+  let generation = 0
+  let running = false
+  let confirmed = false
+  let confirmKey = ''
+  let confirmAttempt = 0
+  let registered = false
 
-  function reset() {
-    controller?.abort()
-    controller = null
-    cancelled = false
-    pending.value = null
-    state.phase = 'idle'
-    state.progress = 0
-    state.assetId = null
-    state.asset = null
-    state.error = null
+  function register(assetId: string) {
+    state.assetId = assetId
+    if (!registered) {
+      registered = true
+      onRegistered?.(assetId)
+    }
   }
-
   function cancel() {
-    cancelled = true
+    generation++
     controller?.abort()
+    running = false
     state.phase = 'idle'
     state.progress = 0
   }
-
-  async function runUpload(assetId: string, authorization: UploadAuthorization, file: File) {
+  function reset() {
+    cancel()
+    file = null
+    input = null
+    creation = null
+    registered = false
+    confirmed = false
+    confirmKey = ''
+    confirmAttempt = 0
+    Object.assign(state, { phase: 'idle', progress: 0, assetId: null, asset: null, error: null })
+  }
+  function describe(cause: unknown): string {
+    if (cause instanceof DOMException && cause.name === 'AbortError') return '已取消'
+    if (cause instanceof ApiError) {
+      if (cause.code === 'DEPENDENCY_UNAVAILABLE') return '文件服务暂时不可用，请稍后重试。'
+      if (cause.code === 'TRIP_DELETED') return '这趟旅行已进入回收站，不能添加文件。'
+    }
+    return cause instanceof Error ? cause.message : '上传失败，请重试'
+  }
+  async function poll(assetId: string, run: number): Promise<Asset | null> {
+    const deadline = Date.now() + 60_000
+    while (run === generation) {
+      const asset = await getAsset(assetId)
+      if (run !== generation) return null
+      state.asset = asset
+      state.phase = asset.status
+      if (asset.status === 'ready') {
+        state.progress = 1
+        state.error = null
+        return asset
+      }
+      if (asset.status === 'failed') {
+        confirmed = false
+        state.error = assetFailureMessage(asset)
+        return asset
+      }
+      if (Date.now() >= deadline) {
+        state.error = '文件仍在处理中，可刷新状态查看。'
+        return asset
+      }
+      await new Promise((resolve) => setTimeout(resolve, 800))
+    }
+    return null
+  }
+  async function upload(assetId: string, authorization: UploadAuthorization, run: number) {
+    if (!file || run !== generation) return null
     state.phase = 'uploading'
     state.progress = 0
+    confirmed = false
     controller = new AbortController()
     await putToObjectStore(authorization, file, {
       signal: controller.signal,
       onProgress: (ratio) => {
-        state.progress = ratio
+        if (run === generation) state.progress = ratio
       },
     })
-    if (cancelled) return null
-
+    if (run !== generation) return null
     state.phase = 'processing'
-    await confirmAssetUpload(assetId, authorization.upload_attempt, randomId())
-    return pollUntilSettled(assetId)
+    // 确认响应丢失时重放同一请求，不重新 PUT 已开始处理的暂存对象。
+    confirmKey = randomId()
+    confirmAttempt = authorization.upload_attempt
+    confirmed = true
+    const asset = await confirmAssetUpload(assetId, confirmAttempt, confirmKey)
+    if (run !== generation) return null
+    if (asset) state.asset = asset
+    return poll(assetId, run)
   }
-
-  /** 轮询到 ready 或 failed；超时不改状态，交由界面提示用户稍后查看。 */
-  async function pollUntilSettled(assetId: string): Promise<Asset | null> {
-    const deadline = Date.now() + POLL_TIMEOUT_MS
-    for (;;) {
-      if (cancelled) return null
-      const asset = await getAsset(assetId)
-      state.asset = asset
-      if (asset.status === 'ready') {
-        // 缩略图可能还在生成；原图已可用，不再等待。
-        state.phase = 'ready'
-        state.progress = 1
-        return asset
-      }
-      if (asset.status === 'failed') {
-        state.phase = 'failed'
-        state.error = assetFailureMessage(asset)
-        return asset
-      }
-      if (Date.now() > deadline) {
-        state.error = '文件仍在处理中，请稍后刷新查看。'
-        return asset
-      }
-      await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS))
-    }
-  }
-
-  function describe(cause: unknown): string {
-    if (cause instanceof DOMException && cause.name === 'AbortError') return '已取消'
-    if (cause instanceof ApiError) {
-      switch (cause.code) {
-        case 'REQUEST_TOO_LARGE':
-          return cause.message || '文件超出大小限制。'
-        case 'UNSUPPORTED_MEDIA_TYPE':
-          return cause.message || '文件类型不支持。'
-        case 'DEPENDENCY_UNAVAILABLE':
-          return '文件服务暂时不可用，请稍后重试。'
-        case 'TRIP_DELETED':
-          return '这趟旅行已进入回收站，不能添加文件。'
-        default:
-          return cause.message
-      }
-    }
-    return cause instanceof Error ? cause.message : '上传失败，请重试'
-  }
-
-  /** 开始一次上传。返回最终资产（ready 或 failed）；取消或出错时返回 null。 */
-  async function start(input: StartUploadInput): Promise<Asset | null> {
-    reset()
-    pending.value = { file: input.file, scope: input.scope, tripId: input.tripId }
-    state.phase = 'preparing'
-    try {
-      const assetId = randomId()
-      const digest = await sha256Hex(input.file)
-      const { authorization, asset } = await createAsset(
-        {
-          id: assetId,
+  async function create(run: number) {
+    if (!input || !file) return null
+    if (!creation) {
+      const digest = await sha256Hex(file)
+      if (run !== generation) return null
+      creation = {
+        body: {
+          id: randomId(),
           scope: input.scope,
           ...(input.tripId ? { trip_id: input.tripId } : {}),
-          original_name: input.file.name,
-          expected_size: input.file.size,
-          declared_media_type: input.file.type || 'application/octet-stream',
+          original_name: file.name,
+          expected_size: file.size,
+          declared_media_type: file.type || 'application/octet-stream',
           ...(digest ? { client_sha256: digest } : {}),
         },
-        randomId(),
-      )
-      state.assetId = assetId
-      state.asset = asset
-      if (!authorization) {
-        state.phase = 'failed'
-        state.error = '未能取得上传授权，请重试。'
-        return null
+        operationId: randomId(),
       }
-      return await runUpload(assetId, authorization, input.file)
-    } catch (cause) {
-      state.phase = cancelled ? 'idle' : 'failed'
-      state.error = cancelled ? null : describe(cause)
-      return null
     }
+    const result = await createAsset(creation.body, creation.operationId)
+    if (run !== generation) return null
+    state.asset = result.asset
+    register(creation.body.id)
+    if (result.asset?.status === 'ready' || result.asset?.status === 'processing')
+      return poll(creation.body.id, run)
+    if (!result.authorization) throw new Error('未能取得上传授权，请重试。')
+    return upload(creation.body.id, result.authorization, run)
   }
-
-  /** 失败后重试：复用同一资产开新尝试，不重建资产也不丢已建立的引用。 */
-  async function retry(): Promise<Asset | null> {
-    const target = pending.value
-    if (!target || !state.assetId) return null
-    cancelled = false
-    state.error = null
+  async function execute(work: (run: number) => Promise<Asset | null>) {
+    if (running) return null
+    const run = generation
+    running = true
     state.phase = 'preparing'
+    state.error = null
     try {
-      const { authorization } = await authorizeAssetUpload(state.assetId, randomId())
-      if (!authorization) {
-        state.phase = 'failed'
-        state.error = '这个文件已不能重新上传，请重新选择文件。'
-        return null
-      }
-      return await runUpload(state.assetId, authorization, target.file)
+      return await work(run)
     } catch (cause) {
-      state.phase = cancelled ? 'idle' : 'failed'
-      state.error = cancelled ? null : describe(cause)
+      if (run === generation) {
+        state.phase = 'failed'
+        state.error = describe(cause)
+      }
       return null
+    } finally {
+      if (run === generation) running = false
     }
   }
-
-  return { state, start, retry, cancel, reset }
+  async function start(target: StartUploadInput) {
+    reset()
+    input = target
+    file = target.file
+    return execute(create)
+  }
+  async function retry() {
+    return execute(async (run) => {
+      if (!state.assetId) return create(run)
+      const id = state.assetId
+      if (confirmed || state.asset?.status === 'processing' || state.asset?.status === 'ready') {
+        const current = await getAsset(id)
+        if (run !== generation) return null
+        state.asset = current
+        if (current.status === 'processing' || current.status === 'ready') return poll(id, run)
+        if (
+          current.status === 'uploading' &&
+          confirmed &&
+          current.upload_attempt === confirmAttempt &&
+          Date.parse(current.upload_expires_at ?? '') > Date.now()
+        ) {
+          await confirmAssetUpload(id, confirmAttempt, confirmKey)
+          if (run !== generation) return null
+          return poll(id, run)
+        }
+      }
+      if (!file) throw new Error('请重新选择原文件后重试。')
+      const result = await authorizeAssetUpload(id, randomId())
+      if (run !== generation) return null
+      state.asset = result.asset ?? state.asset
+      if (!result.authorization) return poll(id, run)
+      return upload(id, result.authorization, run)
+    })
+  }
+  async function resume(asset: Asset, original: File) {
+    reset()
+    file = original
+    state.asset = asset
+    register(asset.id)
+    return retry()
+  }
+  async function refresh() {
+    if (!state.assetId) return null
+    return execute((run) => poll(state.assetId!, run))
+  }
+  return { state, start, retry, resume, refresh, cancel, reset }
 }
