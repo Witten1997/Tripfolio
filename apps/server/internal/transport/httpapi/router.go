@@ -14,6 +14,7 @@ import (
 
 	"tripfolio/server/internal/modules/account"
 	"tripfolio/server/internal/modules/assets"
+	"tripfolio/server/internal/modules/deletion"
 	"tripfolio/server/internal/modules/finance"
 	"tripfolio/server/internal/modules/geo"
 	"tripfolio/server/internal/modules/metadata"
@@ -33,6 +34,7 @@ import (
 
 // Deps 是路由需要的全部依赖，由 bootstrap 显式装配。
 type Deps struct {
+	Deletions     *deletion.Service
 	Photos        *album.Service
 	Reservations  *reservation.Service
 	Documents     *document.Service
@@ -82,6 +84,9 @@ func isSharePath(r *http.Request) bool {
 }
 
 func isPublic(r *http.Request) bool {
+	if r.Method == http.MethodGet && strings.HasPrefix(strings.TrimPrefix(r.URL.Path, "/api/v1"), "/account/deletion/") {
+		return true
+	}
 	if isSharePath(r) {
 		return true
 	}
@@ -133,7 +138,8 @@ func NewRouter(d Deps) http.Handler {
 	}
 
 	handler := &Handler{
-		photos: d.Photos, reservations: d.Reservations, documents: d.Documents,
+		deletions: d.Deletions,
+		photos:    d.Photos, reservations: d.Reservations, documents: d.Documents,
 		dashboard: d.Dashboard,
 		logger:    d.Logger, metadata: d.Metadata, identity: d.Identity, sessions: d.Sessions, profile: d.Profile,
 		categories: d.Categories, trips: d.Trips, itinerary: d.Itinerary, routePlans: d.RoutePlans, packing: d.Packing, todos: d.Todos,

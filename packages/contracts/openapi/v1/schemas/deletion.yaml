@@ -1,0 +1,75 @@
+DeletionJob:
+  type: object
+  x-go-type: deletion.Job
+  x-go-type-import:
+    path: tripfolio/server/internal/modules/deletion
+  required:
+    [
+      id,
+      scope,
+      status,
+      stage,
+      processed_items,
+      total_items,
+      created_at,
+      started_at,
+      finished_at,
+      error_code,
+      retryable,
+    ]
+  properties:
+    id: { type: string, format: uuid }
+    scope: { type: string, enum: [trip, account] }
+    status: { type: string, enum: [queued, running, completed, failed] }
+    stage: { type: string, enum: [revoke_access, remove_objects, remove_rows, finalize, done] }
+    processed_items: { type: integer, format: int64, minimum: 0 }
+    total_items: { type: integer, format: int64, nullable: true }
+    created_at: { type: string, format: date-time }
+    started_at: { type: string, format: date-time, nullable: true }
+    finished_at: { type: string, format: date-time, nullable: true }
+    error_code: { type: string, nullable: true }
+    retryable:
+      type: boolean
+      description: 旅行任务可由本人以近期认证重试；账号任务由服务端自动重试，只读凭证不能执行操作。
+DeletionReceipt:
+  type: object
+  x-go-type: deletion.Receipt
+  x-go-type-import:
+    path: tripfolio/server/internal/modules/deletion
+  required: [job_id, receipt_token, receipt_expires_at]
+  properties:
+    job_id: { type: string, format: uuid }
+    receipt_token: { type: string }
+    receipt_expires_at: { type: string, format: date-time }
+AccountDeletionResult:
+  type: object
+  x-go-type: deletion.Result
+  x-go-type-import:
+    path: tripfolio/server/internal/modules/deletion
+  required: [result, job_id, receipt_token, receipt_expires_at]
+  properties:
+    result: { $ref: ../openapi.yaml#/components/schemas/WriteResult }
+    job_id: { type: string, format: uuid }
+    receipt_token: { type: string }
+    receipt_expires_at: { type: string, format: date-time }
+AccountDeletionRequest:
+  type: object
+  additionalProperties: false
+  required: [confirm]
+  properties:
+    confirm: { type: boolean, enum: [true] }
+DeletionJobResponse:
+  type: object
+  required: [data]
+  properties:
+    data: { $ref: ../openapi.yaml#/components/schemas/DeletionJob }
+DeletionReceiptResponse:
+  type: object
+  required: [data]
+  properties:
+    data: { $ref: ../openapi.yaml#/components/schemas/DeletionReceipt }
+AccountDeletionResultResponse:
+  type: object
+  required: [data]
+  properties:
+    data: { $ref: ../openapi.yaml#/components/schemas/AccountDeletionResult }

@@ -8,6 +8,7 @@ import (
 	"tripfolio/server/internal/foundation/apperr"
 	"tripfolio/server/internal/modules/account"
 	"tripfolio/server/internal/modules/assets"
+	"tripfolio/server/internal/modules/deletion"
 	"tripfolio/server/internal/modules/finance"
 	"tripfolio/server/internal/modules/geo"
 	"tripfolio/server/internal/modules/metadata"
@@ -29,6 +30,7 @@ import (
 // Handler 实现生成的 StrictServerInterface。它只做分发与模型转换，业务状态与规则留在模块服务中；
 // 各业务的方法分散在对应文件（metadata.go、account.go、finance.go、travel_*.go 等）。
 type Handler struct {
+	deletions    *deletion.Service
 	photos       *album.Service
 	reservations *reservation.Service
 	documents    *document.Service
