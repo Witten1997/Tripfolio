@@ -4,6 +4,7 @@ import { computed, ref } from 'vue'
 import type { components } from '@tripfolio/contracts/openapi/v1'
 
 import { randomId } from '@/shared/randomId'
+import { bindDeletionOwner } from '@/shared/deletion/storage'
 
 export type Account = components['schemas']['Account']
 export type AuthResult = components['schemas']['AuthResult']
@@ -42,6 +43,7 @@ export const useSessionStore = defineStore('session', () => {
 
   /** 登录、注册、刷新成功后统一调用。 */
   function applyAuthResult(result: AuthResult) {
+    bindDeletionOwner(result.account.id)
     setAccessToken(result.access_token, result.expires_in_seconds)
     if (result.csrf_token) csrfToken.value = result.csrf_token
     account.value = result.account

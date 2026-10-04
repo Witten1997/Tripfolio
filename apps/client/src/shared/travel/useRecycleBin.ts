@@ -1,4 +1,4 @@
-import { onScopeDispose, ref, shallowRef } from 'vue'
+import { onScopeDispose, ref, shallowRef, watch } from 'vue'
 
 import { ApiError, reauthenticate } from '@/shared/api/auth'
 import {
@@ -10,6 +10,8 @@ import {
 } from '@/shared/api/trips'
 import { actionError, createWriteIntent, writeWarnings } from '@/shared/api/writes'
 import { useCursorPage } from '@/shared/travel/useCursorPage'
+import { getTripDeletionJob, retryDeletionJob, type DeletionJob } from '@/shared/api/deletion'
+import { useTripDeletionJobs } from '@/shared/deletion/useTripDeletionJobs'
 
 export function canRestoreTrip(trip: TrashedTrip, now = Date.now()) {
   return (
@@ -54,7 +56,12 @@ export function useRecycleBin() {
   const password = ref('')
   const purgeError = ref<string | null>(null)
   const intents = new Map<string, ReturnType<typeof createWriteIntent>>()
+  const deletionJobs = useTripDeletionJobs()
+  const retryJob = shallowRef<DeletionJob | null>(null)
   let selectionGeneration = 0
+  watch(page.items, (items) => {
+    for (const trip of items) if (trip.purge_requested_at) deletionJobs.track(trip.id)
+  })
 
   function operationKey(action: string, trip: TrashedTrip) {
     const slot = `${action}:${trip.id}`
@@ -114,11 +121,27 @@ export function useRecycleBin() {
   async function openPurge(trip: TrashedTrip) {
     if (purging.value || busy.value || trip.purge_requested_at) return
     selected.value = trip
+    retryJob.value = null
     purgeOpened.value = true
     confirmed.value = false
     password.value = ''
     purgeError.value = null
     await loadSelected()
+  }
+
+  async function openRetry(tripId: string, job: DeletionJob) {
+    if (purging.value || busy.value || !job.retryable) return
+    try {
+      const trip = await getTrashedTrip(tripId)
+      selected.value = trip
+      retryJob.value = job
+      purgeOpened.value = true
+      confirmed.value = false
+      password.value = ''
+      purgeError.value = selectionError.value = null
+    } catch (cause) {
+      error.value = actionError(cause, '无法读取旅行当前版本，请刷新后重试')
+    }
   }
 
   function closePurge() {
@@ -142,7 +165,7 @@ export function useRecycleBin() {
     )
       return false
     purgeError.value = null
-    if (trip.purge_requested_at) {
+    if (trip.purge_requested_at && !retryJob.value) {
       purgeError.value = '永久清理已请求，无需重复提交。'
       return false
     }
@@ -155,11 +178,16 @@ export function useRecycleBin() {
       return false
     }
     purging.value = true
-    const operation = operationKey('purge', trip)
+    const operation = operationKey(retryJob.value ? `retry:${retryJob.value.id}` : 'purge', trip)
     try {
       await reauthenticate(password.value)
       password.value = ''
-      const outcome = await purgeTrip(trip.id, trip.version, operation.key)
+      const outcome = retryJob.value
+        ? {
+            result: await retryDeletionJob(retryJob.value.id, trip.version, operation.key),
+            resource: null,
+          }
+        : await purgeTrip(trip.id, trip.version, operation.key)
       operation.intent.reset()
       // 202 仅为请求受理。即便重放没有资源，也不能乐观地把它当成已删除或允许恢复。
       const requested = outcome.resource ?? {
@@ -168,6 +196,7 @@ export function useRecycleBin() {
       }
       page.items.value = page.items.value.map((item) => (item.id === trip.id ? requested : item))
       selected.value = requested
+      deletionJobs.track(trip.id)
       feedback.value = [
         '永久清理请求已受理，等待清理完成。这趟旅行已无法恢复。',
         ...writeWarnings(outcome.result),
@@ -181,6 +210,21 @@ export function useRecycleBin() {
         cause,
         '网络连接中断，清理请求结果尚未确认。重新验证密码后可重试同一请求。',
       )
+      if (!(cause instanceof ApiError)) {
+        try {
+          const job = await getTripDeletionJob(trip.id)
+          if (job.scope === 'trip') {
+            deletionJobs.track(trip.id)
+            purgeOpened.value = false
+            confirmed.value = false
+            feedback.value = '已找回永久清理任务，请查看实际处理进度。这趟旅行已无法恢复。'
+            await page.reload()
+            return true
+          }
+        } catch {
+          /* 仍未确认受理，保留原幂等键并允许重试。 */
+        }
+      }
       if (cause instanceof ApiError && cause.code === 'VERSION_CONFLICT') {
         await loadSelected()
         purgeError.value = '旅行已在其他设备修改，请检查最新内容并重新勾选确认。'
@@ -212,5 +256,8 @@ export function useRecycleBin() {
     closePurge,
     loadSelected,
     purge,
+    deletionJobs,
+    retryJob,
+    openRetry,
   }
 }

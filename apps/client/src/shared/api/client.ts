@@ -15,6 +15,8 @@ const NO_REPLAY_PATHS = new Set([
   '/auth/refresh',
   '/auth/logout',
   '/auth/password-reset',
+  '/account/deletion',
+  '/account/deletion/{job_id}/receipt',
 ])
 
 export interface ApiClientOptions {

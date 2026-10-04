@@ -17,6 +17,7 @@ import {
 
 import IconAction from '@/desktop/components/IconAction.vue'
 import type { TrashedTrip } from '@/shared/api/trips'
+import DeletionJobStatus from '@/desktop/components/DeletionJobStatus.vue'
 import {
   canRestoreTrip,
   formatTripTime,
@@ -44,7 +45,9 @@ const {
   confirmed,
   password,
   purgeError,
+  retryJob,
 } = recycle
+const { tasks, loading: loadingTasks } = recycle.deletionJobs
 
 function row(value: unknown): TrashedTrip {
   return value as TrashedTrip
@@ -86,6 +89,41 @@ function closePurge(done?: () => void) {
     />
     <ElAlert v-if="feedback" :title="feedback" type="success" show-icon @close="feedback = null" />
     <ElAlert v-if="actionError" :title="actionError" type="error" :closable="false" show-icon />
+    <ElCard v-if="tasks.length" shadow="never">
+      <template #header
+        ><div class="recycle-title-row">
+          <span>永久清理进度</span
+          ><IconAction
+            icon="refresh"
+            label="刷新清理进度"
+            :loading="loadingTasks"
+            @click="recycle.deletionJobs.refresh"
+          /></div
+      ></template>
+      <ul class="cleanup-tasks">
+        <li v-for="task in tasks" :key="task.tripId">
+          <h2>{{ items.find((trip) => trip.id === task.tripId)?.name ?? '旅行清理任务' }}</h2>
+          <DeletionJobStatus v-if="task.job" :job="task.job" />
+          <p v-else>申请已受理，正在查询处理状态。</p>
+          <ElAlert v-if="task.error" :title="task.error" type="error" :closable="false" />
+          <div class="tf-actions">
+            <ElButton
+              v-if="task.job?.retryable"
+              type="danger"
+              plain
+              :disabled="purging || !!busy"
+              @click="recycle.openRetry(task.tripId, task.job)"
+              >验证身份并重试清理</ElButton
+            >
+            <ElButton
+              v-if="task.job?.status === 'completed'"
+              @click="recycle.deletionJobs.dismiss(task.tripId)"
+              >收起已完成任务</ElButton
+            >
+          </div>
+        </li>
+      </ul>
+    </ElCard>
     <ElCard shadow="never">
       <ElSkeleton v-if="loading" :rows="6" animated />
       <div v-else-if="error">
@@ -205,7 +243,7 @@ function closePurge(done?: () => void) {
 
     <ElDialog
       :model-value="purgeOpened"
-      title="请求永久清理旅行"
+      :title="retryJob ? '重试永久清理旅行' : '请求永久清理旅行'"
       width="min(560px, calc(100vw - 32px))"
       :close-on-click-modal="false"
       :close-on-press-escape="!purging"
@@ -225,7 +263,7 @@ function closePurge(done?: () => void) {
           }}
         </p>
         <ElAlert
-          v-if="selected.purge_requested_at"
+          v-if="selected.purge_requested_at && !retryJob"
           title="这趟旅行已请求永久清理，正在等待完成。"
           type="warning"
           :closable="false"
@@ -246,7 +284,7 @@ function closePurge(done?: () => void) {
           class="purge-error"
         />
         <ElForm
-          :disabled="purging || !!selectionError || !!selected.purge_requested_at"
+          :disabled="purging || !!selectionError || (!!selected.purge_requested_at && !retryJob)"
           label-position="top"
           @submit.prevent="recycle.purge"
         >
@@ -278,10 +316,10 @@ function closePurge(done?: () => void) {
             !!selectionError ||
             !confirmed ||
             !password ||
-            !!selected?.purge_requested_at
+            (!!selected?.purge_requested_at && !retryJob)
           "
           @click="recycle.purge"
-          >验证密码并请求永久清理</ElButton
+          >{{ retryJob ? '验证密码并重试清理' : '验证密码并请求永久清理' }}</ElButton
         ></template
       >
     </ElDialog>
@@ -295,6 +333,29 @@ function closePurge(done?: () => void) {
   display: flex;
   flex-direction: column;
   gap: 20px;
+}
+.cleanup-tasks {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.cleanup-tasks li {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+.cleanup-tasks li + li {
+  border-top: 1px solid var(--tf-line-soft);
+  padding-top: 20px;
+}
+.cleanup-tasks h2 {
+  margin: 0;
+  font-size: 17px;
+  overflow-wrap: anywhere;
 }
 .recycle-heading {
   display: flex;

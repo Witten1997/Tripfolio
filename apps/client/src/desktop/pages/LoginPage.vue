@@ -13,6 +13,7 @@ import { useRoute, useRouter } from 'vue-router'
 
 import { ApiError, login } from '@/shared/api/auth'
 import { isEmail } from '@/shared/auth/useEmailChallenge'
+import { readDeletion } from '@/shared/deletion/storage'
 
 const router = useRouter()
 const route = useRoute()
@@ -20,6 +21,7 @@ const formRef = ref<FormInstance>()
 const form = reactive({ email: '', password: '' })
 const submitting = ref(false)
 const error = ref<string | null>(null)
+const hasDeletion = ref(!!readDeletion())
 
 const rules = {
   email: [
@@ -87,6 +89,9 @@ async function submit() {
       <div class="auth-links">
         <RouterLink :to="{ name: 'register' }">注册账号</RouterLink>
         <RouterLink :to="{ name: 'reset-password' }">忘记密码</RouterLink>
+      </div>
+      <div v-if="hasDeletion" class="auth-links">
+        <RouterLink :to="{ name: 'account-deletion-progress' }">查看已有注销任务</RouterLink>
       </div>
     </ElCard>
   </div>

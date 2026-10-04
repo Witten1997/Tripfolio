@@ -18,6 +18,8 @@ declare module 'vue-router' {
     public?: boolean
     /** 访客分享页不挂载账号壳。 */
     share?: boolean
+    /** 注销进度使用独立只读凭证，不能恢复普通登录。 */
+    deletion?: boolean
     /** 仅未登录时有意义的页面（登录、注册、找回密码）。 */
     guestOnly?: boolean
   }
@@ -163,6 +165,17 @@ export function buildRoutes(shell: Shell): RouteRecordRaw[] {
       name: 'account',
       component: pick(pages.account),
       props: shell === 'desktop' ? { section: 'profile' } : undefined,
+    },
+    {
+      path: '/account/deletion',
+      name: 'account-deletion',
+      component: () => import('@/desktop/pages/AccountDeletionPage.vue'),
+    },
+    {
+      path: '/account/deletion/progress',
+      name: 'account-deletion-progress',
+      component: () => import('@/desktop/pages/AccountDeletionProgressPage.vue'),
+      meta: { public: true, deletion: true },
     },
     {
       path: '/personal-settings',

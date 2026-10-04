@@ -407,6 +407,14 @@ onMounted(async () => {
         </ElForm>
       </ElCard>
 
+      <ElCard v-if="showProfile">
+        <template #header>账号注销</template>
+        <p class="account-deletion-hint">永久删除账号、全部旅行及照片附件。申请受理后无法恢复。</p>
+        <RouterLink :to="{ name: 'account-deletion' }"
+          ><ElButton type="danger" plain>了解并申请注销</ElButton></RouterLink
+        >
+      </ElCard>
+
       <ElCard v-if="showSessions">
         <template #header>
           <div class="account-card-header">
@@ -514,6 +522,11 @@ onMounted(async () => {
 .account-form {
   max-width: 480px;
   margin-top: 16px;
+}
+.account-deletion-hint {
+  color: var(--tf-text-2);
+  line-height: 1.8;
+  margin: 0 0 16px;
 }
 
 .session-times time {

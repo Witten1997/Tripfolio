@@ -44,6 +44,12 @@ async function signOut() {
         is-link
         :to="{ name: 'login-devices' }"
       />
+      <VanCell
+        title="注销账号"
+        label="永久删除账号及全部旅行数据"
+        is-link
+        :to="{ name: 'account-deletion' }"
+      />
     </VanCellGroup>
     <div class="mobile-account-page__logout tf-surface">
       <VanButton type="danger" plain block @click="signOut">退出登录</VanButton>

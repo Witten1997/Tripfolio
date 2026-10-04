@@ -24,7 +24,7 @@ export async function resolveNavigation(
   session: GuardSession,
   restore: () => Promise<unknown>,
 ): Promise<true | RouteLocationRaw> {
-  if (to.meta.share) return true
+  if (to.meta.share || to.meta.deletion) return true
   if (!session.restored) await restore()
   if (to.meta.guestOnly && session.isAuthenticated) return { name: 'trips' }
   if (!to.meta.public && !session.isAuthenticated) {
@@ -40,7 +40,9 @@ export function createAppRouter(shell: Shell): Router {
     routes: buildRoutes(shell),
   })
   router.beforeEach(async (to) => {
-    if (to.meta.share) return true
+    if (to.meta.share || to.meta.deletion) return true
+    const { readDeletion } = await import('@/shared/deletion/storage')
+    if (readDeletion() && !to.meta.guestOnly) return { name: 'account-deletion-progress' }
     const { restoreSession } = await import('@/shared/api/auth')
     const { useSessionStore } = await import('@/shared/stores/session')
     return resolveNavigation(to, useSessionStore(), restoreSession)

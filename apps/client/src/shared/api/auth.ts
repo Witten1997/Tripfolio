@@ -2,6 +2,7 @@ import type { components } from '@tripfolio/contracts/openapi/v1'
 
 import { api, registerRefreshHandler } from '@/shared/api/client'
 import { deviceId, useSessionStore } from '@/shared/stores/session'
+import { readDeletion } from '@/shared/deletion/storage'
 
 import { ApiError, problemMessage, type Problem } from './problem'
 export { ApiError, problemMessage }
@@ -30,6 +31,7 @@ let inflightRefresh: Promise<boolean> | null = null
  * 成功写入新的访问令牌与账号，失败返回 false 并由调用方决定是否清会话。
  */
 export function refreshSession(): Promise<boolean> {
+  if (readDeletion()) return Promise.resolve(false)
   if (inflightRefresh) return inflightRefresh
   // 清理放在 .finally 里而不是函数体内：函数体没有 await 时会同步结束，早于下面的赋值。
   const run = (async () => {
@@ -41,7 +43,7 @@ export function refreshSession(): Promise<boolean> {
         body: {},
         headers: { 'X-CSRF-Token': csrf },
       })
-      if (!data) return false
+      if (!data || readDeletion()) return false
       session.applyAuthResult(data.data)
       return true
     } catch {

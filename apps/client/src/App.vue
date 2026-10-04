@@ -12,12 +12,19 @@ const route = useRoute()
 const ShareLayout = defineAsyncComponent(() => import('@/share/ShareLayout.vue'))
 const DesktopShell = defineAsyncComponent(() => import('@/desktop/DesktopShell.vue'))
 const MobileShell = defineAsyncComponent(() => import('@/mobile/MobileShell.vue'))
+const DeletionLayout = defineAsyncComponent(() => import('@/desktop/DeletionLayout.vue'))
 const RootComponent = computed(() =>
-  (route.matched.length ? route.meta.share : props.share)
-    ? ShareLayout
-    : props.shell === 'desktop'
-      ? DesktopShell
-      : MobileShell,
+  (
+    route.matched.length
+      ? route.meta.deletion
+      : window.location.pathname === '/account/deletion/progress'
+  )
+    ? DeletionLayout
+    : (route.matched.length ? route.meta.share : props.share)
+      ? ShareLayout
+      : props.shell === 'desktop'
+        ? DesktopShell
+        : MobileShell,
 )
 </script>
 
