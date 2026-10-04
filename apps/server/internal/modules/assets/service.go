@@ -302,9 +302,11 @@ func (s *Service) authorizeUploadFor(ctx context.Context, accountID uuid.UUID, r
 	// 授权有效期与确认窗口对齐：窗口过了授权也没用。
 	ttl := UploadWindow
 	if res.UploadExpiresAt != nil {
-		if remain := res.UploadExpiresAt.Sub(s.clock.Now()); remain > 0 {
-			ttl = remain
+		remain := res.UploadExpiresAt.Sub(s.clock.Now())
+		if remain <= 0 {
+			return nil, nil
 		}
+		ttl = remain
 	}
 	auth, err := s.objects.AuthorizeUpload(ctx, keys.Staging, attempt.DeclaredMediaType, attempt.ExpectedSize, ttl)
 	if err != nil {

@@ -1,7 +1,10 @@
 package httpapi
 
 import (
+	"bytes"
 	"context"
+	"io"
+	"net/http"
 	"strings"
 	"tripfolio/server/internal/foundation/apperr"
 	"tripfolio/server/internal/transport/httpapi/generated"
@@ -93,9 +96,7 @@ func (h *Handler) RetryDeletionJob(ctx context.Context, req generated.RetryDelet
 	return generated.RetryDeletionJob202JSONResponse{Data: out}, nil
 }
 func (h *Handler) GetAccountDeletion(ctx context.Context, req generated.GetAccountDeletionRequestObject) (generated.GetAccountDeletionResponseObject, error) {
-	if h.deletions == nil {
-		return nil, apperr.New(503, "DEPENDENCY_UNAVAILABLE", "清理服务未启用")
-	}
+
 	r := middleware.RequestFrom(ctx)
 	token := ""
 	if r != nil {
@@ -104,9 +105,41 @@ func (h *Handler) GetAccountDeletion(ctx context.Context, req generated.GetAccou
 			token = strings.TrimSpace(value)
 		}
 	}
+	if token == "" {
+		return nil, apperr.Unauthorized("AUTH_REQUIRED", "需要注销查询凭证")
+	}
+	if h.deletions == nil {
+		return nil, apperr.New(503, "DEPENDENCY_UNAVAILABLE", "清理服务未启用")
+	}
 	out, err := h.deletions.GetAccount(ctx, req.JobId, token)
 	if err != nil {
 		return nil, err
 	}
 	return generated.GetAccountDeletion200JSONResponse{Data: out}, nil
+}
+
+func deletionRequests(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := strings.TrimPrefix(r.URL.Path, "/api/v1")
+		relevant := strings.HasPrefix(path, "/account/deletion") || strings.HasPrefix(path, "/deletion-jobs/") || strings.HasSuffix(path, "/deletion-job")
+		if relevant {
+			w.Header().Set("Cache-Control", "no-store")
+		}
+		confirmation := r.Method == http.MethodPost && (path == "/account/deletion" || (strings.HasPrefix(path, "/deletion-jobs/") && strings.HasSuffix(path, "/retry")))
+		if confirmation {
+			body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 4096))
+			if err != nil {
+				WriteProblem(w, r, 413, "REQUEST_TOO_LARGE", "")
+				return
+			}
+			if err = validateContentObject(body, contentBodyRule{fields: map[string]bool{"confirm": false}, required: []string{"confirm"}}); err != nil {
+				if e, ok := apperr.As(err); ok {
+					writeAppError(w, r, e)
+				}
+				return
+			}
+			r.Body = io.NopCloser(bytes.NewReader(body))
+		}
+		next.ServeHTTP(w, r)
+	})
 }

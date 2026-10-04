@@ -221,6 +221,7 @@ type DeletionJob struct {
 	StartedAt        *time.Time
 	FinishedAt       *time.Time
 	RetainUntil      *time.Time
+	RequestedVia     string
 }
 
 type Document struct {
@@ -521,7 +522,7 @@ type TripMember struct {
 type TripPurgeObject struct {
 	JobID     uuid.UUID
 	AccountID uuid.UUID
-	TripID    uuid.UUID
+	TripID    uuid.NullUUID
 	ObjectKey string
 	RemovedAt *time.Time
 }

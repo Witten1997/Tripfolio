@@ -16,6 +16,7 @@ import (
 	accountpg "tripfolio/server/internal/adapters/postgres/account"
 	adminpg "tripfolio/server/internal/adapters/postgres/admin"
 	assetspg "tripfolio/server/internal/adapters/postgres/assets"
+	deletionpg "tripfolio/server/internal/adapters/postgres/deletion"
 	financepg "tripfolio/server/internal/adapters/postgres/finance"
 	"tripfolio/server/internal/adapters/postgres/pgcore"
 	travelpg "tripfolio/server/internal/adapters/postgres/travel"
@@ -28,6 +29,7 @@ import (
 	"tripfolio/server/internal/modules/admin"
 	"tripfolio/server/internal/modules/assets"
 	"tripfolio/server/internal/modules/backup"
+	"tripfolio/server/internal/modules/deletion"
 	"tripfolio/server/internal/modules/finance"
 	geoservice "tripfolio/server/internal/modules/geo"
 	"tripfolio/server/internal/modules/metadata"
@@ -46,6 +48,7 @@ import (
 
 // Services 是 API 用到的全部业务服务；测试也用它在内存或真实数据库上组装。
 type Services struct {
+	Deletions    *deletion.Service
 	Photos       *album.Service
 	Reservations *reservation.Service
 	Documents    *document.Service
@@ -172,6 +175,7 @@ func BuildServices(pool *pgxpool.Pool, cfg config.Config, logger *slog.Logger, m
 		Photos: photos, Reservations: reservations, Documents: documents,
 		Maintenance: pgcore.NewMaintenanceGate(cfg.DatabaseURL, pool),
 		Backups:     backups,
+		Deletions:   deletion.NewService(deletionpg.NewStore(pool, insertOnly, writer)),
 		TripPurger:  trip.NewPurger(adminpg.NewTripPurgeStore(pool), purgeObjects),
 		Admin:       admin.NewService(adminpg.NewStore(pool), hasher, clk).WithTripLifecycle(adminpg.NewTripLifecycleStore(pool, insertOnly, clk)).WithBackups(backupStore, backups),
 		Dashboard:   dashboardSvc,

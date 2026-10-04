@@ -163,6 +163,7 @@ func NewRouter(d Deps) http.Handler {
 		api.Use(middleware.Share(unavailableResolver{}, isSharePath))
 	}
 
+	api.Use(deletionRequests)
 	api.Use(contentRequests)
 	api.NotFound(notFound)
 	api.MethodNotAllowed(methodNotAllowed)

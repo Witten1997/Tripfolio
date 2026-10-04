@@ -25,7 +25,7 @@ func (q *Queries) GetAccountDefaultTimezone(ctx context.Context, accountID uuid.
 }
 
 const getActiveTripDeletionJob = `-- name: GetActiveTripDeletionJob :one
-SELECT id, owner_account_id, scope, target_trip_id, status, stage, processed_items, total_items, receipt_token_hash, receipt_expires_at, error_code, created_at, started_at, finished_at, retain_until FROM deletion_jobs
+SELECT id, owner_account_id, scope, target_trip_id, status, stage, processed_items, total_items, receipt_token_hash, receipt_expires_at, error_code, created_at, started_at, finished_at, retain_until, requested_via FROM deletion_jobs
 WHERE owner_account_id = $1 AND target_trip_id = $2
   AND scope = 'trip' AND status IN ('queued', 'running', 'failed')
 `
@@ -54,6 +54,7 @@ func (q *Queries) GetActiveTripDeletionJob(ctx context.Context, arg GetActiveTri
 		&i.StartedAt,
 		&i.FinishedAt,
 		&i.RetainUntil,
+		&i.RequestedVia,
 	)
 	return i, err
 }
@@ -207,7 +208,7 @@ func (q *Queries) InsertTrip(ctx context.Context, arg InsertTripParams) (Trip, e
 const insertTripDeletionJob = `-- name: InsertTripDeletionJob :one
 INSERT INTO deletion_jobs (id, owner_account_id, scope, target_trip_id, status, stage, created_at)
 VALUES ($1, $2, 'trip', $3, $4, $5, $6)
-RETURNING id, owner_account_id, scope, target_trip_id, status, stage, processed_items, total_items, receipt_token_hash, receipt_expires_at, error_code, created_at, started_at, finished_at, retain_until
+RETURNING id, owner_account_id, scope, target_trip_id, status, stage, processed_items, total_items, receipt_token_hash, receipt_expires_at, error_code, created_at, started_at, finished_at, retain_until, requested_via
 `
 
 type InsertTripDeletionJobParams struct {
@@ -245,6 +246,7 @@ func (q *Queries) InsertTripDeletionJob(ctx context.Context, arg InsertTripDelet
 		&i.StartedAt,
 		&i.FinishedAt,
 		&i.RetainUntil,
+		&i.RequestedVia,
 	)
 	return i, err
 }

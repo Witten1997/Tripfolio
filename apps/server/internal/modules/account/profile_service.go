@@ -55,6 +55,9 @@ type ProfilePatch struct {
 func (s *ProfileService) Update(ctx context.Context, a actor.Actor, baseVersion int64, patch ProfilePatch) (Account, []string, error) {
 	acc, found, err := s.store.AccountByID(ctx, a.AccountID)
 	if err != nil {
+		if _, ok := apperr.As(err); ok {
+			return Account{}, nil, err
+		}
 		return Account{}, nil, apperr.Internal(err)
 	}
 	if !found {
@@ -85,6 +88,9 @@ func (s *ProfileService) Update(ctx context.Context, a actor.Actor, baseVersion 
 			if s.avatars == nil {
 				fields = append(fields, apperr.Field("avatar_asset_id", "INVALID_REFERENCE", "当前不支持头像"))
 			} else if ok, err := s.avatars.AvatarUsable(ctx, a.AccountID, *avatar); err != nil {
+				if _, ok := apperr.As(err); ok {
+					return Account{}, nil, err
+				}
 				return Account{}, nil, apperr.Internal(err)
 			} else if !ok {
 				fields = append(fields, apperr.Field("avatar_asset_id", "INVALID_REFERENCE", "头像资产不存在或不可用"))
@@ -96,6 +102,9 @@ func (s *ProfileService) Update(ctx context.Context, a actor.Actor, baseVersion 
 	}
 	updated, err := s.store.UpdateProfile(ctx, a.AccountID, nickname, avatar, tz, s.clock.Now())
 	if err != nil {
+		if _, ok := apperr.As(err); ok {
+			return Account{}, nil, err
+		}
 		return Account{}, nil, apperr.Internal(err)
 	}
 	return updated, nil, nil

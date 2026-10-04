@@ -24,15 +24,16 @@ func (g *VerificationGuard) Acquire(ctx context.Context, args assets.VerifyJobAr
 	if err != nil {
 		return nil, err
 	}
-	if tripID == nil {
-		return func() {}, nil
+	lockID := uuid.Nil
+	if tripID != nil {
+		lockID = *tripID
 	}
-	conn, release, err := pgcore.LockTripObjects(ctx, g.pool, args.AccountID, *tripID)
+	conn, release, err := pgcore.LockTripObjects(ctx, g.pool, args.AccountID, lockID)
 	if err != nil {
 		return nil, err
 	}
 	var valid bool
-	err = conn.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM assets a JOIN trips t ON t.account_id=a.account_id AND t.id=a.trip_id WHERE a.account_id=$1 AND a.id=$2 AND a.trip_id=$3 AND t.purge_requested_at IS NULL)`, args.AccountID, args.AssetID, *tripID).Scan(&valid)
+	err = conn.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM assets a JOIN accounts owner ON owner.id=a.account_id LEFT JOIN trips t ON t.account_id=a.account_id AND t.id=a.trip_id WHERE a.account_id=$1 AND a.id=$2 AND a.trip_id IS NOT DISTINCT FROM $3::uuid AND owner.status='active' AND (a.trip_id IS NULL OR t.purge_requested_at IS NULL))`, args.AccountID, args.AssetID, tripID).Scan(&valid)
 	if err != nil {
 		release()
 		return nil, err
