@@ -64,9 +64,18 @@ function closePurge(done?: () => void) {
         <span aria-hidden="true">←</span>
         <span>返回我的</span>
       </RouterLink>
-      <div>
-        <h1>旅行回收站</h1>
-        <p>整趟旅行及关联内容可在恢复截止时间前一并恢复。</p>
+      <div class="recycle-title-row">
+        <div>
+          <h1>旅行回收站</h1>
+          <p>整趟旅行及关联内容可在恢复截止时间前一并恢复。</p>
+        </div>
+        <IconAction
+          icon="refresh"
+          label="刷新回收站"
+          :loading="loading"
+          :disabled="purging || !!busy"
+          @click="recycle.reload"
+        />
       </div>
     </header>
     <ElAlert
@@ -89,59 +98,100 @@ function closePurge(done?: () => void) {
       <ElEmpty v-else-if="!items.length" description="回收站是空的"
         ><RouterLink :to="{ name: 'trips' }"><ElButton>返回旅行列表</ElButton></RouterLink></ElEmpty
       >
-      <ElTable v-else :data="items" row-key="id" class="recycle-table">
-        <ElTableColumn label="旅行" min-width="230"
-          ><template #default="{ row: value }"
-            ><div class="recycle-trip">
-              <strong>{{ row(value).name }}</strong
-              ><span>{{ row(value).destination || '目的地待定' }}</span
-              ><span>{{ row(value).start_date }} 至 {{ row(value).end_date }}</span
-              ><ElTag v-if="row(value).archived_at" size="small" type="info">已归档</ElTag>
-            </div></template
-          ></ElTableColumn
-        >
-        <ElTableColumn label="删除时间" min-width="175"
-          ><template #default="{ row: value }">{{
-            formatTripTime(row(value).deleted_at)
-          }}</template></ElTableColumn
-        >
-        <ElTableColumn label="恢复截止时间" min-width="180"
-          ><template #default="{ row: value }">{{
-            formatTripTime(row(value).purge_after_at)
-          }}</template></ElTableColumn
-        >
-        <ElTableColumn label="保留状态" min-width="205"
-          ><template #default="{ row: value }"
-            ><ElTag v-if="row(value).purge_requested_at" type="warning">已请求永久清理</ElTag>
-            <p class="retention-label">{{ retentionLabel(row(value), now) }}</p>
-            <span v-if="row(value).purge_requested_at" class="recycle-muted"
-              >等待清理完成</span
-            ></template
-          ></ElTableColumn
-        >
-        <ElTableColumn label="操作" width="190" fixed="right"
-          ><template #default="{ row: value }"
-            ><div class="recycle-actions tf-actions">
+      <template v-else>
+        <ul class="recycle-mobile-list" aria-label="回收站旅行">
+          <li v-for="trip in items" :key="trip.id">
+            <h2>{{ trip.name }}</h2>
+            <p>
+              {{ trip.destination || '目的地待定' }} · {{ trip.start_date }} 至 {{ trip.end_date }}
+            </p>
+            <dl>
+              <div>
+                <dt>删除时间</dt>
+                <dd>{{ formatTripTime(trip.deleted_at) }}</dd>
+              </div>
+              <div>
+                <dt>恢复截止</dt>
+                <dd>{{ formatTripTime(trip.purge_after_at) }}</dd>
+              </div>
+            </dl>
+            <p class="retention-label">{{ retentionLabel(trip, now) }}</p>
+            <div class="recycle-actions tf-actions">
               <ElButton
-                size="small"
-                :loading="busy === row(value).id"
-                :disabled="
-                  !canRestoreTrip(row(value), now) || purging || (!!busy && busy !== row(value).id)
-                "
-                :aria-label="`恢复旅行${row(value).name}`"
-                @click="recycle.restore(row(value))"
-                >恢复</ElButton
+                v-if="!trip.purge_requested_at"
+                :loading="busy === trip.id"
+                :disabled="!canRestoreTrip(trip, now) || purging || (!!busy && busy !== trip.id)"
+                @click="recycle.restore(trip)"
+                >恢复旅行</ElButton
               >
-              <IconAction
-                icon="trash"
-                :label="`永久清理旅行：${row(value).name}`"
+              <ElButton
+                v-if="!trip.purge_requested_at"
                 type="danger"
                 plain
-                :disabled="!!row(value).purge_requested_at || purging || !!busy"
-                @click="recycle.openPurge(row(value))"
-              /></div></template
-        ></ElTableColumn>
-      </ElTable>
+                :disabled="purging || !!busy"
+                @click="recycle.openPurge(trip)"
+                >永久清理</ElButton
+              >
+            </div>
+          </li>
+        </ul>
+        <ElTable :data="items" row-key="id" class="recycle-table">
+          <ElTableColumn label="旅行" min-width="230"
+            ><template #default="{ row: value }"
+              ><div class="recycle-trip">
+                <strong>{{ row(value).name }}</strong
+                ><span>{{ row(value).destination || '目的地待定' }}</span
+                ><span>{{ row(value).start_date }} 至 {{ row(value).end_date }}</span
+                ><ElTag v-if="row(value).archived_at" size="small" type="info">已归档</ElTag>
+              </div></template
+            ></ElTableColumn
+          >
+          <ElTableColumn label="删除时间" min-width="175"
+            ><template #default="{ row: value }">{{
+              formatTripTime(row(value).deleted_at)
+            }}</template></ElTableColumn
+          >
+          <ElTableColumn label="恢复截止时间" min-width="180"
+            ><template #default="{ row: value }">{{
+              formatTripTime(row(value).purge_after_at)
+            }}</template></ElTableColumn
+          >
+          <ElTableColumn label="保留状态" min-width="205"
+            ><template #default="{ row: value }"
+              ><ElTag v-if="row(value).purge_requested_at" type="warning">已请求永久清理</ElTag>
+              <p class="retention-label">{{ retentionLabel(row(value), now) }}</p>
+              <span v-if="row(value).purge_requested_at" class="recycle-muted"
+                >等待清理完成</span
+              ></template
+            ></ElTableColumn
+          >
+          <ElTableColumn label="操作" width="190" fixed="right"
+            ><template #default="{ row: value }"
+              ><div class="recycle-actions tf-actions">
+                <ElButton
+                  v-if="!row(value).purge_requested_at"
+                  size="small"
+                  :loading="busy === row(value).id"
+                  :disabled="
+                    !canRestoreTrip(row(value), now) ||
+                    purging ||
+                    (!!busy && busy !== row(value).id)
+                  "
+                  :aria-label="`恢复旅行${row(value).name}`"
+                  @click="recycle.restore(row(value))"
+                  >恢复</ElButton
+                >
+                <IconAction
+                  icon="trash"
+                  :label="`永久清理旅行：${row(value).name}`"
+                  type="danger"
+                  plain
+                  :disabled="!!row(value).purge_requested_at || purging || !!busy"
+                  @click="recycle.openPurge(row(value))"
+                /></div></template
+          ></ElTableColumn>
+        </ElTable>
+      </template>
     </ElCard>
     <div v-if="items.length" class="recycle-pagination">
       <span>已加载 {{ items.length }} 趟旅行</span
@@ -280,6 +330,60 @@ function closePurge(done?: () => void) {
 .recycle-heading p {
   margin: 8px 0 0;
   color: var(--tf-text-3);
+}
+.recycle-title-row {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.recycle-mobile-list {
+  display: none;
+}
+@media (max-width: 767px) {
+  .recycle-table {
+    display: none;
+  }
+  .recycle-mobile-list {
+    display: block;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .recycle-mobile-list li + li {
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 1px solid var(--tf-line-soft);
+  }
+  .recycle-mobile-list h2 {
+    margin: 0;
+    font-size: 18px;
+    overflow-wrap: anywhere;
+  }
+  .recycle-mobile-list p {
+    line-height: 1.7;
+    font-size: 13px;
+    color: var(--tf-text-2);
+    overflow-wrap: anywhere;
+  }
+  .recycle-mobile-list dl {
+    font-size: 12px;
+    line-height: 1.8;
+    color: var(--tf-text-3);
+  }
+  .recycle-mobile-list dl div {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+  }
+  .recycle-mobile-list dd {
+    margin: 0;
+  }
+  .recycle-mobile-list .recycle-actions {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
 }
 .recycle-trip {
   display: flex;
