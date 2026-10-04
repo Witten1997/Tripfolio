@@ -59,6 +59,22 @@ async function refresh() {
     const result = await getAccountDeletion(current.receipt)
     if (request !== generation) return
     job.value = result
+    if (result.status === 'completed' && result.finished_at) {
+      const expires = Math.min(
+        Date.parse(current.receipt.receipt_expires_at),
+        Date.parse(result.finished_at) + 7 * 86400000,
+      )
+      const completed = {
+        ...current,
+        receipt: { ...current.receipt, receipt_expires_at: new Date(expires).toISOString() },
+      }
+      saved.value = completed
+      try {
+        saveDeletion(completed)
+      } catch {
+        /* 查询结果仍可展示，下次服务端会校验保留期。 */
+      }
+    }
     checkedAt.value = new Date().toLocaleString('zh-CN', { hour12: false })
   } catch (cause) {
     if (request !== generation) return
@@ -86,6 +102,8 @@ async function refresh() {
 
 async function recover() {
   if (await flow.recover()) restore()
+  else if (!flow.pending.value && session.isAuthenticated)
+    await router.replace({ name: 'account-deletion' })
 }
 async function leave() {
   generation++

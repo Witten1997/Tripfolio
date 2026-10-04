@@ -11,7 +11,7 @@ const flow = useAccountDeletion()
 const { loading, busy, error, resetKey, pending, canRecover } = flow
 const session = useSessionStore()
 const router = useRouter()
-onBeforeRouteLeave(() => !busy.value)
+onBeforeRouteLeave(() => !busy.value && (!pending.value || readDeletion()?.kind === 'receipt'))
 onMounted(async () => {
   if (readDeletion()) {
     await router.replace({ name: 'account-deletion-progress' })

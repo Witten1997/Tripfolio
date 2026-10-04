@@ -59,6 +59,13 @@ export function useRecycleBin() {
   const deletionJobs = useTripDeletionJobs()
   const retryJob = shallowRef<DeletionJob | null>(null)
   let selectionGeneration = 0
+  watch(deletionJobs.tasks, (tasks) => {
+    const completed = new Set(
+      tasks.filter((task) => task.job?.status === 'completed').map((task) => task.tripId),
+    )
+    if (completed.size)
+      page.items.value = page.items.value.filter((trip) => !completed.has(trip.id))
+  })
   watch(page.items, (items) => {
     for (const trip of items) if (trip.purge_requested_at) deletionJobs.track(trip.id)
   })
