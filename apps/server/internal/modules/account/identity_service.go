@@ -136,6 +136,8 @@ func (s *IdentityService) RequestEmailChallenge(ctx context.Context, purpose Pur
 		DeliveryStatus: "pending", CreatedAt: now, ExpiresAt: now.Add(s.policy.ChallengeTTL),
 	}, s.policy.ChallengeResend, s.policy.ChallengePerHour)
 	switch {
+	case errors.Is(err, ErrChallengeSuppressed):
+		return ChallengeResult{ChallengeID: id, ExpiresInSeconds: int(s.policy.ChallengeTTL / time.Second), RetryAfterSeconds: int(s.policy.ChallengeResend / time.Second)}, nil
 	case errors.Is(err, ErrChallengeTooSoon):
 		return ChallengeResult{}, apperr.RateLimited(s.policy.ChallengeResend)
 	case errors.Is(err, ErrChallengeQuotaExceeded):
