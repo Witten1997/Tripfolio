@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"tripfolio/server/internal/foundation/actor"
+	"tripfolio/server/internal/foundation/apperr"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -348,4 +350,22 @@ func (r *TripReader) ListTrashed(ctx context.Context, accountID uuid.UUID, q tri
 		out = append(out, res)
 	}
 	return out, nil
+}
+
+func (r *tripRepo) CheckPurgeAuthentication(ctx context.Context, a actor.Actor, now time.Time, window time.Duration) error {
+	if a.SessionID == uuid.Nil {
+		return nil
+	}
+	var at *time.Time
+	err := r.scope.Tx.QueryRow(ctx, `SELECT reauthenticated_at FROM account_sessions WHERE id=$1 AND account_id=$2 AND revoked_at IS NULL AND expires_at>$3 FOR SHARE`, a.SessionID, a.AccountID, now).Scan(&at)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return apperr.Unauthorized("SESSION_EXPIRED", "")
+	}
+	if err != nil {
+		return err
+	}
+	if at == nil || now.Before(*at) || now.Sub(*at) > window {
+		return apperr.Forbidden("REAUTH_REQUIRED", "请先验证密码")
+	}
+	return nil
 }

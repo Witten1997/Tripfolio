@@ -168,7 +168,7 @@ func RunServe(ctx context.Context, cfg config.Config, logger *slog.Logger) error
 		return &StartupError{Phase: PhaseServices, Cause: err, Hints: servicesHints(cfg)}
 	}
 
-	router := httpapi.NewRouter(httpapi.Deps{
+	router := httpapi.NewRouter(httpapi.Deps{Deletions: services.Deletions,
 		AdminBasePath: cfg.AdminAPIPath(),
 		Admin:         adminapi.NewHandler(adminapi.Options{BasePath: cfg.AdminAPIPath(), Service: services.Admin, Runtime: adminRuntime(pool, readiness, worker, cfg), Secure: cfg.CookieSecure, Logger: logger}),
 		Logger:        logger, Metadata: metadata.Current(), Readiness: readiness, CORSOrigins: cfg.CORSOrigins,
@@ -246,6 +246,7 @@ func startWorker(ctx context.Context, pool *pgxpool.Pool, cfg config.Config, ser
 	deps := riverjobs.Deps{Logger: logger, RouteRecalculator: services.RoutePlans, Backups: services.Backups}
 	if services.TripPurger != nil {
 		deps.TripPurger = services.TripPurger
+		deps.Deletions = services.Deletions
 	}
 	// 未配置对象存储时 AssetVerifier 为 nil 指针；保持接口为 nil，让 worker 走推迟分支而不是解引用。
 	if services.AssetVerifier != nil {

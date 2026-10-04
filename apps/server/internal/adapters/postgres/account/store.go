@@ -118,20 +118,62 @@ func (s *Store) CreateAccount(ctx context.Context, a account.Account) (account.A
 	return toAccount(row), nil
 }
 
-func (s *Store) UpdatePassword(ctx context.Context, id uuid.UUID, hash string, now time.Time) error {
-	return s.q.UpdateAccountPassword(ctx, dbgen.UpdateAccountPasswordParams{ID: id, PasswordHash: hash, PasswordChangedAt: now})
+// Lock the account before security/profile writes, so an in-flight request cannot pass deleting.
+func lockActive(ctx context.Context, tx pgx.Tx, id uuid.UUID) error {
+	var status string
+	err := tx.QueryRow(ctx, `SELECT status FROM accounts WHERE id=$1 FOR UPDATE`, id).Scan(&status)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return apperr.Unauthorized("SESSION_EXPIRED", "")
+	}
+	if err != nil {
+		return err
+	}
+	if status != "active" {
+		return account.StatusError(status)
+	}
+	if a, ok := actor.FromContext(ctx); ok {
+		var valid bool
+		if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM account_sessions WHERE account_id=$1 AND id=$2 AND revoked_at IS NULL AND expires_at>$3)`, id, a.SessionID, time.Now().UTC()).Scan(&valid); err != nil {
+			return err
+		}
+		if !valid || a.AccountID != id {
+			return apperr.Unauthorized("SESSION_EXPIRED", "")
+		}
+	}
+	return nil
 }
-
+func (s *Store) UpdatePassword(ctx context.Context, id uuid.UUID, hash string, now time.Time) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if err = lockActive(ctx, tx, id); err != nil {
+		return err
+	}
+	if err = dbgen.New(tx).UpdateAccountPassword(ctx, dbgen.UpdateAccountPasswordParams{ID: id, PasswordHash: hash, PasswordChangedAt: now}); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
 func (s *Store) UpdateProfile(ctx context.Context, id uuid.UUID, nickname string, avatar *uuid.UUID, tz string, now time.Time) (account.Account, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return account.Account{}, err
+	}
+	defer tx.Rollback(ctx)
+	if err = lockActive(ctx, tx, id); err != nil {
+		return account.Account{}, err
+	}
 	var avatarID uuid.NullUUID
 	if avatar != nil {
 		avatarID = uuid.NullUUID{UUID: *avatar, Valid: true}
 	}
-	row, err := s.q.UpdateAccountProfile(ctx, dbgen.UpdateAccountProfileParams{ID: id, Nickname: nickname, AvatarAssetID: avatarID, DefaultTimezone: tz, UpdatedAt: now})
+	row, err := dbgen.New(tx).UpdateAccountProfile(ctx, dbgen.UpdateAccountProfileParams{ID: id, Nickname: nickname, AvatarAssetID: avatarID, DefaultTimezone: tz, UpdatedAt: now})
 	if err != nil {
 		return account.Account{}, err
 	}
-	return toAccount(row), nil
+	return toAccount(row), tx.Commit(ctx)
 }
 
 func (s *Store) SetAccountStatus(ctx context.Context, id uuid.UUID, status string, now time.Time) error {
@@ -247,7 +289,22 @@ func (s *Store) TouchSession(ctx context.Context, id uuid.UUID, now time.Time) e
 }
 
 func (s *Store) SetReauthenticated(ctx context.Context, id uuid.UUID, now time.Time) error {
-	return s.q.SetSessionReauthenticated(ctx, dbgen.SetSessionReauthenticatedParams{ID: id, ReauthenticatedAt: &now})
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	var owner uuid.UUID
+	if err = tx.QueryRow(ctx, `SELECT account_id FROM account_sessions WHERE id=$1`, id).Scan(&owner); err != nil {
+		return err
+	}
+	if err = lockActive(ctx, tx, owner); err != nil {
+		return err
+	}
+	if err = dbgen.New(tx).SetSessionReauthenticated(ctx, dbgen.SetSessionReauthenticatedParams{ID: id, ReauthenticatedAt: &now}); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 func (s *Store) RevokeSession(ctx context.Context, id uuid.UUID, now time.Time) error {
@@ -283,6 +340,14 @@ func (s *Store) IssueChallengeTx(ctx context.Context, c account.Challenge, resen
 	defer func() { _ = tx.Rollback(ctx) }()
 	if _, err := tx.Exec(ctx, "SELECT pg_advisory_xact_lock(hashtext($1))", string(c.Purpose)+":"+c.EmailKey); err != nil {
 		return account.Challenge{}, err
+	}
+	var status string
+	err = tx.QueryRow(ctx, `SELECT status FROM accounts WHERE email_key=$1 FOR SHARE`, c.EmailKey).Scan(&status)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return account.Challenge{}, err
+	}
+	if status == "deleting" {
+		return account.Challenge{}, account.StatusError(status)
 	}
 	q := dbgen.New(tx)
 	latest, err := q.LatestChallengeCreatedAt(ctx, dbgen.LatestChallengeCreatedAtParams{EmailKey: c.EmailKey, Purpose: string(c.Purpose)})

@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"time"
 	"tripfolio/server/internal/modules/backup"
+	"tripfolio/server/internal/modules/deletion"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -34,6 +35,8 @@ func NewWorkerClient(pool *pgxpool.Pool, logger *slog.Logger, workers *river.Wor
 		Workers: workers,
 		PeriodicJobs: []*river.PeriodicJob{river.NewPeriodicJob(river.PeriodicInterval(time.Minute), func() (river.JobArgs, *river.InsertOpts) {
 			return backup.TickArgs{}, &river.InsertOpts{UniqueOpts: river.UniqueOpts{ByPeriod: time.Minute}, MaxAttempts: 3}
+		}, &river.PeriodicJobOpts{RunOnStart: true}), river.NewPeriodicJob(river.PeriodicInterval(time.Minute), func() (river.JobArgs, *river.InsertOpts) {
+			return deletion.ReconcileArgs{}, &river.InsertOpts{UniqueOpts: river.UniqueOpts{ByPeriod: time.Minute}, MaxAttempts: 3}
 		}, &river.PeriodicJobOpts{RunOnStart: true})},
 	})
 }

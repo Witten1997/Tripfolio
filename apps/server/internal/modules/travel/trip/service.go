@@ -794,6 +794,14 @@ func (s *Service) Purge(ctx context.Context, a actor.Actor, operationID uuid.UUI
 		if !a.RecentlyAuthenticated(now, s.reauthWindow) {
 			return apperr.Forbidden(codeReauthRequired, "请先验证密码再永久删除")
 		}
+		if guarded, ok := repo.(interface {
+			CheckPurgeAuthentication(context.Context, actor.Actor, time.Time, time.Duration) error
+		}); ok {
+			if err := guarded.CheckPurgeAuthentication(ctx, a, now, s.reauthWindow); err != nil {
+				return err
+			}
+		}
+
 		current, err := lockTrashed(ctx, repo, a.AccountID, id, version)
 		if err != nil {
 			return err

@@ -110,6 +110,13 @@ func (s *TripLifecycleStore) MutateTrip(ctx context.Context, sess admin.Session,
 	if (cmd.Action == "purge" || cmd.Action == "retry") && (reauth == nil || now.Before(*reauth) || now.Sub(*reauth) > admin.ReauthWindow) {
 		return out, apperr.Forbidden("ADMIN_REAUTH_REQUIRED", "请重新验证密码")
 	}
+	var ownerStatus string
+	if err = tx.QueryRow(ctx, `SELECT status FROM accounts WHERE id=$1`, owner).Scan(&ownerStatus); err != nil {
+		return out, err
+	}
+	if ownerStatus == "deleting" {
+		return out, apperr.Forbidden("ACCOUNT_DELETING", "账号正在注销")
+	}
 	var lastSeq int64
 	if err = tx.QueryRow(ctx, `SELECT last_seq FROM account_sync_state WHERE account_id=$1 FOR UPDATE`, owner).Scan(&lastSeq); err != nil {
 		return out, err
@@ -183,6 +190,11 @@ func (s *TripLifecycleStore) MutateTrip(ctx context.Context, sess admin.Session,
 		if r.Type == trip.EntityTypeDeletionJob {
 			jobID := r.ID
 			out.JobID = &jobID
+		}
+	}
+	if out.JobID != nil && (cmd.Action == "purge" || cmd.Action == "retry") {
+		if _, err = tx.Exec(ctx, `UPDATE deletion_jobs SET requested_via='admin' WHERE id=$1`, out.JobID); err != nil {
+			return out, err
 		}
 	}
 	audit.Details = map[string]any{"before": admin.OverviewOf(before), "after": out.Trip, "job_id": out.JobID, "warnings": out.Warnings}

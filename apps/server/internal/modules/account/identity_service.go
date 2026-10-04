@@ -314,6 +314,9 @@ func (s *IdentityService) ResetPassword(ctx context.Context, challengeID uuid.UU
 	}
 	acc, found, err := s.store.AccountByEmailKey(ctx, key)
 	if err != nil {
+		if _, ok := apperr.As(err); ok {
+			return err
+		}
 		return apperr.Internal(err)
 	}
 	if !found {
@@ -321,13 +324,22 @@ func (s *IdentityService) ResetPassword(ctx context.Context, challengeID uuid.UU
 	}
 	hash, err := s.hasher.Hash(newPassword)
 	if err != nil {
+		if _, ok := apperr.As(err); ok {
+			return err
+		}
 		return apperr.Internal(err)
 	}
 	now := s.clock.Now()
 	if err := s.store.UpdatePassword(ctx, acc.ID, hash, now); err != nil {
+		if _, ok := apperr.As(err); ok {
+			return err
+		}
 		return apperr.Internal(err)
 	}
 	if err := s.store.RevokeAccountSessions(ctx, acc.ID, now); err != nil {
+		if _, ok := apperr.As(err); ok {
+			return err
+		}
 		return apperr.Internal(err)
 	}
 	return nil
@@ -337,6 +349,9 @@ func (s *IdentityService) ResetPassword(ctx context.Context, challengeID uuid.UU
 func (s *IdentityService) Reauthenticate(ctx context.Context, a actor.Actor, password string) error {
 	acc, found, err := s.store.AccountByID(ctx, a.AccountID)
 	if err != nil {
+		if _, ok := apperr.As(err); ok {
+			return err
+		}
 		return apperr.Internal(err)
 	}
 	if !found {
@@ -347,6 +362,9 @@ func (s *IdentityService) Reauthenticate(ctx context.Context, a actor.Actor, pas
 		return apperr.Unauthorized("INVALID_CREDENTIALS", "密码不正确")
 	}
 	if err := s.store.SetReauthenticated(ctx, a.SessionID, s.clock.Now()); err != nil {
+		if _, ok := apperr.As(err); ok {
+			return err
+		}
 		return apperr.Internal(err)
 	}
 	return nil
@@ -359,6 +377,9 @@ func (s *IdentityService) ChangePassword(ctx context.Context, a actor.Actor, cur
 	}
 	acc, found, err := s.store.AccountByID(ctx, a.AccountID)
 	if err != nil {
+		if _, ok := apperr.As(err); ok {
+			return err
+		}
 		return apperr.Internal(err)
 	}
 	if !found {
@@ -370,13 +391,22 @@ func (s *IdentityService) ChangePassword(ctx context.Context, a actor.Actor, cur
 	}
 	hash, err := s.hasher.Hash(next)
 	if err != nil {
+		if _, ok := apperr.As(err); ok {
+			return err
+		}
 		return apperr.Internal(err)
 	}
 	now := s.clock.Now()
 	if err := s.store.UpdatePassword(ctx, a.AccountID, hash, now); err != nil {
+		if _, ok := apperr.As(err); ok {
+			return err
+		}
 		return apperr.Internal(err)
 	}
 	if err := s.store.RevokeOtherSessions(ctx, a.AccountID, a.SessionID, now); err != nil {
+		if _, ok := apperr.As(err); ok {
+			return err
+		}
 		return apperr.Internal(err)
 	}
 	return nil

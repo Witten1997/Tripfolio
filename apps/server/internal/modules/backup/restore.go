@@ -157,7 +157,7 @@ func (s *Service) restoreNext(parent context.Context, sweep bool) {
 }
 
 func restoreVersionCompatible(source, target int64) bool {
-	return source == target || (source >= 22 && source < target && target <= 24)
+	return source == target || (source >= 22 && source < target && target <= 25)
 }
 
 func (s *Service) restore(ctx context.Context, job RestoreJob, targetVersion int64, handoff func() error) error {
@@ -245,7 +245,7 @@ func (s *Service) restore(ctx context.Context, job RestoreJob, targetVersion int
  END IF;
 END $restore$;
 `, job.Manifest.GooseVersion, job.Manifest.RiverVersion)
-	if targetVersion == 24 && job.Manifest.GooseVersion < 24 {
+	if targetVersion >= 24 && job.Manifest.GooseVersion < 24 {
 		// Version 23 lives outside the archive. Apply the only missing public migration
 		// inside the restore transaction; future migrations require explicit compatibility.
 		migration, e := db.Migrations.ReadFile("migrations/00024_site_settings.sql")
@@ -257,6 +257,17 @@ END $restore$;
 			return errors.New("RESTORE_VERSION_MISMATCH")
 		}
 		beforeSQL += "DROP TABLE public.admin_site_settings;\n"
+		afterSQL += "SET LOCAL search_path TO public;\n" + up + "\n"
+	}
+	if targetVersion >= 25 && job.Manifest.GooseVersion < 25 {
+		migration, e := db.Migrations.ReadFile("migrations/00025_account_deletion.sql")
+		if e != nil {
+			return errors.New("RESTORE_VERSION_MISMATCH")
+		}
+		up, _, ok := strings.Cut(string(migration), "-- +goose Down")
+		if !ok {
+			return errors.New("RESTORE_VERSION_MISMATCH")
+		}
 		afterSQL += "SET LOCAL search_path TO public;\n" + up + "\n"
 	}
 	afterSQL += fmt.Sprintf(restoreAfter, job.ID.String(), job.ID.String(), job.ID.String())
