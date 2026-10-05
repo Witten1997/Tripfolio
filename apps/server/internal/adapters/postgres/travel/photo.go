@@ -6,6 +6,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"math"
 	"time"
 	assetspg "tripfolio/server/internal/adapters/postgres/assets"
 	"tripfolio/server/internal/adapters/postgres/dbgen"
@@ -69,9 +70,28 @@ type photoRepo struct {
 }
 
 func NewPhotoUnitOfWork(w *pgcore.Writer) write.UnitOfWork[album.Repo] {
-	return pgcore.NewUnitOfWork(w, func(s *pgcore.TxScope) album.Repo {
-		return &photoRepo{photoReader: photoReader{contentReader{s.Queries}}, scope: s}
-	})
+	return pgcore.NewUnitOfWork(w, NewPhotoRepository)
+}
+
+func NewPhotoRepository(s *pgcore.TxScope) album.Repo {
+	return &photoRepo{photoReader: photoReader{contentReader{s.Queries}}, scope: s}
+}
+
+func (r *photoRepo) ListForOrder(ctx context.Context, accountID, tripID uuid.UUID, day types.Date) ([]album.Resource, error) {
+	date := day.Time()
+	rows, err := r.q.ListPhotos(ctx, dbgen.ListPhotosParams{AccountID: accountID, TripID: tripID, DateFrom: &date, DateTo: &date, PageLimit: math.MaxInt32})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]album.Resource, 0, len(rows))
+	for _, row := range rows {
+		v, err := toPhoto(row)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, v)
+	}
+	return out, nil
 }
 func (r *photoRepo) MergeSource() write.MergeSource { return r.scope }
 func (r *photoRepo) IDExists(ctx context.Context, id uuid.UUID) (bool, error) {

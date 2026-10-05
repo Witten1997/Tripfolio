@@ -2,6 +2,7 @@ package assets
 
 import (
 	"context"
+	"errors"
 	"github.com/google/uuid"
 	"strings"
 	"tripfolio/server/internal/foundation/actor"
@@ -50,6 +51,15 @@ func (s *Service) ValidatePhotoCreate(in CreateInput) error {
 func (s *Service) CreateInTransaction(ctx context.Context, scope write.Scope, repo Repo, accountID uuid.UUID, in CreateInput) (Resource, error) {
 	if err := s.storageReady(); err != nil {
 		return Resource{}, err
+	}
+	return s.RegisterInTransaction(ctx, scope, repo, accountID, in)
+}
+
+// RegisterInTransaction stores metadata and the first attempt without signing
+// URLs or making object storage calls. The caller owns the account transaction.
+func (s *Service) RegisterInTransaction(ctx context.Context, scope write.Scope, repo Repo, accountID uuid.UUID, in CreateInput) (Resource, error) {
+	if s.keys == nil {
+		return Resource{}, apperr.Dependency(errors.New("对象键生成器未配置"))
 	}
 	if err := s.validateCreate(in); err != nil {
 		return Resource{}, err

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"github.com/google/uuid"
 	"math"
+	"reflect"
+	"strconv"
 	"time"
 	"tripfolio/server/internal/foundation/actor"
 	"tripfolio/server/internal/foundation/apperr"
@@ -73,6 +75,7 @@ type Repo interface {
 	MergeSource() write.MergeSource
 	content.AssetReader
 	Assets() assets.Repo
+	ListForOrder(context.Context, uuid.UUID, uuid.UUID, types.Date) ([]Resource, error)
 }
 type Service struct {
 	uow     write.UnitOfWork[Repo]
@@ -142,15 +145,27 @@ func (p Patch) apply(v *Resource) {
 		v.Address = *p.Address
 	}
 	if p.LatitudeSet {
-		v.Latitude = p.Latitude
+		v.Latitude = photoCoordinate(p.Latitude)
 	}
 	if p.LongitudeSet {
-		v.Longitude = p.Longitude
+		v.Longitude = photoCoordinate(p.Longitude)
 	}
 	if p.TakenAtLocalSet && p.TakenAtLocal != nil && p.RecordedOn == nil {
 		v.RecordedOn = p.TakenAtLocal.Date()
 	}
 }
+func photoCoordinate(value *float64) *float64 {
+	if value == nil {
+		return nil
+	}
+	// Match the existing PostgreSQL adapter's six-place decimal serialization.
+	n, _ := strconv.ParseFloat(strconv.FormatFloat(*value, 'f', 6, 64), 64)
+	if n == 0 {
+		n = 0
+	}
+	return &n
+}
+
 func (p Patch) validate() error {
 	if p.AssetID != nil && *p.AssetID == uuid.Nil {
 		return apperr.Validation(apperr.Field("asset_id", "INVALID", "UUID 无效"))
@@ -370,6 +385,7 @@ func (s *Service) Update(ctx context.Context, a actor.Actor, operationID, tripID
 		if d.Merged {
 			scope.Warn(write.WarnMergedWithNewerVersion)
 		}
+		before := v
 		p.apply(&v)
 		if err := validateResource(v); err != nil {
 			return err
@@ -377,6 +393,11 @@ func (s *Service) Update(ctx context.Context, a actor.Actor, operationID, tripID
 		if err := content.CheckAsset(ctx, repo, a.AccountID, tripID, v.AssetID, true); err != nil {
 			return err
 		}
+		if reflect.DeepEqual(before, v) {
+			scope.SetPrimary(write.Ref(EntityType, v.ID, int64(v.Version)))
+			return nil
+		}
+		fields = actualChangedFields(before, v)
 		v.UpdatedAt = s.clock.Now()
 		updated, err := repo.Update(ctx, a.AccountID, v)
 		if err != nil {
@@ -422,4 +443,28 @@ func (s *Service) reload(a actor.Actor, tripID, id uuid.UUID) func(context.Conte
 		}
 		return v, nil
 	}
+}
+
+func actualChangedFields(before, after Resource) []string {
+	out := []string{}
+	values := []struct {
+		name          string
+		before, after any
+	}{
+		{"asset_id", before.AssetID, after.AssetID},
+		{"taken_at_local", before.TakenAtLocal, after.TakenAtLocal},
+		{"recorded_on", before.RecordedOn, after.RecordedOn},
+		{"caption", before.Caption, after.Caption},
+		{"sort_order", before.SortOrder, after.SortOrder},
+		{"place_name", before.PlaceName, after.PlaceName},
+		{"address", before.Address, after.Address},
+		{"latitude", before.Latitude, after.Latitude},
+		{"longitude", before.Longitude, after.Longitude},
+	}
+	for _, field := range values {
+		if !reflect.DeepEqual(field.before, field.after) {
+			out = append(out, field.name)
+		}
+	}
+	return out
 }
