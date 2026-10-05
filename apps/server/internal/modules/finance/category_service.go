@@ -12,6 +12,7 @@ import (
 	"tripfolio/server/internal/foundation/actor"
 	"tripfolio/server/internal/foundation/apperr"
 	"tripfolio/server/internal/foundation/clock"
+	"tripfolio/server/internal/foundation/collectionguard"
 	"tripfolio/server/internal/foundation/write"
 )
 
@@ -134,6 +135,12 @@ func (s *CategoryService) Create(ctx context.Context, a actor.Actor, operationID
 		} else if exists {
 			return apperr.Conflicted("ID_ALREADY_USED", "该 ID 已被使用")
 		}
+		if err := write.RequireCollections(ctx, scope, nil); err != nil {
+			return err
+		}
+		if err := write.RecordCollections(ctx, scope, categoryScopes(a.AccountID)); err != nil {
+			return err
+		}
 		sortOrder := int32(0)
 		if cmd.SortOrder != nil {
 			sortOrder = *cmd.SortOrder
@@ -221,6 +228,18 @@ func (s *CategoryService) Update(ctx context.Context, a actor.Actor, operationID
 		if current.DeletedAt != nil {
 			return apperr.Gone("RESOURCE_GONE", "")
 		}
+		var required []collectionguard.Scope
+		if patch.SortOrder != nil {
+			required = categoryScopes(a.AccountID)
+		}
+		if err := write.RequireCollections(ctx, scope, required); err != nil {
+			return err
+		}
+		if len(required) == 0 {
+			if err := write.RecordCollections(ctx, scope, categoryScopes(a.AccountID)); err != nil {
+				return err
+			}
+		}
 		decision, err := write.ResolvePatch(ctx, repo.MergeSource(), a.AccountID, EntityTypeCategory, id, baseVersion, int64(current.Version), submitted)
 		if err != nil {
 			return err
@@ -301,6 +320,12 @@ func (s *CategoryService) Delete(ctx context.Context, a actor.Actor, operationID
 		if using > 0 {
 			return apperr.Conflicted("CATEGORY_IN_USE", "分类仍被账目使用，请先修改这些账目的分类")
 		}
+		if err := write.RequireCollections(ctx, scope, nil); err != nil {
+			return err
+		}
+		if err := write.RecordCollections(ctx, scope, categoryScopes(a.AccountID)); err != nil {
+			return err
+		}
 		deleted, err := repo.SoftDelete(ctx, a.AccountID, id, s.clock.Now())
 		if err != nil {
 			return err
@@ -334,6 +359,9 @@ func (s *CategoryService) Reorder(ctx context.Context, a actor.Actor, operationI
 	}
 	req := write.Request{AccountID: a.AccountID, OperationID: operationID, OperationType: "expense_category.reorder", Fingerprint: write.Fingerprint("expense_category.reorder", a.AccountID.String(), nil, ids)}
 	return s.uow.Run(ctx, req, func(ctx context.Context, scope write.Scope, repo CategoryRepo) error {
+		if err := write.RequireCollections(ctx, scope, categoryScopes(a.AccountID)); err != nil {
+			return err
+		}
 		rows, err := repo.ListForOrder(ctx, a.AccountID)
 		if err != nil {
 			return err
@@ -361,4 +389,8 @@ func (s *CategoryService) Reorder(ctx context.Context, a actor.Actor, operationI
 		}
 		return nil
 	}, nil)
+}
+
+func categoryScopes(accountID uuid.UUID) []collectionguard.Scope {
+	return []collectionguard.Scope{{Kind: "categories", ScopeID: accountID.String()}}
 }
