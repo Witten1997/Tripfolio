@@ -157,7 +157,7 @@ func (s *Service) restoreNext(parent context.Context, sweep bool) {
 }
 
 func restoreVersionCompatible(source, target int64) bool {
-	return source == target || (source >= 22 && source < target && target <= 28)
+	return source == target || (source >= 22 && source < target && target <= 29)
 }
 
 func (s *Service) restore(ctx context.Context, job RestoreJob, targetVersion int64, handoff func() error) error {
@@ -238,6 +238,13 @@ func (s *Service) restore(ctx context.Context, job RestoreJob, targetVersion int
 	before := filepath.Join(dir, "before.sql")
 	after := filepath.Join(dir, "after.sql")
 	beforeSQL := restoreBefore
+	if targetVersion >= 29 {
+		beforeSQL += "CREATE TEMP TABLE restore_keep_sync_protection AS SELECT account_id FROM public.account_sync_capabilities WHERE collection_guards_required;\n"
+		if job.Manifest.GooseVersion < 29 {
+			// Old archives cannot drop this new FK before dropping accounts.
+			beforeSQL += "DROP TABLE public.account_sync_capabilities;\n"
+		}
+	}
 	afterSQL := fmt.Sprintf(`DO $restore$ BEGIN
  IF (SELECT coalesce(max(version_id),0) FROM public.goose_db_version WHERE is_applied) <> %d
  OR (SELECT coalesce(max(version),0) FROM public.river_migration) <> %d THEN
@@ -302,6 +309,26 @@ END $restore$;
 			return errors.New("RESTORE_VERSION_MISMATCH")
 		}
 		afterSQL += "SET LOCAL search_path TO public;\n" + up + "\n"
+	}
+	if targetVersion >= 29 && job.Manifest.GooseVersion < 29 {
+		migration, e := db.Migrations.ReadFile("migrations/00029_sync_web_policy.sql")
+		if e != nil {
+			return errors.New("RESTORE_VERSION_MISMATCH")
+		}
+		up, _, ok := strings.Cut(string(migration), "-- +goose Down")
+		if !ok {
+			return errors.New("RESTORE_VERSION_MISMATCH")
+		}
+		afterSQL += "SET LOCAL search_path TO public;\n" + up + "\n"
+	}
+	if targetVersion >= 29 {
+		afterSQL += `
+UPDATE public.account_sync_capabilities SET v2_enabled_epoch=NULL,enabled_at=NULL;
+INSERT INTO public.account_sync_capabilities(account_id,collection_guards_required)
+ SELECT p.account_id,true FROM restore_keep_sync_protection p
+ JOIN public.accounts a ON a.id=p.account_id
+ON CONFLICT(account_id) DO UPDATE SET collection_guards_required=true;
+`
 	}
 	afterSQL += fmt.Sprintf(restoreAfter, job.ID.String(), job.ID.String(), job.ID.String())
 	if err = os.WriteFile(before, []byte(beforeSQL), 0600); err != nil {

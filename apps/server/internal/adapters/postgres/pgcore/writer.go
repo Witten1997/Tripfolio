@@ -20,6 +20,7 @@ import (
 	"tripfolio/server/internal/foundation/actor"
 	"tripfolio/server/internal/foundation/apperr"
 	"tripfolio/server/internal/foundation/clock"
+	"tripfolio/server/internal/foundation/collectionguard"
 	"tripfolio/server/internal/foundation/write"
 	"tripfolio/server/internal/modules/account"
 )
@@ -180,6 +181,7 @@ func encodeChanges(changes []write.Change) ([]byte, error) {
 
 // Run 执行一次写事务。fn 在账号锁内执行业务写入；reload 读取 primary 的当前资源填充 Data。
 func (w *Writer) Run(ctx context.Context, req write.Request, fn func(ctx context.Context, scope *TxScope) error, reload func(ctx context.Context, scope *TxScope) (any, error)) (write.Result, error) {
+	req.Fingerprint = collectionguard.Fingerprint(ctx, req.Fingerprint)
 	return w.run(ctx, req, nil, fn, reload)
 }
 
@@ -288,6 +290,10 @@ func (w *Writer) run(ctx context.Context, req write.Request, syncOptions *SyncWr
 	}
 
 	started = time.Now()
+	// Individual services supply final scopes; this check only validates policy storage.
+	if _, err := scope.WebPolicy(ctx); err != nil {
+		return write.Result{}, err
+	}
 	fnErr := fn(ctx, scope)
 	write.RecordTiming(ctx, "business", time.Since(started))
 	if err := fnErr; err != nil {

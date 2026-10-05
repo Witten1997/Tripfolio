@@ -66,7 +66,7 @@ func TestRestoreSyncEpochTransaction(t *testing.T) {
 	for _, scenario := range []struct {
 		version int64
 		fail    bool
-	}{{22, false}, {25, false}, {26, false}, {27, false}, {28, false}, {28, true}} {
+	}{{22, false}, {25, false}, {26, false}, {27, false}, {28, false}, {29, false}, {28, true}, {29, true}} {
 		t.Run(fmt.Sprintf("schema_%d_rollback_%t", scenario.version, scenario.fail), func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 			defer cancel()
@@ -150,6 +150,9 @@ func TestRestoreSyncEpochTransaction(t *testing.T) {
 				archivedEpochs = epochs()
 			}
 			var databaseID string
+			if scenario.version >= 29 {
+				execSQL(`INSERT INTO account_sync_capabilities(account_id,collection_guards_required,v2_enabled_epoch,enabled_at) SELECT $1,true,sync_epoch,now() FROM account_sync_state WHERE account_id=$1`, accounts[1])
+			}
 			if err := pool.QueryRow(ctx, `SELECT database_id::text FROM admin_backup_settings WHERE id=1`).Scan(&databaseID); err != nil {
 				t.Fatal(err)
 			}
@@ -169,9 +172,17 @@ func TestRestoreSyncEpochTransaction(t *testing.T) {
 			// The destination now differs from the archive. A rollback must retain
 			// these live values; a commit must restore the archive and rotate epochs.
 			execSQL(`UPDATE accounts SET nickname='live'; UPDATE account_sync_state SET sync_epoch=gen_random_uuid()`)
+			// The target-only protected account must not be resurrected from its policy.
+			targetOnly := uuid.New()
+			execSQL(`INSERT INTO accounts(id,email,email_key,email_verified_at,password_hash,nickname) VALUES($1,$2,$2,now(),'test-only','target-only')`, targetOnly, targetOnly.String()+"@example.test")
+			execSQL(`INSERT INTO account_sync_state(account_id) VALUES($1)`, targetOnly)
+			execSQL(`DELETE FROM account_sync_capabilities`)
+			for _, id := range []uuid.UUID{accounts[0], targetOnly} {
+				execSQL(`INSERT INTO account_sync_capabilities(account_id,collection_guards_required,v2_enabled_epoch,enabled_at) SELECT $1,true,sync_epoch,now() FROM account_sync_state WHERE account_id=$1`, id)
+			}
 			execSQL(`UPDATE packing_items SET sort_order=97,name='live packing'; UPDATE todo_items SET sort_order=98,title='live todo'`)
 			liveEpochs := epochs()
-			if len(liveEpochs) != 2 || liveEpochs[accounts[0]] == uuid.Nil || liveEpochs[accounts[0]] == liveEpochs[accounts[1]] {
+			if len(liveEpochs) != 3 || liveEpochs[accounts[0]] == uuid.Nil || liveEpochs[accounts[0]] == liveEpochs[accounts[1]] {
 				t.Fatal("migration must initialize distinct non-null account epochs")
 			}
 			execSQL(`INSERT INTO account_sessions(id,account_id,client_kind,device_id,refresh_token_hash,expires_at) VALUES($1,$2,'harmony',$3,decode(repeat('00',32),'hex'),now()+interval '1 day')`, uuid.New(), accounts[0], uuid.New())
@@ -235,7 +246,11 @@ CREATE TRIGGER h07_fail_epoch BEFORE UPDATE ON tripfolio_restore.control FOR EAC
 					t.Fatalf("restore packing/todo mismatch: order=%d/%d expected=%d/%d names=%s/%s deleted=%t/%t", packingOrder, todoOrder, wantPacking, wantTodo, packingName, todoTitle, packingDeleted, todoDeleted)
 				}
 			}
-			if version != 28 || len(afterEpochs) != len(accounts) {
+			wantAccounts := len(accounts)
+			if scenario.fail {
+				wantAccounts++
+			}
+			if version != 29 || len(afterEpochs) != wantAccounts {
 				t.Fatalf("schema/accounts not preserved: %d %+v", version, afterEpochs)
 			}
 			if scenario.fail {
@@ -261,7 +276,19 @@ CREATE TRIGGER h07_fail_epoch BEFORE UPDATE ON tripfolio_restore.control FOR EAC
 			if err := pool.QueryRow(ctx, `SELECT position('v_packing.sort_order' in pg_get_functiondef('tripfolio_private.patch_item(uuid,uuid,text,bytea,text,uuid,uuid,bigint,jsonb,text[])'::regprocedure)) > 0 AND position('v_todo.sort_order' in pg_get_functiondef('tripfolio_private.patch_item(uuid,uuid,text,bytea,text,uuid,uuid,bigint,jsonb,text[])'::regprocedure)) > 0`).Scan(&projected); err != nil || !projected {
 				t.Fatalf("restored order projection: %v %t", err, projected)
 			}
-			t.Logf("production dump/restore schema %d -> 28, rollback=%t: epoch/snapshot/session/control/audit assertions passed", scenario.version, scenario.fail)
+			for i, id := range append(append([]uuid.UUID{}, accounts...), targetOnly) {
+				var exists, strict, push bool
+				if err := pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM accounts WHERE id=$1),COALESCE((SELECT collection_guards_required FROM account_sync_capabilities WHERE account_id=$1),false),EXISTS(SELECT 1 FROM account_sync_capabilities WHERE account_id=$1 AND v2_enabled_epoch IS NOT NULL AND enabled_at IS NOT NULL)`, id).Scan(&exists, &strict, &push); err != nil {
+					t.Fatal(err)
+				}
+				wantExists := i < 2 || scenario.fail
+				wantStrict := i == 0 || (i == 1 && scenario.version >= 29 && !scenario.fail) || (i == 2 && scenario.fail)
+				wantPush := scenario.fail && i != 1
+				if exists != wantExists || strict != wantStrict || push != wantPush {
+					t.Fatalf("policy %d exists/strict/push=%t/%t/%t expected=%t/%t/%t", i, exists, strict, push, wantExists, wantStrict, wantPush)
+				}
+			}
+			t.Logf("production dump/restore schema %d -> 29, rollback=%t: epoch/snapshot/session/control/audit/sticky policy assertions passed", scenario.version, scenario.fail)
 		})
 	}
 }
