@@ -11,6 +11,7 @@ import (
 	"tripfolio/server/internal/foundation/actor"
 	"tripfolio/server/internal/foundation/apperr"
 	"tripfolio/server/internal/foundation/clock"
+	"tripfolio/server/internal/foundation/collectionguard"
 	"tripfolio/server/internal/foundation/paging"
 	"tripfolio/server/internal/foundation/types"
 	"tripfolio/server/internal/foundation/write"
@@ -714,6 +715,116 @@ func TestReorderNoOpRetainsAllReferences(t *testing.T) {
 	for _, ref := range result.Affected {
 		if ref.Version == nil || *ref.Version != 1 {
 			t.Fatal("original reference lost")
+		}
+	}
+}
+
+type reorderGuardUOW struct {
+	base              write.UnitOfWork[itinerary.Repo]
+	required          []collectionguard.Scope
+	reject            error
+	withoutCapability bool
+	listCalled        bool
+	requireCalled     bool
+	requireBeforeList bool
+}
+
+type reorderGuardScope struct {
+	write.Scope
+	uow *reorderGuardUOW
+}
+
+func (s reorderGuardScope) RequireCollections(_ context.Context, required []collectionguard.Scope) error {
+	s.uow.requireCalled = true
+	s.uow.requireBeforeList = !s.uow.listCalled
+	s.uow.required = append([]collectionguard.Scope(nil), required...)
+	return s.uow.reject
+}
+
+type reorderMissingCapability struct{ write.Scope }
+type reorderGuardRepo struct {
+	itinerary.Repo
+	uow *reorderGuardUOW
+}
+
+func (r reorderGuardRepo) ListDaysForUpdate(ctx context.Context, accountID, tripID uuid.UUID, dates []types.Date) ([]itinerary.Resource, error) {
+	r.uow.listCalled = true
+	return r.Repo.ListDaysForUpdate(ctx, accountID, tripID, dates)
+}
+
+func (u *reorderGuardUOW) Run(ctx context.Context, req write.Request, fn func(context.Context, write.Scope, itinerary.Repo) error, reload func(context.Context, itinerary.Repo) (any, error)) (write.Result, error) {
+	return u.base.Run(ctx, req, func(ctx context.Context, scope write.Scope, repo itinerary.Repo) error {
+		var wrapped write.Scope = reorderGuardScope{scope, u}
+		if u.withoutCapability {
+			wrapped = reorderMissingCapability{scope}
+		}
+		return fn(ctx, wrapped, reorderGuardRepo{repo, u})
+	}, reload)
+}
+
+func TestReorderRequiresEveryDateBeforeWritesAndNoOp(t *testing.T) {
+	for _, mode := range []string{"move", "no-op", "reject", "missing-capability"} {
+		t.Run(mode, func(t *testing.T) {
+			f := newFixture(t)
+			item := f.create(t, itinerary.CreateCommand{})
+			before := len(f.uow.Changes())
+			uow := &reorderGuardUOW{base: f.uow}
+			if mode == "reject" {
+				uow.reject = apperr.New(503, "DEPENDENCY_UNAVAILABLE", "test policy unavailable")
+			}
+			uow.withoutCapability = mode == "missing-capability"
+			svc := itinerary.NewService(uow, f.store, paging.InsecureCodec{}, f.clock)
+			cmd := itinerary.ReorderCommand{Days: []itinerary.ReorderDay{
+				{Date: "2026-10-02"}, {Date: "2026-10-03"},
+				{Date: "2026-10-20", Items: []itinerary.ReorderItem{{ID: item.ID, BaseVersion: 1}}},
+			}}
+			if mode == "no-op" {
+				cmd.Days[0].Items, cmd.Days[2].Items = cmd.Days[2].Items, nil
+			}
+			_, err := svc.Reorder(context.Background(), f.actor, uuid.New(), f.tripID, cmd)
+			if mode == "reject" || mode == "missing-capability" {
+				expectCode(t, err, 503, "DEPENDENCY_UNAVAILABLE")
+				if uow.listCalled || len(f.uow.Changes()) != before {
+					t.Fatal("rejected guard reached row locks or writes")
+				}
+			} else if err != nil {
+				t.Fatal(err)
+			}
+			if mode != "missing-capability" {
+				if !uow.requireCalled || !uow.requireBeforeList || len(uow.required) != 3 {
+					t.Fatalf("guard ordering/scopes: %+v", uow)
+				}
+				for i, day := range cmd.Days {
+					if got := uow.required[i]; got.Kind != "itinerary_day" || got.ScopeID != f.tripID.String()+"/"+day.Date {
+						t.Fatalf("scope: %+v", got)
+					}
+				}
+			}
+			current, _, err := f.store.Get(context.Background(), f.actor.AccountID, f.tripID, item.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if mode != "move" && (current.Version != 1 || current.ScheduledOn != "2026-10-02" || current.SortOrder != 0) {
+				t.Fatalf("unexpected change: %+v", current)
+			}
+		})
+	}
+}
+
+func TestReorderMemoryCannotInventCollectionProof(t *testing.T) {
+	f := newFixture(t)
+	item := f.create(t, itinerary.CreateCommand{})
+	cmd := itinerary.ReorderCommand{Days: []itinerary.ReorderDay{{Date: "2026-10-02", Items: []itinerary.ReorderItem{{ID: item.ID, BaseVersion: 1}}}}}
+	before := len(f.uow.Changes())
+	for _, guards := range [][]collectionguard.Guard{{}, {{Kind: "itinerary_day", ScopeID: f.tripID.String() + "/2026-10-02", Revision: "sha256:" + strings.Repeat("a", 64)}}} {
+		ctx, err := collectionguard.WithRequest(context.Background(), guards)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = f.svc.Reorder(ctx, f.actor, uuid.New(), f.tripID, cmd)
+		expectCode(t, err, 503, "DEPENDENCY_UNAVAILABLE")
+		if len(f.uow.Changes()) != before {
+			t.Fatal("unverifiable guard changed memory store")
 		}
 	}
 }

@@ -9,6 +9,7 @@ import (
 	travelpg "tripfolio/server/internal/adapters/postgres/travel"
 	"tripfolio/server/internal/foundation/actor"
 	"tripfolio/server/internal/foundation/apperr"
+	"tripfolio/server/internal/foundation/collectionguard"
 	"tripfolio/server/internal/foundation/types"
 	"tripfolio/server/internal/foundation/write"
 	syncmodule "tripfolio/server/internal/modules/sync"
@@ -141,49 +142,35 @@ func executeItinerary(ctx context.Context, scope *pgcore.TxScope, a actor.Actor,
 }
 
 func checkItineraryGuards(ctx context.Context, scope *pgcore.TxScope, epoch, tripID uuid.UUID, dates []types.Date, guards []syncmodule.GuardReference, deps map[uuid.UUID]*write.SyncFacts) error {
-	required := map[string]types.Date{}
+	required := make([]collectionguard.Scope, 0, len(dates))
+	wanted := map[string]bool{}
 	for _, date := range dates {
 		key := tripID.String() + "/" + string(date)
-		if _, exists := required[key]; exists {
+		if wanted[key] {
 			return apperr.Unprocessable("INVALID_REFERENCE", "日期重复")
 		}
-		required[key] = date
+		wanted[key] = true
+		required = append(required, collectionguard.Scope{Kind: "itinerary_day", ScopeID: key})
 	}
 	seen := map[string]bool{}
 	for _, g := range guards {
-		date, exists := required[g.ScopeID]
-		if g.Kind != "itinerary_day" || !exists || seen[g.ScopeID] {
+		if g.Kind != "itinerary_day" || !wanted[g.ScopeID] || seen[g.ScopeID] {
 			return apperr.Unprocessable("INVALID_REFERENCE", "无关或重复日期集合")
 		}
 		seen[g.ScopeID] = true
-		expected := ""
-		if g.Revision != nil {
-			expected = *g.Revision
-		} else if g.OperationID != nil {
-			if facts := deps[*g.OperationID]; facts != nil && facts.Epoch == epoch {
-				for _, r := range facts.ScopeRevisions {
-					if r.Kind == g.Kind && r.ScopeID == g.ScopeID {
-						expected = r.Revision
-						break
-					}
-				}
+		if g.Revision == nil && g.OperationID != nil {
+			if facts := deps[*g.OperationID]; facts == nil || facts.Epoch != epoch {
+				return apperr.Unprocessable("INVALID_REFERENCE", "依赖缺少本代次原提交事实")
 			}
 		}
-		if expected == "" {
-			return apperr.Unprocessable("INVALID_REFERENCE", "依赖未记录日期集合版本")
-		}
-		r, err := scope.ItineraryDayRevision(ctx, epoch, tripID, date)
-		if err != nil {
-			return err
-		}
-		if r.Revision != expected {
-			return apperr.New(412, "COLLECTION_CONFLICT", "日期集合已变化")
-		}
 	}
-	if len(seen) != len(required) {
-		return apperr.New(428, "COLLECTION_BASE_REQUIRED", "需要全部来源及目标日期集合版本")
+	resolved, err := resolveCollectionGuards(guards, deps)
+	if err != nil {
+		return err
 	}
-	return nil
+	// Verification and proof belong to this exact account transaction. The bound
+	// service can require the same dates without accepting a caller-supplied flag.
+	return scope.CheckCollections(ctx, resolved, required)
 }
 
 func reloadItinerary(ctx context.Context, scope *pgcore.TxScope, a actor.Actor, op syncmodule.Operation) (any, error) {

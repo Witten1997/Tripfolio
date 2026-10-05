@@ -8,6 +8,7 @@ import (
 
 	"tripfolio/server/internal/foundation/actor"
 	"tripfolio/server/internal/foundation/apperr"
+	"tripfolio/server/internal/foundation/collectionguard"
 	"tripfolio/server/internal/foundation/types"
 	"tripfolio/server/internal/foundation/write"
 )
@@ -76,6 +77,13 @@ func (s *Service) Reorder(ctx context.Context, a actor.Actor, operationID, tripI
 	return s.uow.Run(ctx, req, func(ctx context.Context, scope write.Scope, repo Repo) error {
 		info, err := loadTrip(ctx, repo, a.AccountID, tripID)
 		if err != nil {
+			return err
+		}
+		required := make([]collectionguard.Scope, 0, len(dates))
+		for _, date := range dates {
+			required = append(required, collectionguard.Scope{Kind: "itinerary_day", ScopeID: tripID.String() + "/" + string(date)})
+		}
+		if err := write.RequireCollections(ctx, scope, required); err != nil {
 			return err
 		}
 		rows, err := repo.ListDaysForUpdate(ctx, a.AccountID, tripID, dates)
