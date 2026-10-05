@@ -174,11 +174,18 @@ func (s *TxScope) collectionOwnership(ctx context.Context, scope collectionguard
 		}
 		return nil
 	}
-	var owned bool
-	if err := s.Tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM trips WHERE id=$1 AND account_id=$2 AND deleted_at IS NULL AND purge_requested_at IS NULL)`, id, s.AccountID).Scan(&owned); err != nil {
+	var deleted, purging bool
+	err = s.Tx.QueryRow(ctx, `SELECT deleted_at IS NOT NULL,purge_requested_at IS NOT NULL FROM trips WHERE id=$1 AND account_id=$2`, id, s.AccountID).Scan(&deleted, &purging)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return apperr.NotFound()
+	}
+	if err != nil {
 		return apperr.Internal(err)
 	}
-	if !owned {
+	if deleted {
+		return apperr.Gone("TRIP_DELETED", "旅行已在回收站中")
+	}
+	if purging {
 		return apperr.NotFound()
 	}
 	return nil

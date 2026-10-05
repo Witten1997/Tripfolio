@@ -10,14 +10,16 @@ import (
 
 	"github.com/google/uuid"
 	"tripfolio/server/internal/adapters/postgres/pgcore"
+	"tripfolio/server/internal/foundation/actor"
 	"tripfolio/server/internal/foundation/clock"
 	"tripfolio/server/internal/foundation/collectionguard"
 	"tripfolio/server/internal/foundation/write"
 )
 
 func TestSyncWebCollectionsNativeProofAndOriginalFacts(t *testing.T) {
-	f, owner, trip := policyFixture(t)
-	ctx := context.Background()
+	f := newSnapshotFixture(t)
+	owner, trip := f.owner, f.newTrip("native collection")
+	ctx := actor.WithActor(context.Background(), f.a)
 	w := pgcore.NewWriter(f.pool, nil, clock.Real{}, quietLogger())
 	target := collectionguard.Scope{Kind: "members", ScopeID: trip.String()}
 	var epoch uuid.UUID
@@ -189,5 +191,25 @@ func TestSyncWebCollectionsScopeIsolation(t *testing.T) {
 		}, nil); err == nil {
 			t.Fatalf("invalid affected scope %+v accepted", bad)
 		}
+	}
+}
+
+func TestSyncWebCollectionsDeletedTripBoundary(t *testing.T) {
+	f, owner, trip := policyFixture(t)
+	ctx := context.Background()
+	w := pgcore.NewWriter(f.pool, nil, clock.Real{}, quietLogger())
+	target := collectionguard.Scope{Kind: "members", ScopeID: trip.String()}
+	if _, err := f.pool.Exec(ctx, `UPDATE trips SET deleted_at=now(),purge_after_at=now()+interval '30 days' WHERE id=$1`, trip); err != nil {
+		t.Fatal(err)
+	}
+	for _, record := range []bool{false, true} {
+		req := write.Request{AccountID: owner, OperationID: uuid.New(), OperationType: "collection.deleted", Fingerprint: sha256.Sum256([]byte("deleted"))}
+		_, err := w.Run(ctx, req, func(ctx context.Context, s *pgcore.TxScope) error {
+			if record {
+				return write.RecordCollections(ctx, s, []collectionguard.Scope{target})
+			}
+			return s.CheckCollections(ctx, []collectionguard.Guard{{Kind: target.Kind, ScopeID: target.ScopeID, Revision: "sha256:" + strings.Repeat("a", 64)}}, []collectionguard.Scope{target})
+		}, nil)
+		policyError(t, err, 410, "TRIP_DELETED")
 	}
 }
