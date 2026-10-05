@@ -462,14 +462,41 @@ func TestSyncSnapshotRetryAndSortMigration(t *testing.T) {
 	foreign := f.registerWeb(uniqueEmail(), "correct horse battery")
 	foreignOwner := uuid.MustParse(foreign.data()["account"].(map[string]any)["id"].(string))
 	foreignTrip := uuid.MustParse(f.createTrip(foreign.data()["access_token"].(string), map[string]any{"name": "foreign migration partition", "start_date": "2026-10-01", "end_date": "2026-10-04"})["id"].(string))
-	for range 2 {
+	currentVersion := func() int64 {
+		t.Helper()
+		var version int64
+		if err := f.pool.QueryRow(context.Background(), `SELECT COALESCE(MAX(version_id),0) FROM goose_db_version WHERE is_applied`).Scan(&version); err != nil {
+			t.Fatal(err)
+		}
+		return version
+	}
+	latest := currentVersion()
+	if latest < 27 {
+		t.Fatalf("sorting migration is not applied: version=%d", latest)
+	}
+	defer func() {
+		if err := bootstrap.RunMigrate(context.Background(), config.Config{DatabaseURL: f.rawURL}, quietLogger(), []string{"up"}); err != nil {
+			t.Errorf("restore latest schema: %v", err)
+			return
+		}
+		if restored := currentVersion(); restored != latest {
+			t.Errorf("restored schema version=%d, want=%d", restored, latest)
+		}
+	}()
+	for version := latest; version > 26; {
 		if err := bootstrap.RunMigrate(ctx, config.Config{DatabaseURL: f.rawURL}, quietLogger(), []string{"down"}); err != nil {
 			t.Fatal(err)
 		}
+		next := currentVersion()
+		if next >= version || next < 26 {
+			t.Fatalf("invalid migration step: %d -> %d, target=26", version, next)
+		}
+		version = next
 	}
-	defer func() {
-		_ = bootstrap.RunMigrate(context.Background(), config.Config{DatabaseURL: f.rawURL}, quietLogger(), []string{"up"})
-	}()
+	var sortColumns int
+	if err := f.pool.QueryRow(ctx, `SELECT count(*) FROM information_schema.columns WHERE table_schema='public' AND table_name IN ('packing_items','todo_items') AND column_name='sort_order'`).Scan(&sortColumns); err != nil || sortColumns != 0 {
+		t.Fatalf("legacy schema retains sort_order columns: %d %v", sortColumns, err)
+	}
 	ids := []uuid.UUID{uuid.New(), uuid.New(), uuid.New()}
 	for i, id := range ids {
 		f.sql(`INSERT INTO packing_items(id,account_id,trip_id,name,category,created_at,updated_at,deleted_at) VALUES($1,$2,$3,$4,'documents',now()+$5*interval '1 second',now()+$5*interval '1 second',CASE WHEN $5=1 THEN now() END)`, id, f.owner, tripID, fmt.Sprintf("item%d", i), i)
@@ -493,6 +520,9 @@ func TestSyncSnapshotRetryAndSortMigration(t *testing.T) {
 	}
 	if err := bootstrap.RunMigrate(ctx, config.Config{DatabaseURL: f.rawURL}, quietLogger(), []string{"up"}); err != nil {
 		t.Fatal(err)
+	}
+	if restored := currentVersion(); restored != latest {
+		t.Fatalf("up restored schema version=%d, want=%d", restored, latest)
 	}
 	for _, p := range partitions {
 		for i, id := range p.ids {
