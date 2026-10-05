@@ -192,18 +192,20 @@ type DashboardRegion struct {
 }
 
 type DataSnapshot struct {
-	ID              uuid.UUID
-	AccountID       uuid.UUID
-	Purpose         string
-	SelectedTripIds []byte
-	Status          string
-	HighWaterSeq    *int64
-	ItemCount       int64
-	SchemaVersion   int16
-	ErrorCode       *string
-	CreatedAt       time.Time
-	CapturedAt      *time.Time
-	ExpiresAt       time.Time
+	ID                uuid.UUID
+	AccountID         uuid.UUID
+	Purpose           string
+	SelectedTripIds   []byte
+	Status            string
+	HighWaterSeq      *int64
+	ItemCount         int64
+	SchemaVersion     int16
+	ErrorCode         *string
+	CreatedAt         time.Time
+	CapturedAt        *time.Time
+	ExpiresAt         time.Time
+	SyncEpoch         uuid.UUID
+	CaptureGeneration int64
 }
 
 type DeletionJob struct {
@@ -391,6 +393,7 @@ type PackingItem struct {
 	Quantity  int32
 	Notes     string
 	Status    string
+	SortOrder int32
 }
 
 type Photo struct {
@@ -481,6 +484,7 @@ type TodoItem struct {
 	DueOn       *time.Time
 	Notes       string
 	CompletedAt *time.Time
+	SortOrder   int32
 }
 
 type Trip struct {

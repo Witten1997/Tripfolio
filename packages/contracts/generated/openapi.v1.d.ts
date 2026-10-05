@@ -743,6 +743,57 @@ export type paths = {
         patch?: never;
         trace?: never;
     };
+    "/sync/snapshots": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 创建账号一致快照任务 */
+        post: operations["createSyncSnapshot"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sync/snapshots/{snapshot_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 读取快照任务状态 */
+        get: operations["getSyncSnapshot"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sync/snapshots/{snapshot_id}/items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 读取不可变快照条目 */
+        get: operations["getSyncSnapshotItems"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/sync/status": {
         parameters: {
             query?: never;
@@ -1684,6 +1735,26 @@ export type components = {
             id: string;
             name: string;
             start_date: components["schemas"]["Date"];
+        };
+        DataSnapshot: {
+            /** Format: date-time */
+            captured_at: string | null;
+            error_code: string | null;
+            /** Format: date-time */
+            expires_at: string;
+            high_water_seq: string | null;
+            /** Format: uuid */
+            id: string;
+            item_count: components["schemas"]["SyncSeq"];
+            /** @enum {string} */
+            purpose: "baseline" | "trip_reload";
+            /** @enum {integer} */
+            schema_version: 2;
+            selected_trip_ids: string[];
+            /** @enum {string} */
+            status: "queued" | "building" | "ready" | "failed" | "invalidated" | "expired";
+            /** Format: uuid */
+            sync_epoch: string;
         };
         /**
          * @description YYYY-MM-DD，不带时区
@@ -2792,6 +2863,40 @@ export type components = {
          * @example -12.50
          */
         SignedMoney: string;
+        SnapshotInput: {
+            /** @enum {string} */
+            purpose: "baseline" | "trip_reload";
+            selected_trip_ids: string[];
+            /** Format: uuid */
+            sync_epoch: string;
+        };
+        SnapshotItem: {
+            /** @description 同一捕获视图中的白名单业务资源，不含凭据或文件字节。 */
+            data: {
+                [key: string]: unknown;
+            };
+            /** Format: uuid */
+            entity_id: string;
+            /** @enum {string} */
+            entity_type: "trip" | "trip_member" | "expense_category" | "itinerary_item" | "ledger_entry" | "packing_item" | "todo" | "reservation" | "document" | "photo" | "asset";
+            ordinal: components["schemas"]["SyncSeq"];
+            /** Format: uuid */
+            trip_id: string | null;
+            version: string;
+        };
+        SnapshotPage: {
+            /** @description 仅baseline最后一页提供；trip_reload始终为null。 */
+            baseline_cursor: string | null;
+            has_more: boolean;
+            high_water_seq: components["schemas"]["SyncSeq"];
+            item_count: components["schemas"]["SyncSeq"];
+            items: components["schemas"]["SnapshotItem"][];
+            next_cursor: string | null;
+            /** Format: uuid */
+            snapshot_id: string;
+            /** Format: uuid */
+            sync_epoch: string;
+        };
         /**
          * @description 分摊模式；even 按参与人等分，ratio 按参与人的成员百分比归一化，personal 由「我」支付并承担全额，不计入成员结算
          * @enum {string}
@@ -4674,6 +4779,359 @@ export interface operations {
             };
             500: components["responses"]["InternalError"];
             /** @description 同步能力或历史结构暂不可用，不得推进游标 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    createSyncSnapshot: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+                /** @description 必须为2，否则返回426。 */
+                "X-Tripfolio-Sync-Version"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SnapshotInput"];
+            };
+        };
+        responses: {
+            /** @description 创建账号一致快照任务成功 */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["DataSnapshot"];
+                    };
+                };
+            };
+            /** @description 请求或游标无效 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description 身份失效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description 账号或客户端不允许 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description 范围不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description epoch、幂等冲突或快照尚未就绪 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description 快照或目标旅行已失效 */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description 请求校验失败 */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description 同步协议不支持 */
+            426: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description 内部错误 */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description 依赖尚未就绪 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getSyncSnapshot: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description 必须为2，否则返回426。 */
+                "X-Tripfolio-Sync-Version"?: string;
+            };
+            path: {
+                snapshot_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 读取快照任务状态成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DataSnapshot"];
+                };
+            };
+            /** @description 请求或游标无效 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description 身份失效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description 账号或客户端不允许 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description 范围不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description epoch、幂等冲突或快照尚未就绪 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description 快照或目标旅行已失效 */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description 请求校验失败 */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description 同步协议不支持 */
+            426: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description 内部错误 */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description 依赖尚未就绪 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getSyncSnapshotItems: {
+        parameters: {
+            query?: {
+                cursor?: string;
+                limit?: number;
+            };
+            header?: {
+                /** @description 必须为2，否则返回426。 */
+                "X-Tripfolio-Sync-Version"?: string;
+            };
+            path: {
+                snapshot_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 读取不可变快照条目成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SnapshotPage"];
+                };
+            };
+            /** @description 请求或游标无效 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description 身份失效 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description 账号或客户端不允许 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description 范围不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description epoch、幂等冲突或快照尚未就绪 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description 快照或目标旅行已失效 */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description 请求校验失败 */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description 同步协议不支持 */
+            426: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description 内部错误 */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description 依赖尚未就绪 */
             503: {
                 headers: {
                     [name: string]: unknown;

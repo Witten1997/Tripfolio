@@ -9,6 +9,7 @@ import (
 	"github.com/riverqueue/river"
 	"tripfolio/server/internal/modules/backup"
 	"tripfolio/server/internal/modules/deletion"
+	syncmodule "tripfolio/server/internal/modules/sync"
 )
 
 // snoozeUnconfigured 是能力未装配时推迟任务的时长。
@@ -16,6 +17,7 @@ const snoozeUnconfigured = 5 * time.Minute
 
 // Deps 是各任务处理器需要的应用服务。为 nil 的能力对应的任务会被推迟而不是失败。
 type Deps struct {
+	Sync              *syncmodule.Service
 	Deletions         *deletion.Service
 	Backups           *backup.Service
 	TripPurger        TripPurger
@@ -26,6 +28,7 @@ type Deps struct {
 
 // RegisterWorkers 把全部任务处理器注册到 workers。新增任务类型在此追加一行。
 func RegisterWorkers(workers *river.Workers, d Deps) {
+	river.AddWorker(workers, &SyncSnapshotWorker{service: d.Sync})
 	river.AddWorker(workers, &DeletionReconcileWorker{service: d.Deletions})
 	river.AddWorker(workers, &BackupWorker{service: d.Backups})
 	river.AddWorker(workers, &BackupScheduleWorker{service: d.Backups})

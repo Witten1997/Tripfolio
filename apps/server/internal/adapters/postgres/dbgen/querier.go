@@ -201,6 +201,18 @@ type Querier interface {
 	SetTripArchived(ctx context.Context, arg SetTripArchivedParams) (Trip, error)
 	// 币种锁定与解锁：只改 currency_locked_at，递增旅行版本并返回整行作为同步快照。
 	SetTripCurrencyLock(ctx context.Context, arg SetTripCurrencyLockParams) (Trip, error)
+	SnapshotAssets(ctx context.Context, arg SnapshotAssetsParams) ([]Asset, error)
+	SnapshotCategories(ctx context.Context, accountID uuid.UUID) ([]ExpenseCategory, error)
+	SnapshotDocuments(ctx context.Context, arg SnapshotDocumentsParams) ([]Document, error)
+	SnapshotItinerary(ctx context.Context, arg SnapshotItineraryParams) ([]ItineraryItem, error)
+	SnapshotLedger(ctx context.Context, arg SnapshotLedgerParams) ([]LedgerEntry, error)
+	SnapshotMembers(ctx context.Context, arg SnapshotMembersParams) ([]TripMember, error)
+	SnapshotPacking(ctx context.Context, arg SnapshotPackingParams) ([]PackingItem, error)
+	SnapshotPhotos(ctx context.Context, arg SnapshotPhotosParams) ([]Photo, error)
+	SnapshotReservations(ctx context.Context, arg SnapshotReservationsParams) ([]Reservation, error)
+	SnapshotTodos(ctx context.Context, arg SnapshotTodosParams) ([]TodoItem, error)
+	// Snapshot reads all share the builder's single REPEATABLE READ transaction.
+	SnapshotTrips(ctx context.Context, accountID uuid.UUID) ([]Trip, error)
 	SoftDeleteDocument(ctx context.Context, arg SoftDeleteDocumentParams) (Document, error)
 	SoftDeleteExpenseCategory(ctx context.Context, arg SoftDeleteExpenseCategoryParams) (ExpenseCategory, error)
 	SoftDeleteItineraryItem(ctx context.Context, arg SoftDeleteItineraryItemParams) (ItineraryItem, error)

@@ -14,7 +14,7 @@ import (
 
 const getPackingItem = `-- name: GetPackingItem :one
 
-SELECT id, account_id, version, created_at, updated_at, deleted_at, trip_id, name, category, quantity, notes, status FROM packing_items
+SELECT id, account_id, version, created_at, updated_at, deleted_at, trip_id, name, category, quantity, notes, status, sort_order FROM packing_items
 WHERE account_id = $1 AND trip_id = $2 AND id = $3
 `
 
@@ -41,12 +41,13 @@ func (q *Queries) GetPackingItem(ctx context.Context, arg GetPackingItemParams) 
 		&i.Quantity,
 		&i.Notes,
 		&i.Status,
+		&i.SortOrder,
 	)
 	return i, err
 }
 
 const getPackingItemForUpdate = `-- name: GetPackingItemForUpdate :one
-SELECT id, account_id, version, created_at, updated_at, deleted_at, trip_id, name, category, quantity, notes, status FROM packing_items
+SELECT id, account_id, version, created_at, updated_at, deleted_at, trip_id, name, category, quantity, notes, status, sort_order FROM packing_items
 WHERE account_id = $1 AND trip_id = $2 AND id = $3
 FOR UPDATE
 `
@@ -73,6 +74,7 @@ func (q *Queries) GetPackingItemForUpdate(ctx context.Context, arg GetPackingIte
 		&i.Quantity,
 		&i.Notes,
 		&i.Status,
+		&i.SortOrder,
 	)
 	return i, err
 }
@@ -81,7 +83,7 @@ const insertPackingItem = `-- name: InsertPackingItem :one
 INSERT INTO packing_items (id, account_id, trip_id, name, category, quantity, notes, status, created_at, updated_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8,
         $9, $9)
-RETURNING id, account_id, version, created_at, updated_at, deleted_at, trip_id, name, category, quantity, notes, status
+RETURNING id, account_id, version, created_at, updated_at, deleted_at, trip_id, name, category, quantity, notes, status, sort_order
 `
 
 type InsertPackingItemParams struct {
@@ -122,12 +124,13 @@ func (q *Queries) InsertPackingItem(ctx context.Context, arg InsertPackingItemPa
 		&i.Quantity,
 		&i.Notes,
 		&i.Status,
+		&i.SortOrder,
 	)
 	return i, err
 }
 
 const listPackingItems = `-- name: ListPackingItems :many
-SELECT id, account_id, version, created_at, updated_at, deleted_at, trip_id, name, category, quantity, notes, status FROM packing_items
+SELECT id, account_id, version, created_at, updated_at, deleted_at, trip_id, name, category, quantity, notes, status, sort_order FROM packing_items
 WHERE account_id = $1 AND trip_id = $2 AND deleted_at IS NULL
   AND ($3::text IS NULL OR category = $3::text)
   AND ($4::text IS NULL OR status = $4::text)
@@ -180,6 +183,7 @@ func (q *Queries) ListPackingItems(ctx context.Context, arg ListPackingItemsPara
 			&i.Quantity,
 			&i.Notes,
 			&i.Status,
+			&i.SortOrder,
 		); err != nil {
 			return nil, err
 		}
@@ -242,7 +246,7 @@ const softDeletePackingItem = `-- name: SoftDeletePackingItem :one
 UPDATE packing_items
 SET deleted_at = $1, version = version + 1, updated_at = $1
 WHERE account_id = $2 AND trip_id = $3 AND id = $4
-RETURNING id, account_id, version, created_at, updated_at, deleted_at, trip_id, name, category, quantity, notes, status
+RETURNING id, account_id, version, created_at, updated_at, deleted_at, trip_id, name, category, quantity, notes, status, sort_order
 `
 
 type SoftDeletePackingItemParams struct {
@@ -273,6 +277,7 @@ func (q *Queries) SoftDeletePackingItem(ctx context.Context, arg SoftDeletePacki
 		&i.Quantity,
 		&i.Notes,
 		&i.Status,
+		&i.SortOrder,
 	)
 	return i, err
 }
@@ -282,7 +287,7 @@ UPDATE packing_items
 SET name = $1, category = $2, quantity = $3, notes = $4, status = $5,
     version = version + 1, updated_at = $6
 WHERE account_id = $7 AND trip_id = $8 AND id = $9
-RETURNING id, account_id, version, created_at, updated_at, deleted_at, trip_id, name, category, quantity, notes, status
+RETURNING id, account_id, version, created_at, updated_at, deleted_at, trip_id, name, category, quantity, notes, status, sort_order
 `
 
 type UpdatePackingItemParams struct {
@@ -323,6 +328,7 @@ func (q *Queries) UpdatePackingItem(ctx context.Context, arg UpdatePackingItemPa
 		&i.Quantity,
 		&i.Notes,
 		&i.Status,
+		&i.SortOrder,
 	)
 	return i, err
 }
@@ -333,7 +339,7 @@ SET status = $1, version = p.version + 1, updated_at = $2
 WHERE p.account_id = $3 AND p.trip_id = $4 AND p.id = $5
   AND p.version = $6 AND p.deleted_at IS NULL
   AND EXISTS (SELECT 1 FROM trips t WHERE t.account_id = p.account_id AND t.id = p.trip_id AND t.deleted_at IS NULL)
-RETURNING id, account_id, version, created_at, updated_at, deleted_at, trip_id, name, category, quantity, notes, status
+RETURNING id, account_id, version, created_at, updated_at, deleted_at, trip_id, name, category, quantity, notes, status, sort_order
 `
 
 type UpdatePackingStatusIfVersionParams struct {
@@ -368,6 +374,7 @@ func (q *Queries) UpdatePackingStatusIfVersion(ctx context.Context, arg UpdatePa
 		&i.Quantity,
 		&i.Notes,
 		&i.Status,
+		&i.SortOrder,
 	)
 	return i, err
 }

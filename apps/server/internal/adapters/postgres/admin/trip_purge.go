@@ -81,7 +81,7 @@ func (r *tripPurgeRun) audit(ctx context.Context, tx pgx.Tx, action, result stri
 	return nil
 }
 
-const relatedSnapshots = `SELECT s.id FROM data_snapshots s WHERE s.account_id=$1 AND ($2::uuid IS NULL OR
+const relatedSnapshots = `SELECT s.id FROM data_snapshots s WHERE s.account_id=$1 AND ($2::uuid IS NULL OR s.purpose='baseline' OR
  s.selected_trip_ids @> jsonb_build_array($2::uuid::text)
  OR EXISTS(SELECT 1 FROM snapshot_items i WHERE i.account_id=$1 AND i.snapshot_id=s.id AND (i.trip_id=$2 OR (i.entity_type='trip' AND i.entity_id=$2) OR i.payload->>'trip_id'=$2::uuid::text))
  OR EXISTS(SELECT 1 FROM snapshot_asset_refs f JOIN assets a ON a.account_id=f.account_id AND a.id=f.asset_id WHERE f.account_id=$1 AND f.snapshot_id=s.id AND a.trip_id=$2))`

@@ -13,9 +13,10 @@ import (
 )
 
 type Service struct {
-	reader Reader
-	codec  paging.Codec
-	clock  clock.Clock
+	snapshots SnapshotRepository
+	reader    Reader
+	codec     paging.Codec
+	clock     clock.Clock
 }
 
 func NewService(reader Reader, codec paging.Codec, clk clock.Clock) *Service {

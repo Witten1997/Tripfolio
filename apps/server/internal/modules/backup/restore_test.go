@@ -66,7 +66,7 @@ func TestRestoreSyncEpochTransaction(t *testing.T) {
 	for _, scenario := range []struct {
 		version int64
 		fail    bool
-	}{{22, false}, {25, false}, {26, false}, {26, true}} {
+	}{{22, false}, {25, false}, {26, false}, {27, false}, {27, true}} {
 		t.Run(fmt.Sprintf("schema_%d_rollback_%t", scenario.version, scenario.fail), func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 			defer cancel()
@@ -109,7 +109,22 @@ func TestRestoreSyncEpochTransaction(t *testing.T) {
 				execSQL(`INSERT INTO account_sync_state(account_id) VALUES($1)`, id)
 			}
 			execSQL(`INSERT INTO admin_principals(account_id,reason) VALUES($1,'restore integration')`, accounts[0])
-			execSQL(`INSERT INTO data_snapshots(id,account_id,purpose,selected_trip_ids,status,high_water_seq,captured_at,expires_at) VALUES($1,$2,'baseline','[]','ready',0,now(),now()+interval '1 day')`, snapshotID, accounts[0])
+			tripID := uuid.New()
+			execSQL(`INSERT INTO trips(id,account_id,name,start_date,end_date,timezone) VALUES($1,$2,'archive trip','2026-01-01','2026-01-04','Asia/Shanghai')`, tripID, accounts[0])
+			items := []uuid.UUID{uuid.New(), uuid.New()}
+			for i, id := range items {
+				execSQL(`INSERT INTO packing_items(id,account_id,trip_id,name,category,created_at,updated_at,deleted_at) VALUES($1,$2,$3,'archive packing','documents',timestamp '2026-01-01'+$4*interval '1 day',timestamp '2026-01-01'+$4*interval '1 day',CASE WHEN $4=1 THEN now() END)`, id, accounts[0], tripID, i)
+				execSQL(`INSERT INTO todo_items(id,account_id,trip_id,title,due_on,deleted_at) VALUES($1,$2,$3,'archive todo',date '2026-01-01'+$4::int,CASE WHEN $4=1 THEN now() END)`, id, accounts[0], tripID, i)
+				if scenario.version >= 27 {
+					execSQL(`UPDATE packing_items SET sort_order=$2 WHERE id=$1`, id, 41+i)
+					execSQL(`UPDATE todo_items SET sort_order=$2 WHERE id=$1`, id, 51+i)
+				}
+			}
+			if scenario.version >= 27 {
+				execSQL(`INSERT INTO data_snapshots(id,account_id,purpose,selected_trip_ids,status,high_water_seq,captured_at,expires_at,sync_epoch) SELECT $1,$2,'baseline','[]','ready',0,now(),now()+interval '1 day',sync_epoch FROM account_sync_state WHERE account_id=$2`, snapshotID, accounts[0])
+			} else {
+				execSQL(`INSERT INTO data_snapshots(id,account_id,purpose,selected_trip_ids,status,high_water_seq,captured_at,expires_at) VALUES($1,$2,'baseline','[]','ready',0,now(),now()+interval '1 day')`, snapshotID, accounts[0])
+			}
 			epochs := func() map[uuid.UUID]uuid.UUID {
 				t.Helper()
 				rows, err := pool.Query(ctx, `SELECT account_id,sync_epoch FROM account_sync_state`)
@@ -131,7 +146,7 @@ func TestRestoreSyncEpochTransaction(t *testing.T) {
 				return result
 			}
 			var archivedEpochs map[uuid.UUID]uuid.UUID
-			if scenario.version == 26 {
+			if scenario.version >= 26 {
 				archivedEpochs = epochs()
 			}
 			var databaseID string
@@ -154,6 +169,7 @@ func TestRestoreSyncEpochTransaction(t *testing.T) {
 			// The destination now differs from the archive. A rollback must retain
 			// these live values; a commit must restore the archive and rotate epochs.
 			execSQL(`UPDATE accounts SET nickname='live'; UPDATE account_sync_state SET sync_epoch=gen_random_uuid()`)
+			execSQL(`UPDATE packing_items SET sort_order=97,name='live packing'; UPDATE todo_items SET sort_order=98,title='live todo'`)
 			liveEpochs := epochs()
 			if len(liveEpochs) != 2 || liveEpochs[accounts[0]] == uuid.Nil || liveEpochs[accounts[0]] == liveEpochs[accounts[1]] {
 				t.Fatal("migration must initialize distinct non-null account epochs")
@@ -201,7 +217,25 @@ CREATE TRIGGER h07_fail_epoch BEFORE UPDATE ON tripfolio_restore.control FOR EAC
 				t.Fatal(err)
 			}
 			afterEpochs := epochs()
-			if version != 26 || len(afterEpochs) != len(accounts) {
+			for i, id := range items {
+				var packingOrder, todoOrder int
+				var packingName, todoTitle string
+				var packingDeleted, todoDeleted bool
+				if err := pool.QueryRow(ctx, `SELECT p.sort_order,t.sort_order,p.name,t.title,p.deleted_at IS NOT NULL,t.deleted_at IS NOT NULL FROM packing_items p JOIN todo_items t ON t.id=p.id WHERE p.id=$1`, id).Scan(&packingOrder, &todoOrder, &packingName, &todoTitle, &packingDeleted, &todoDeleted); err != nil {
+					t.Fatal(err)
+				}
+				wantPacking, wantTodo, wantName, wantTitle := i, i, "archive packing", "archive todo"
+				if scenario.version >= 27 {
+					wantPacking, wantTodo = 41+i, 51+i
+				}
+				if scenario.fail {
+					wantPacking, wantTodo, wantName, wantTitle = 97, 98, "live packing", "live todo"
+				}
+				if packingOrder != wantPacking || todoOrder != wantTodo || packingName != wantName || todoTitle != wantTitle || packingDeleted != (i == 1) || todoDeleted != (i == 1) {
+					t.Fatalf("restore packing/todo mismatch: order=%d/%d expected=%d/%d names=%s/%s deleted=%t/%t", packingOrder, todoOrder, wantPacking, wantTodo, packingName, todoTitle, packingDeleted, todoDeleted)
+				}
+			}
+			if version != 27 || len(afterEpochs) != len(accounts) {
 				t.Fatalf("schema/accounts not preserved: %d %+v", version, afterEpochs)
 			}
 			if scenario.fail {
@@ -223,7 +257,7 @@ CREATE TRIGGER h07_fail_epoch BEFORE UPDATE ON tripfolio_restore.control FOR EAC
 					}
 				}
 			}
-			t.Logf("production dump/restore schema %d -> 26, rollback=%t: epoch/snapshot/session/control/audit assertions passed", scenario.version, scenario.fail)
+			t.Logf("production dump/restore schema %d -> 27, rollback=%t: epoch/snapshot/session/control/audit assertions passed", scenario.version, scenario.fail)
 		})
 	}
 }

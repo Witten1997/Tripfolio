@@ -48,6 +48,12 @@ paths:
     $ref: ./paths/sync.yaml#/status
   /sync/changes:
     $ref: ./paths/sync.yaml#/changes
+  /sync/snapshots:
+    $ref: ./paths/sync.yaml#/snapshots
+  /sync/snapshots/{snapshot_id}:
+    $ref: ./paths/sync.yaml#/snapshot
+  /sync/snapshots/{snapshot_id}/items:
+    $ref: ./paths/sync.yaml#/snapshotItems
   /deletion-jobs/{job_id}:
     $ref: ./paths/deletion.yaml#/job
   /recycle-bin/trips/{trip_id}/deletion-job:

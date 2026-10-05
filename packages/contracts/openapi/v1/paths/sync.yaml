@@ -94,3 +94,238 @@ changes:
           application/problem+json:
             schema:
               $ref: ../openapi.yaml#/components/schemas/Problem
+
+snapshots:
+  post:
+    tags: [sync]
+    operationId: createSyncSnapshot
+    summary: 创建账号一致快照任务
+    parameters:
+      - name: X-Tripfolio-Sync-Version
+        in: header
+        required: false
+        description: 必须为2，否则返回426。
+        schema: {type: string}
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema: {type: string, format: uuid}
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: {$ref: ../schemas/sync.yaml#/SnapshotInput}
+    responses:
+      '202':
+        description: 创建账号一致快照任务成功
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [data]
+              properties:
+                data: {$ref: ../schemas/sync.yaml#/DataSnapshot}
+      '400':
+        description: 请求或游标无效
+        content:
+          application/problem+json:
+            schema: {$ref: ../openapi.yaml#/components/schemas/Problem}
+      '401':
+        description: 身份失效
+        content:
+          application/problem+json:
+            schema: {$ref: ../openapi.yaml#/components/schemas/Problem}
+      '403':
+        description: 账号或客户端不允许
+        content:
+          application/problem+json:
+            schema: {$ref: ../openapi.yaml#/components/schemas/Problem}
+      '404':
+        description: 范围不存在
+        content:
+          application/problem+json:
+            schema: {$ref: ../openapi.yaml#/components/schemas/Problem}
+      '409':
+        description: epoch、幂等冲突或快照尚未就绪
+        content:
+          application/problem+json:
+            schema: {$ref: ../openapi.yaml#/components/schemas/Problem}
+      '410':
+        description: 快照或目标旅行已失效
+        content:
+          application/problem+json:
+            schema: {$ref: ../openapi.yaml#/components/schemas/Problem}
+      '422':
+        description: 请求校验失败
+        content:
+          application/problem+json:
+            schema: {$ref: ../openapi.yaml#/components/schemas/Problem}
+      '426':
+        description: 同步协议不支持
+        content:
+          application/problem+json:
+            schema: {$ref: ../openapi.yaml#/components/schemas/Problem}
+      '500':
+        description: 内部错误
+        content:
+          application/problem+json:
+            schema: {$ref: ../openapi.yaml#/components/schemas/Problem}
+      '503':
+        description: 依赖尚未就绪
+        content:
+          application/problem+json:
+            schema: {$ref: ../openapi.yaml#/components/schemas/Problem}
+
+snapshot:
+  get:
+    tags: [sync]
+    operationId: getSyncSnapshot
+    summary: 读取快照任务状态
+    parameters:
+      - name: X-Tripfolio-Sync-Version
+        in: header
+        required: false
+        description: 必须为2，否则返回426。
+        schema: {type: string}
+      - name: snapshot_id
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    responses:
+      '200':
+        description: 读取快照任务状态成功
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/sync.yaml#/DataSnapshot
+      '400':
+        description: 请求或游标无效
+        content:
+          application/problem+json:
+            schema: {$ref: ../openapi.yaml#/components/schemas/Problem}
+      '401':
+        description: 身份失效
+        content:
+          application/problem+json:
+            schema: {$ref: ../openapi.yaml#/components/schemas/Problem}
+      '403':
+        description: 账号或客户端不允许
+        content:
+          application/problem+json:
+            schema: {$ref: ../openapi.yaml#/components/schemas/Problem}
+      '404':
+        description: 范围不存在
+        content:
+          application/problem+json:
+            schema: {$ref: ../openapi.yaml#/components/schemas/Problem}
+      '409':
+        description: epoch、幂等冲突或快照尚未就绪
+        content:
+          application/problem+json:
+            schema: {$ref: ../openapi.yaml#/components/schemas/Problem}
+      '410':
+        description: 快照或目标旅行已失效
+        content:
+          application/problem+json:
+            schema: {$ref: ../openapi.yaml#/components/schemas/Problem}
+      '422':
+        description: 请求校验失败
+        content:
+          application/problem+json:
+            schema: {$ref: ../openapi.yaml#/components/schemas/Problem}
+      '426':
+        description: 同步协议不支持
+        content:
+          application/problem+json:
+            schema: {$ref: ../openapi.yaml#/components/schemas/Problem}
+      '500':
+        description: 内部错误
+        content:
+          application/problem+json:
+            schema: {$ref: ../openapi.yaml#/components/schemas/Problem}
+      '503':
+        description: 依赖尚未就绪
+        content:
+          application/problem+json:
+            schema: {$ref: ../openapi.yaml#/components/schemas/Problem}
+
+snapshotItems:
+  get:
+    tags: [sync]
+    operationId: getSyncSnapshotItems
+    summary: 读取不可变快照条目
+    parameters:
+      - name: X-Tripfolio-Sync-Version
+        in: header
+        required: false
+        description: 必须为2，否则返回426。
+        schema: {type: string}
+      - name: snapshot_id
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+      - name: cursor
+        in: query
+        required: false
+        schema: {type: string, maxLength: 8192}
+      - name: limit
+        in: query
+        required: false
+        schema: {type: integer, minimum: 1, maximum: 500, default: 200}
+    responses:
+      '200':
+        description: 读取不可变快照条目成功
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/sync.yaml#/SnapshotPage
+      '400':
+        description: 请求或游标无效
+        content:
+          application/problem+json:
+            schema: {$ref: ../openapi.yaml#/components/schemas/Problem}
+      '401':
+        description: 身份失效
+        content:
+          application/problem+json:
+            schema: {$ref: ../openapi.yaml#/components/schemas/Problem}
+      '403':
+        description: 账号或客户端不允许
+        content:
+          application/problem+json:
+            schema: {$ref: ../openapi.yaml#/components/schemas/Problem}
+      '404':
+        description: 范围不存在
+        content:
+          application/problem+json:
+            schema: {$ref: ../openapi.yaml#/components/schemas/Problem}
+      '409':
+        description: epoch、幂等冲突或快照尚未就绪
+        content:
+          application/problem+json:
+            schema: {$ref: ../openapi.yaml#/components/schemas/Problem}
+      '410':
+        description: 快照或目标旅行已失效
+        content:
+          application/problem+json:
+            schema: {$ref: ../openapi.yaml#/components/schemas/Problem}
+      '422':
+        description: 请求校验失败
+        content:
+          application/problem+json:
+            schema: {$ref: ../openapi.yaml#/components/schemas/Problem}
+      '426':
+        description: 同步协议不支持
+        content:
+          application/problem+json:
+            schema: {$ref: ../openapi.yaml#/components/schemas/Problem}
+      '500':
+        description: 内部错误
+        content:
+          application/problem+json:
+            schema: {$ref: ../openapi.yaml#/components/schemas/Problem}
+      '503':
+        description: 依赖尚未就绪
+        content:
+          application/problem+json:
+            schema: {$ref: ../openapi.yaml#/components/schemas/Problem}

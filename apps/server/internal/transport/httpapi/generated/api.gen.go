@@ -548,6 +548,51 @@ func (e RouteSummaryStatus) Valid() bool {
 	}
 }
 
+// Defines values for SnapshotItemEntityType.
+const (
+	SnapshotItemEntityTypeAsset           SnapshotItemEntityType = "asset"
+	SnapshotItemEntityTypeDocument        SnapshotItemEntityType = "document"
+	SnapshotItemEntityTypeExpenseCategory SnapshotItemEntityType = "expense_category"
+	SnapshotItemEntityTypeItineraryItem   SnapshotItemEntityType = "itinerary_item"
+	SnapshotItemEntityTypeLedgerEntry     SnapshotItemEntityType = "ledger_entry"
+	SnapshotItemEntityTypePackingItem     SnapshotItemEntityType = "packing_item"
+	SnapshotItemEntityTypePhoto           SnapshotItemEntityType = "photo"
+	SnapshotItemEntityTypeReservation     SnapshotItemEntityType = "reservation"
+	SnapshotItemEntityTypeTodo            SnapshotItemEntityType = "todo"
+	SnapshotItemEntityTypeTrip            SnapshotItemEntityType = "trip"
+	SnapshotItemEntityTypeTripMember      SnapshotItemEntityType = "trip_member"
+)
+
+// Valid indicates whether the value is a known member of the SnapshotItemEntityType enum.
+func (e SnapshotItemEntityType) Valid() bool {
+	switch e {
+	case SnapshotItemEntityTypeAsset:
+		return true
+	case SnapshotItemEntityTypeDocument:
+		return true
+	case SnapshotItemEntityTypeExpenseCategory:
+		return true
+	case SnapshotItemEntityTypeItineraryItem:
+		return true
+	case SnapshotItemEntityTypeLedgerEntry:
+		return true
+	case SnapshotItemEntityTypePackingItem:
+		return true
+	case SnapshotItemEntityTypePhoto:
+		return true
+	case SnapshotItemEntityTypeReservation:
+		return true
+	case SnapshotItemEntityTypeTodo:
+		return true
+	case SnapshotItemEntityTypeTrip:
+		return true
+	case SnapshotItemEntityTypeTripMember:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for SplitMode.
 const (
 	SplitModeEven     SplitMode = "even"
@@ -1162,6 +1207,9 @@ type DashboardTrip struct {
 	// Example: 2026-10-01
 	StartDate Date `json:"start_date"`
 }
+
+// DataSnapshot defines model for DataSnapshot.
+type DataSnapshot = syncmodel.Snapshot
 
 // Date YYYY-MM-DD，不带时区
 //
@@ -2158,6 +2206,28 @@ type SharePercent = string
 // Example: -12.50
 type SignedMoney = string
 
+// SnapshotInput defines model for SnapshotInput.
+type SnapshotInput = syncmodel.SnapshotInput
+
+// SnapshotItem defines model for SnapshotItem.
+type SnapshotItem struct {
+	// Data 同一捕获视图中的白名单业务资源，不含凭据或文件字节。
+	Data       map[string]interface{} `json:"data"`
+	EntityId   openapi_types.UUID     `json:"entity_id"`
+	EntityType SnapshotItemEntityType `json:"entity_type"`
+
+	// Ordinal 精确的非负十进制整数，不超过 9223372036854775807；不得转浮点数。
+	Ordinal SyncSeq                               `json:"ordinal"`
+	TripId  nullable.Nullable[openapi_types.UUID] `json:"trip_id"`
+	Version string                                `json:"version"`
+}
+
+// SnapshotItemEntityType defines model for SnapshotItem.EntityType.
+type SnapshotItemEntityType string
+
+// SnapshotPage defines model for SnapshotPage.
+type SnapshotPage = syncmodel.SnapshotPage
+
 // SplitMode 分摊模式；even 按参与人等分，ratio 按参与人的成员百分比归一化，personal 由「我」支付并承担全额，不计入成员结算
 type SplitMode string
 
@@ -2706,6 +2776,28 @@ type GetSyncChangesParams struct {
 	XTripfolioSyncVersion *string `json:"X-Tripfolio-Sync-Version,omitempty"`
 }
 
+// CreateSyncSnapshotParams defines parameters for CreateSyncSnapshot.
+type CreateSyncSnapshotParams struct {
+	// XTripfolioSyncVersion 必须为2，否则返回426。
+	XTripfolioSyncVersion *string            `json:"X-Tripfolio-Sync-Version,omitempty"`
+	IdempotencyKey        openapi_types.UUID `json:"Idempotency-Key"`
+}
+
+// GetSyncSnapshotParams defines parameters for GetSyncSnapshot.
+type GetSyncSnapshotParams struct {
+	// XTripfolioSyncVersion 必须为2，否则返回426。
+	XTripfolioSyncVersion *string `json:"X-Tripfolio-Sync-Version,omitempty"`
+}
+
+// GetSyncSnapshotItemsParams defines parameters for GetSyncSnapshotItems.
+type GetSyncSnapshotItemsParams struct {
+	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
+	Limit  *int    `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// XTripfolioSyncVersion 必须为2，否则返回426。
+	XTripfolioSyncVersion *string `json:"X-Tripfolio-Sync-Version,omitempty"`
+}
+
 // ListTripsParams defines parameters for ListTrips.
 type ListTripsParams struct {
 	// Q 匹配名称或目的地（不区分大小写的子串），最多 100 字符
@@ -3123,6 +3215,9 @@ type UpdateExpenseCategoryJSONRequestBody = ExpenseCategoryPatch
 
 // PurgeTripJSONRequestBody defines body for PurgeTrip for application/json ContentType.
 type PurgeTripJSONRequestBody = PurgeTripRequest
+
+// CreateSyncSnapshotJSONRequestBody defines body for CreateSyncSnapshot for application/json ContentType.
+type CreateSyncSnapshotJSONRequestBody = SnapshotInput
 
 // CreateTripJSONRequestBody defines body for CreateTrip for application/json ContentType.
 type CreateTripJSONRequestBody = TripCreate
@@ -3555,6 +3650,15 @@ type ServerInterface interface {
 	// GetSyncChanges 读取账号固定高水位的一页增量
 	// (GET /sync/changes)
 	GetSyncChanges(w http.ResponseWriter, r *http.Request, params GetSyncChangesParams)
+	// CreateSyncSnapshot 创建账号一致快照任务
+	// (POST /sync/snapshots)
+	CreateSyncSnapshot(w http.ResponseWriter, r *http.Request, params CreateSyncSnapshotParams)
+	// GetSyncSnapshot 读取快照任务状态
+	// (GET /sync/snapshots/{snapshot_id})
+	GetSyncSnapshot(w http.ResponseWriter, r *http.Request, snapshotId openapi_types.UUID, params GetSyncSnapshotParams)
+	// GetSyncSnapshotItems 读取不可变快照条目
+	// (GET /sync/snapshots/{snapshot_id}/items)
+	GetSyncSnapshotItems(w http.ResponseWriter, r *http.Request, snapshotId openapi_types.UUID, params GetSyncSnapshotItemsParams)
 	// GetSyncStatus 查询原生账号同步协议能力
 	// (GET /sync/status)
 	GetSyncStatus(w http.ResponseWriter, r *http.Request)
@@ -3999,6 +4103,24 @@ func (_ Unimplemented) RestoreTrip(w http.ResponseWriter, r *http.Request, tripI
 // GetSyncChanges 读取账号固定高水位的一页增量
 // (GET /sync/changes)
 func (_ Unimplemented) GetSyncChanges(w http.ResponseWriter, r *http.Request, params GetSyncChangesParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// CreateSyncSnapshot 创建账号一致快照任务
+// (POST /sync/snapshots)
+func (_ Unimplemented) CreateSyncSnapshot(w http.ResponseWriter, r *http.Request, params CreateSyncSnapshotParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetSyncSnapshot 读取快照任务状态
+// (GET /sync/snapshots/{snapshot_id})
+func (_ Unimplemented) GetSyncSnapshot(w http.ResponseWriter, r *http.Request, snapshotId openapi_types.UUID, params GetSyncSnapshotParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetSyncSnapshotItems 读取不可变快照条目
+// (GET /sync/snapshots/{snapshot_id}/items)
+func (_ Unimplemented) GetSyncSnapshotItems(w http.ResponseWriter, r *http.Request, snapshotId openapi_types.UUID, params GetSyncSnapshotItemsParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -6020,6 +6142,196 @@ func (siw *ServerInterfaceWrapper) GetSyncChanges(w http.ResponseWriter, r *http
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetSyncChanges(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateSyncSnapshot operation middleware
+func (siw *ServerInterfaceWrapper) CreateSyncSnapshot(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateSyncSnapshotParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "X-Tripfolio-Sync-Version" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Tripfolio-Sync-Version")]; found {
+		var XTripfolioSyncVersion string
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-Tripfolio-Sync-Version", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Tripfolio-Sync-Version", valueList[0], &XTripfolioSyncVersion, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-Tripfolio-Sync-Version", Err: err})
+			return
+		}
+
+		params.XTripfolioSyncVersion = &XTripfolioSyncVersion
+
+	}
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey openapi_types.UUID
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateSyncSnapshot(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetSyncSnapshot operation middleware
+func (siw *ServerInterfaceWrapper) GetSyncSnapshot(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "snapshot_id" -------------
+	var snapshotId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "snapshot_id", chi.URLParam(r, "snapshot_id"), &snapshotId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "snapshot_id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetSyncSnapshotParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "X-Tripfolio-Sync-Version" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Tripfolio-Sync-Version")]; found {
+		var XTripfolioSyncVersion string
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-Tripfolio-Sync-Version", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Tripfolio-Sync-Version", valueList[0], &XTripfolioSyncVersion, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-Tripfolio-Sync-Version", Err: err})
+			return
+		}
+
+		params.XTripfolioSyncVersion = &XTripfolioSyncVersion
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetSyncSnapshot(w, r, snapshotId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetSyncSnapshotItems operation middleware
+func (siw *ServerInterfaceWrapper) GetSyncSnapshotItems(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "snapshot_id" -------------
+	var snapshotId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "snapshot_id", chi.URLParam(r, "snapshot_id"), &snapshotId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "snapshot_id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetSyncSnapshotItemsParams
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "X-Tripfolio-Sync-Version" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Tripfolio-Sync-Version")]; found {
+		var XTripfolioSyncVersion string
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-Tripfolio-Sync-Version", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Tripfolio-Sync-Version", valueList[0], &XTripfolioSyncVersion, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-Tripfolio-Sync-Version", Err: err})
+			return
+		}
+
+		params.XTripfolioSyncVersion = &XTripfolioSyncVersion
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetSyncSnapshotItems(w, r, snapshotId, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -9713,6 +10025,15 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/sync/changes", wrapper.GetSyncChanges)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/sync/snapshots", wrapper.CreateSyncSnapshot)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/sync/snapshots/{snapshot_id}", wrapper.GetSyncSnapshot)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/sync/snapshots/{snapshot_id}/items", wrapper.GetSyncSnapshotItems)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/deletion-jobs/{job_id}", wrapper.GetDeletionJob)
@@ -14067,6 +14388,497 @@ func (response GetSyncChanges500ApplicationProblemPlusJSONResponse) VisitGetSync
 type GetSyncChanges503ApplicationProblemPlusJSONResponse Problem
 
 func (response GetSyncChanges503ApplicationProblemPlusJSONResponse) VisitGetSyncChangesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateSyncSnapshotRequestObject struct {
+	Params CreateSyncSnapshotParams
+	Body   *CreateSyncSnapshotJSONRequestBody
+}
+
+type CreateSyncSnapshotResponseObject interface {
+	VisitCreateSyncSnapshotResponse(w http.ResponseWriter) error
+}
+
+type CreateSyncSnapshot202JSONResponse struct {
+	Data DataSnapshot `json:"data"`
+}
+
+func (response CreateSyncSnapshot202JSONResponse) VisitCreateSyncSnapshotResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(202)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateSyncSnapshot400ApplicationProblemPlusJSONResponse Problem
+
+func (response CreateSyncSnapshot400ApplicationProblemPlusJSONResponse) VisitCreateSyncSnapshotResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateSyncSnapshot401ApplicationProblemPlusJSONResponse Problem
+
+func (response CreateSyncSnapshot401ApplicationProblemPlusJSONResponse) VisitCreateSyncSnapshotResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateSyncSnapshot403ApplicationProblemPlusJSONResponse Problem
+
+func (response CreateSyncSnapshot403ApplicationProblemPlusJSONResponse) VisitCreateSyncSnapshotResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateSyncSnapshot404ApplicationProblemPlusJSONResponse Problem
+
+func (response CreateSyncSnapshot404ApplicationProblemPlusJSONResponse) VisitCreateSyncSnapshotResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateSyncSnapshot409ApplicationProblemPlusJSONResponse Problem
+
+func (response CreateSyncSnapshot409ApplicationProblemPlusJSONResponse) VisitCreateSyncSnapshotResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateSyncSnapshot410ApplicationProblemPlusJSONResponse Problem
+
+func (response CreateSyncSnapshot410ApplicationProblemPlusJSONResponse) VisitCreateSyncSnapshotResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(410)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateSyncSnapshot422ApplicationProblemPlusJSONResponse Problem
+
+func (response CreateSyncSnapshot422ApplicationProblemPlusJSONResponse) VisitCreateSyncSnapshotResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateSyncSnapshot426ApplicationProblemPlusJSONResponse Problem
+
+func (response CreateSyncSnapshot426ApplicationProblemPlusJSONResponse) VisitCreateSyncSnapshotResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(426)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateSyncSnapshot500ApplicationProblemPlusJSONResponse Problem
+
+func (response CreateSyncSnapshot500ApplicationProblemPlusJSONResponse) VisitCreateSyncSnapshotResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateSyncSnapshot503ApplicationProblemPlusJSONResponse Problem
+
+func (response CreateSyncSnapshot503ApplicationProblemPlusJSONResponse) VisitCreateSyncSnapshotResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSyncSnapshotRequestObject struct {
+	SnapshotId openapi_types.UUID `json:"snapshot_id"`
+	Params     GetSyncSnapshotParams
+}
+
+type GetSyncSnapshotResponseObject interface {
+	VisitGetSyncSnapshotResponse(w http.ResponseWriter) error
+}
+
+type GetSyncSnapshot200JSONResponse DataSnapshot
+
+func (response GetSyncSnapshot200JSONResponse) VisitGetSyncSnapshotResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSyncSnapshot400ApplicationProblemPlusJSONResponse Problem
+
+func (response GetSyncSnapshot400ApplicationProblemPlusJSONResponse) VisitGetSyncSnapshotResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSyncSnapshot401ApplicationProblemPlusJSONResponse Problem
+
+func (response GetSyncSnapshot401ApplicationProblemPlusJSONResponse) VisitGetSyncSnapshotResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSyncSnapshot403ApplicationProblemPlusJSONResponse Problem
+
+func (response GetSyncSnapshot403ApplicationProblemPlusJSONResponse) VisitGetSyncSnapshotResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSyncSnapshot404ApplicationProblemPlusJSONResponse Problem
+
+func (response GetSyncSnapshot404ApplicationProblemPlusJSONResponse) VisitGetSyncSnapshotResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSyncSnapshot409ApplicationProblemPlusJSONResponse Problem
+
+func (response GetSyncSnapshot409ApplicationProblemPlusJSONResponse) VisitGetSyncSnapshotResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSyncSnapshot410ApplicationProblemPlusJSONResponse Problem
+
+func (response GetSyncSnapshot410ApplicationProblemPlusJSONResponse) VisitGetSyncSnapshotResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(410)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSyncSnapshot422ApplicationProblemPlusJSONResponse Problem
+
+func (response GetSyncSnapshot422ApplicationProblemPlusJSONResponse) VisitGetSyncSnapshotResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSyncSnapshot426ApplicationProblemPlusJSONResponse Problem
+
+func (response GetSyncSnapshot426ApplicationProblemPlusJSONResponse) VisitGetSyncSnapshotResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(426)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSyncSnapshot500ApplicationProblemPlusJSONResponse Problem
+
+func (response GetSyncSnapshot500ApplicationProblemPlusJSONResponse) VisitGetSyncSnapshotResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSyncSnapshot503ApplicationProblemPlusJSONResponse Problem
+
+func (response GetSyncSnapshot503ApplicationProblemPlusJSONResponse) VisitGetSyncSnapshotResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSyncSnapshotItemsRequestObject struct {
+	SnapshotId openapi_types.UUID `json:"snapshot_id"`
+	Params     GetSyncSnapshotItemsParams
+}
+
+type GetSyncSnapshotItemsResponseObject interface {
+	VisitGetSyncSnapshotItemsResponse(w http.ResponseWriter) error
+}
+
+type GetSyncSnapshotItems200JSONResponse SnapshotPage
+
+func (response GetSyncSnapshotItems200JSONResponse) VisitGetSyncSnapshotItemsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSyncSnapshotItems400ApplicationProblemPlusJSONResponse Problem
+
+func (response GetSyncSnapshotItems400ApplicationProblemPlusJSONResponse) VisitGetSyncSnapshotItemsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSyncSnapshotItems401ApplicationProblemPlusJSONResponse Problem
+
+func (response GetSyncSnapshotItems401ApplicationProblemPlusJSONResponse) VisitGetSyncSnapshotItemsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSyncSnapshotItems403ApplicationProblemPlusJSONResponse Problem
+
+func (response GetSyncSnapshotItems403ApplicationProblemPlusJSONResponse) VisitGetSyncSnapshotItemsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSyncSnapshotItems404ApplicationProblemPlusJSONResponse Problem
+
+func (response GetSyncSnapshotItems404ApplicationProblemPlusJSONResponse) VisitGetSyncSnapshotItemsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSyncSnapshotItems409ApplicationProblemPlusJSONResponse Problem
+
+func (response GetSyncSnapshotItems409ApplicationProblemPlusJSONResponse) VisitGetSyncSnapshotItemsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSyncSnapshotItems410ApplicationProblemPlusJSONResponse Problem
+
+func (response GetSyncSnapshotItems410ApplicationProblemPlusJSONResponse) VisitGetSyncSnapshotItemsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(410)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSyncSnapshotItems422ApplicationProblemPlusJSONResponse Problem
+
+func (response GetSyncSnapshotItems422ApplicationProblemPlusJSONResponse) VisitGetSyncSnapshotItemsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSyncSnapshotItems426ApplicationProblemPlusJSONResponse Problem
+
+func (response GetSyncSnapshotItems426ApplicationProblemPlusJSONResponse) VisitGetSyncSnapshotItemsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(426)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSyncSnapshotItems500ApplicationProblemPlusJSONResponse Problem
+
+func (response GetSyncSnapshotItems500ApplicationProblemPlusJSONResponse) VisitGetSyncSnapshotItemsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSyncSnapshotItems503ApplicationProblemPlusJSONResponse Problem
+
+func (response GetSyncSnapshotItems503ApplicationProblemPlusJSONResponse) VisitGetSyncSnapshotItemsResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -21298,6 +22110,15 @@ type StrictServerInterface interface {
 	// GetSyncChanges 读取账号固定高水位的一页增量
 	// (GET /sync/changes)
 	GetSyncChanges(ctx context.Context, request GetSyncChangesRequestObject) (GetSyncChangesResponseObject, error)
+	// CreateSyncSnapshot 创建账号一致快照任务
+	// (POST /sync/snapshots)
+	CreateSyncSnapshot(ctx context.Context, request CreateSyncSnapshotRequestObject) (CreateSyncSnapshotResponseObject, error)
+	// GetSyncSnapshot 读取快照任务状态
+	// (GET /sync/snapshots/{snapshot_id})
+	GetSyncSnapshot(ctx context.Context, request GetSyncSnapshotRequestObject) (GetSyncSnapshotResponseObject, error)
+	// GetSyncSnapshotItems 读取不可变快照条目
+	// (GET /sync/snapshots/{snapshot_id}/items)
+	GetSyncSnapshotItems(ctx context.Context, request GetSyncSnapshotItemsRequestObject) (GetSyncSnapshotItemsResponseObject, error)
 	// GetSyncStatus 查询原生账号同步协议能力
 	// (GET /sync/status)
 	GetSyncStatus(ctx context.Context, request GetSyncStatusRequestObject) (GetSyncStatusResponseObject, error)
@@ -22746,6 +23567,93 @@ func (sh *strictHandler) GetSyncChanges(w http.ResponseWriter, r *http.Request, 
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetSyncChangesResponseObject); ok {
 		if err := validResponse.VisitGetSyncChangesResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateSyncSnapshot operation middleware
+func (sh *strictHandler) CreateSyncSnapshot(w http.ResponseWriter, r *http.Request, params CreateSyncSnapshotParams) {
+	var request CreateSyncSnapshotRequestObject
+
+	request.Params = params
+
+	var body CreateSyncSnapshotJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateSyncSnapshot(ctx, request.(CreateSyncSnapshotRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateSyncSnapshot")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateSyncSnapshotResponseObject); ok {
+		if err := validResponse.VisitCreateSyncSnapshotResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetSyncSnapshot operation middleware
+func (sh *strictHandler) GetSyncSnapshot(w http.ResponseWriter, r *http.Request, snapshotId openapi_types.UUID, params GetSyncSnapshotParams) {
+	var request GetSyncSnapshotRequestObject
+
+	request.SnapshotId = snapshotId
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetSyncSnapshot(ctx, request.(GetSyncSnapshotRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetSyncSnapshot")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetSyncSnapshotResponseObject); ok {
+		if err := validResponse.VisitGetSyncSnapshotResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetSyncSnapshotItems operation middleware
+func (sh *strictHandler) GetSyncSnapshotItems(w http.ResponseWriter, r *http.Request, snapshotId openapi_types.UUID, params GetSyncSnapshotItemsParams) {
+	var request GetSyncSnapshotItemsRequestObject
+
+	request.SnapshotId = snapshotId
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetSyncSnapshotItems(ctx, request.(GetSyncSnapshotItemsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetSyncSnapshotItems")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetSyncSnapshotItemsResponseObject); ok {
+		if err := validResponse.VisitGetSyncSnapshotItemsResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

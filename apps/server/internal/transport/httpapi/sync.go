@@ -4,10 +4,86 @@ import (
 	"context"
 	"strings"
 
+	"github.com/google/uuid"
 	"tripfolio/server/internal/foundation/apperr"
 	"tripfolio/server/internal/transport/httpapi/generated"
 	"tripfolio/server/internal/transport/httpapi/middleware"
 )
+
+func syncProtocol(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
+}
+
+func (h *Handler) CreateSyncSnapshot(ctx context.Context, req generated.CreateSyncSnapshotRequestObject) (generated.CreateSyncSnapshotResponseObject, error) {
+	a, err := mustActor(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err = syncBearer(ctx); err != nil {
+		return nil, err
+	}
+	if h.sync == nil {
+		return nil, notWired()
+	}
+	if req.Body == nil {
+		return nil, apperr.BadRequest("MALFORMED_REQUEST", "缺少请求正文")
+	}
+	result, err := h.sync.CreateSnapshot(ctx, a, syncProtocol(req.Params.XTripfolioSyncVersion), uuid.UUID(req.Params.IdempotencyKey), *req.Body)
+	if err != nil {
+		return nil, err
+	}
+	return generated.CreateSyncSnapshot202JSONResponse{Data: result}, nil
+}
+
+func (h *Handler) GetSyncSnapshot(ctx context.Context, req generated.GetSyncSnapshotRequestObject) (generated.GetSyncSnapshotResponseObject, error) {
+	a, err := mustActor(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err = syncBearer(ctx); err != nil {
+		return nil, err
+	}
+	if h.sync == nil {
+		return nil, notWired()
+	}
+	result, err := h.sync.GetSnapshot(ctx, a, syncProtocol(req.Params.XTripfolioSyncVersion), uuid.UUID(req.SnapshotId))
+	if err != nil {
+		return nil, err
+	}
+	return generated.GetSyncSnapshot200JSONResponse(result), nil
+}
+
+func (h *Handler) GetSyncSnapshotItems(ctx context.Context, req generated.GetSyncSnapshotItemsRequestObject) (generated.GetSyncSnapshotItemsResponseObject, error) {
+	a, err := mustActor(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err = syncBearer(ctx); err != nil {
+		return nil, err
+	}
+	if h.sync == nil {
+		return nil, notWired()
+	}
+	token := ""
+	if req.Params.Cursor != nil {
+		token = *req.Params.Cursor
+	}
+	limit := 0
+	if req.Params.Limit != nil {
+		limit = *req.Params.Limit
+		if limit == 0 {
+			return nil, apperr.Validation(apperr.Field("limit", "INVALID", "limit 须在 1–500 之间"))
+		}
+	}
+	result, err := h.sync.SnapshotItems(ctx, a, syncProtocol(req.Params.XTripfolioSyncVersion), uuid.UUID(req.SnapshotId), token, limit)
+	if err != nil {
+		return nil, err
+	}
+	return generated.GetSyncSnapshotItems200JSONResponse(result), nil
+}
 
 func syncBearer(ctx context.Context) error {
 	r := middleware.RequestFrom(ctx)

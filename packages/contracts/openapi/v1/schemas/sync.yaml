@@ -78,3 +78,81 @@ SyncChangesPage:
       type: string
       description: 每页均返回，包括空终页；与整页 inbox 在同一客户端事务保存。
     has_more: {type: boolean}
+
+SnapshotInput:
+  type: object
+  additionalProperties: false
+  x-go-type: syncmodel.SnapshotInput
+  x-go-type-import:
+    name: syncmodel
+    path: tripfolio/server/internal/modules/sync
+  required: [sync_epoch, purpose, selected_trip_ids]
+  properties:
+    sync_epoch: {type: string, format: uuid}
+    purpose: {type: string, enum: [baseline, trip_reload]}
+    selected_trip_ids:
+      type: array
+      items: {type: string, format: uuid}
+
+DataSnapshot:
+  type: object
+  additionalProperties: false
+  x-go-type: syncmodel.Snapshot
+  x-go-type-import:
+    name: syncmodel
+    path: tripfolio/server/internal/modules/sync
+  required: [id, purpose, selected_trip_ids, status, schema_version, sync_epoch, high_water_seq, item_count, captured_at, expires_at, error_code]
+  properties:
+    id: {type: string, format: uuid}
+    purpose: {type: string, enum: [baseline, trip_reload]}
+    selected_trip_ids:
+      type: array
+      items: {type: string, format: uuid}
+    status: {type: string, enum: [queued, building, ready, failed, invalidated, expired]}
+    schema_version: {type: integer, enum: [2]}
+    sync_epoch: {type: string, format: uuid}
+    high_water_seq: {type: string, pattern: '^(0|[1-9][0-9]*)$', nullable: true}
+    item_count: {$ref: '#/SyncSeq'}
+    captured_at: {type: string, format: date-time, nullable: true}
+    expires_at: {type: string, format: date-time}
+    error_code: {type: string, nullable: true}
+
+SnapshotItem:
+  type: object
+  additionalProperties: false
+  required: [ordinal, entity_type, entity_id, trip_id, version, data]
+  properties:
+    ordinal: {$ref: '#/SyncSeq'}
+    entity_type:
+      type: string
+      enum: [trip, trip_member, expense_category, itinerary_item, ledger_entry, packing_item, todo, reservation, document, photo, asset]
+    entity_id: {type: string, format: uuid}
+    trip_id: {type: string, format: uuid, nullable: true}
+    version: {type: string, pattern: '^[1-9][0-9]*$'}
+    data:
+      type: object
+      additionalProperties: true
+      description: 同一捕获视图中的白名单业务资源，不含凭据或文件字节。
+
+SnapshotPage:
+  type: object
+  additionalProperties: false
+  x-go-type: syncmodel.SnapshotPage
+  x-go-type-import:
+    name: syncmodel
+    path: tripfolio/server/internal/modules/sync
+  required: [snapshot_id, sync_epoch, items, next_cursor, has_more, item_count, high_water_seq, baseline_cursor]
+  properties:
+    snapshot_id: {type: string, format: uuid}
+    sync_epoch: {type: string, format: uuid}
+    items:
+      type: array
+      items: {$ref: '#/SnapshotItem'}
+    next_cursor: {type: string, nullable: true}
+    has_more: {type: boolean}
+    item_count: {$ref: '#/SyncSeq'}
+    high_water_seq: {$ref: '#/SyncSeq'}
+    baseline_cursor:
+      type: string
+      nullable: true
+      description: 仅baseline最后一页提供；trip_reload始终为null。

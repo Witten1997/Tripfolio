@@ -157,7 +157,7 @@ func (s *Service) restoreNext(parent context.Context, sweep bool) {
 }
 
 func restoreVersionCompatible(source, target int64) bool {
-	return source == target || (source >= 22 && source < target && target <= 26)
+	return source == target || (source >= 22 && source < target && target <= 27)
 }
 
 func (s *Service) restore(ctx context.Context, job RestoreJob, targetVersion int64, handoff func() error) error {
@@ -272,6 +272,17 @@ END $restore$;
 	}
 	if targetVersion >= 26 && job.Manifest.GooseVersion < 26 {
 		migration, e := db.Migrations.ReadFile("migrations/00026_sync_epoch.sql")
+		if e != nil {
+			return errors.New("RESTORE_VERSION_MISMATCH")
+		}
+		up, _, ok := strings.Cut(string(migration), "-- +goose Down")
+		if !ok {
+			return errors.New("RESTORE_VERSION_MISMATCH")
+		}
+		afterSQL += "SET LOCAL search_path TO public;\n" + up + "\n"
+	}
+	if targetVersion >= 27 && job.Manifest.GooseVersion < 27 {
+		migration, e := db.Migrations.ReadFile("migrations/00027_sync_snapshots.sql")
 		if e != nil {
 			return errors.New("RESTORE_VERSION_MISMATCH")
 		}

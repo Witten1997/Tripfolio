@@ -14,7 +14,7 @@ import (
 
 const getTodoItem = `-- name: GetTodoItem :one
 
-SELECT id, account_id, version, created_at, updated_at, deleted_at, trip_id, title, due_on, notes, completed_at FROM todo_items
+SELECT id, account_id, version, created_at, updated_at, deleted_at, trip_id, title, due_on, notes, completed_at, sort_order FROM todo_items
 WHERE account_id = $1 AND trip_id = $2 AND id = $3
 `
 
@@ -40,12 +40,13 @@ func (q *Queries) GetTodoItem(ctx context.Context, arg GetTodoItemParams) (TodoI
 		&i.DueOn,
 		&i.Notes,
 		&i.CompletedAt,
+		&i.SortOrder,
 	)
 	return i, err
 }
 
 const getTodoItemForUpdate = `-- name: GetTodoItemForUpdate :one
-SELECT id, account_id, version, created_at, updated_at, deleted_at, trip_id, title, due_on, notes, completed_at FROM todo_items
+SELECT id, account_id, version, created_at, updated_at, deleted_at, trip_id, title, due_on, notes, completed_at, sort_order FROM todo_items
 WHERE account_id = $1 AND trip_id = $2 AND id = $3
 FOR UPDATE
 `
@@ -71,6 +72,7 @@ func (q *Queries) GetTodoItemForUpdate(ctx context.Context, arg GetTodoItemForUp
 		&i.DueOn,
 		&i.Notes,
 		&i.CompletedAt,
+		&i.SortOrder,
 	)
 	return i, err
 }
@@ -79,7 +81,7 @@ const insertTodoItem = `-- name: InsertTodoItem :one
 INSERT INTO todo_items (id, account_id, trip_id, title, due_on, notes, completed_at, created_at, updated_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7,
         $8, $8)
-RETURNING id, account_id, version, created_at, updated_at, deleted_at, trip_id, title, due_on, notes, completed_at
+RETURNING id, account_id, version, created_at, updated_at, deleted_at, trip_id, title, due_on, notes, completed_at, sort_order
 `
 
 type InsertTodoItemParams struct {
@@ -117,12 +119,13 @@ func (q *Queries) InsertTodoItem(ctx context.Context, arg InsertTodoItemParams) 
 		&i.DueOn,
 		&i.Notes,
 		&i.CompletedAt,
+		&i.SortOrder,
 	)
 	return i, err
 }
 
 const listTodoItems = `-- name: ListTodoItems :many
-SELECT id, account_id, version, created_at, updated_at, deleted_at, trip_id, title, due_on, notes, completed_at FROM todo_items
+SELECT id, account_id, version, created_at, updated_at, deleted_at, trip_id, title, due_on, notes, completed_at, sort_order FROM todo_items
 WHERE account_id = $1 AND trip_id = $2 AND deleted_at IS NULL
   AND ($3::text = 'all'
        OR ($3::text = 'pending' AND completed_at IS NULL)
@@ -174,6 +177,7 @@ func (q *Queries) ListTodoItems(ctx context.Context, arg ListTodoItemsParams) ([
 			&i.DueOn,
 			&i.Notes,
 			&i.CompletedAt,
+			&i.SortOrder,
 		); err != nil {
 			return nil, err
 		}
@@ -189,7 +193,7 @@ const softDeleteTodoItem = `-- name: SoftDeleteTodoItem :one
 UPDATE todo_items
 SET deleted_at = $1, version = version + 1, updated_at = $1
 WHERE account_id = $2 AND trip_id = $3 AND id = $4
-RETURNING id, account_id, version, created_at, updated_at, deleted_at, trip_id, title, due_on, notes, completed_at
+RETURNING id, account_id, version, created_at, updated_at, deleted_at, trip_id, title, due_on, notes, completed_at, sort_order
 `
 
 type SoftDeleteTodoItemParams struct {
@@ -219,6 +223,7 @@ func (q *Queries) SoftDeleteTodoItem(ctx context.Context, arg SoftDeleteTodoItem
 		&i.DueOn,
 		&i.Notes,
 		&i.CompletedAt,
+		&i.SortOrder,
 	)
 	return i, err
 }
@@ -245,7 +250,7 @@ UPDATE todo_items
 SET title = $1, due_on = $2, notes = $3, completed_at = $4,
     version = version + 1, updated_at = $5
 WHERE account_id = $6 AND trip_id = $7 AND id = $8
-RETURNING id, account_id, version, created_at, updated_at, deleted_at, trip_id, title, due_on, notes, completed_at
+RETURNING id, account_id, version, created_at, updated_at, deleted_at, trip_id, title, due_on, notes, completed_at, sort_order
 `
 
 type UpdateTodoItemParams struct {
@@ -283,6 +288,7 @@ func (q *Queries) UpdateTodoItem(ctx context.Context, arg UpdateTodoItemParams) 
 		&i.DueOn,
 		&i.Notes,
 		&i.CompletedAt,
+		&i.SortOrder,
 	)
 	return i, err
 }
