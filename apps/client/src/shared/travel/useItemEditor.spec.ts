@@ -1,9 +1,10 @@
 import { createPinia, setActivePinia } from 'pinia'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { reactive } from 'vue'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { reactive, ref } from 'vue'
 
 import { ApiError } from '@/shared/api/auth'
-import { writeOutcome } from '@/shared/api/writes'
+import { writeOutcome, type WriteOutcome } from '@/shared/api/writes'
+import * as writes from '@/shared/api/writes'
 import { deferred, receipt } from '@/shared/travel/__tests__/fixtures'
 import { DraftError } from '@/shared/travel/tripDraft'
 import { useItemEditor, type ItemEditorSpec } from '@/shared/travel/useItemEditor'
@@ -30,9 +31,11 @@ function problem(code: string, status: number, extra: object = {}) {
 type NoteValues = NoteDraft
 type NotePatch = Partial<NoteDraft>
 
-function makeSpec(overrides: Partial<ItemEditorSpec<Note, NoteDraft, NoteValues, NotePatch>> = {}) {
+function makeSpec<S = undefined>(
+  overrides: Partial<ItemEditorSpec<Note, NoteDraft, NoteValues, NotePatch, S>> = {},
+) {
   const calls = { create: [] as unknown[], update: [] as unknown[], get: 0 }
-  const spec: ItemEditorSpec<Note, NoteDraft, NoteValues, NotePatch> = {
+  const spec: ItemEditorSpec<Note, NoteDraft, NoteValues, NotePatch, S> = {
     emptyDraft: () => ({ title: '', notes: '' }),
     draftFrom: (item) => ({ title: item.title, notes: item.notes }),
     validate: (draft) => {
@@ -64,6 +67,7 @@ function makeSpec(overrides: Partial<ItemEditorSpec<Note, NoteDraft, NoteValues,
 }
 
 beforeEach(() => setActivePinia(createPinia()))
+afterEach(() => vi.restoreAllMocks())
 
 describe('useItemEditor', () => {
   it('创建时携带客户端 id 并在成功后关闭，操作号对相同草稿稳定', async () => {
@@ -165,5 +169,356 @@ describe('useItemEditor', () => {
     const form = reactive(editor.draft)
     form.title = 'x'
     expect(editor.dirty.value).toBe(true)
+  })
+})
+
+interface GuardContext {
+  guards: Array<{ kind: string; scope_id: string; revision: string }>
+  orderMode: 'append' | 'explicit'
+}
+
+function guardContext(): GuardContext {
+  return {
+    guards: [{ kind: 'members', scope_id: 'trip1', revision: 'old' }],
+    orderMode: 'append',
+  }
+}
+
+function observeIntent() {
+  const original = writes.createWriteIntent
+  const inputs: unknown[] = []
+  vi.spyOn(writes, 'createWriteIntent').mockImplementation(() => {
+    const intent = original()
+    return {
+      ...intent,
+      key: (input) => {
+        inputs.push(input)
+        return intent.key(input)
+      },
+    }
+  })
+  return inputs
+}
+
+describe('useItemEditor 提交上下文', () => {
+  it('无 hook 时保留原指纹输入和回调参数个数', async () => {
+    const inputs = observeIntent()
+    const { spec } = makeSpec()
+    const create = vi.fn(spec.create)
+    const update = vi.fn(spec.update)
+    // 显式四泛型及原两/四参数回调仍可编译。
+    const editor = useItemEditor<Note, NoteDraft, NoteValues, NotePatch>({
+      ...spec,
+      create,
+      update,
+    })
+    await editor.open()
+    editor.draft.title = '新标题'
+    await editor.save()
+    const first = create.mock.calls[0]!
+    expect(first).toHaveLength(2)
+    expect(inputs[0]).toEqual({ id: first[0].id, body: { title: '新标题', notes: '' } })
+    await editor.open(note())
+    editor.draft.notes = '备注'
+    await editor.save()
+    expect(update.mock.calls[0]).toHaveLength(4)
+    expect(inputs[1]).toEqual({ id: 'n1', version: '1', patch: { notes: '备注' } })
+  })
+
+  it('同一深冻结快照进入指纹和发送，源数据变化不修改在途请求', async () => {
+    const inputs = observeIntent()
+    const source = guardContext()
+    const response = deferred<WriteOutcome<Note>>()
+    const capture = vi.fn(() => source)
+    const create = vi.fn<
+      ItemEditorSpec<Note, NoteDraft, NoteValues, NotePatch, GuardContext>['create']
+    >(() => response.promise)
+    const { spec } = makeSpec({ captureIntentContext: capture, create })
+    const editor = useItemEditor(spec)
+    await editor.open()
+    editor.draft.title = '标题'
+    const saving = editor.save()
+    const [body, , context] = create.mock.calls[0]!
+    expect(inputs[0]).toMatchObject({ request: { body: { title: '标题' } }, context: source })
+    expect((inputs[0] as { context: GuardContext }).context).toBe(context)
+    expect(context).not.toBe(source)
+    expect(Object.isFrozen(context)).toBe(true)
+    expect(Object.isFrozen(context!.guards)).toBe(true)
+    expect(Object.isFrozen(context!.guards[0])).toBe(true)
+    expect(Object.isFrozen(body)).toBe(true)
+    expect(capture).toHaveBeenCalledWith({ kind: 'create', body })
+    source.guards[0]!.revision = 'new'
+    source.orderMode = 'explicit'
+    editor.draft.title = '发送期间编辑'
+    expect(context!.guards[0]!.revision).toBe('old')
+    expect(context!.orderMode).toBe('append')
+    expect(body.title).toBe('标题')
+    response.resolve(writeOutcome<Note>(receipt(note()), () => true))
+    await saving
+  })
+
+  it.each(['create', 'update'] as const)('%s 相同请求换上下文得到新操作号', async (kind) => {
+    const source = guardContext()
+    const create = vi.fn(async () => {
+      throw problem('COLLECTION_CONFLICT', 412)
+    })
+    const update = vi.fn(async () => {
+      throw problem('COLLECTION_CONFLICT', 412)
+    })
+    const { spec, calls } = makeSpec<GuardContext>({
+      captureIntentContext: () => source,
+      create,
+      update,
+    })
+    const editor = useItemEditor(spec)
+    await editor.open(kind === 'update' ? note() : undefined)
+    editor.draft.title = '我的修改'
+    const getCount = calls.get
+    await editor.save()
+    await editor.save()
+    source.guards[0]!.revision = 'new'
+    await editor.save()
+    source.orderMode = 'explicit'
+    await editor.save()
+    const submissions = (kind === 'create' ? create : update).mock.calls as unknown as unknown[][]
+    const idIndex = kind === 'create' ? 1 : 3
+    expect(submissions[1]![idIndex]).toBe(submissions[0]![idIndex])
+    expect(submissions[2]![idIndex]).not.toBe(submissions[1]![idIndex])
+    expect(submissions[3]![idIndex]).not.toBe(submissions[2]![idIndex])
+    expect(calls.get).toBe(getCount)
+    expect(editor.draft.title).toBe('我的修改')
+    expect(editor.opened.value).toBe(true)
+  })
+
+  it.each<[string, () => Error]>([
+    ['网络失败', () => new TypeError('network')],
+    ['服务端错误', () => problem('INTERNAL_ERROR', 500)],
+  ])('创建%s后按原正文/编号/context重试，不重新捕获', async (_, failure) => {
+    const source = guardContext()
+    const capture = vi.fn(() => source)
+    const create = vi
+      .fn<ItemEditorSpec<Note, NoteDraft, NoteValues, NotePatch, GuardContext>['create']>()
+      .mockRejectedValueOnce(failure())
+      .mockResolvedValue(writeOutcome<Note>(receipt(note(), [], true), () => true))
+    const { spec } = makeSpec({ captureIntentContext: capture, create })
+    const editor = useItemEditor(spec)
+    await editor.open()
+    editor.draft.title = '原始标题'
+    await editor.save()
+    source.guards[0]!.revision = 'changed'
+    editor.draft.title = '改过的标题'
+    await editor.save()
+    expect(capture).toHaveBeenCalledTimes(1)
+    expect(create.mock.calls[1]).toEqual(create.mock.calls[0])
+    expect(create.mock.calls[1]![0]).toBe(create.mock.calls[0]![0])
+    expect(create.mock.calls[1]![2]).toBe(create.mock.calls[0]![2])
+    expect(create.mock.calls[1]![0].title).toBe('原始标题')
+    expect(editor.uncertainCreate.value).toBe(false)
+  })
+
+  it.each<[string, () => Error]>([
+    ['网络失败', () => new TypeError('network')],
+    ['服务端错误', () => problem('INTERNAL_ERROR', 503)],
+  ])('更新%s后不因重新加载/换目标/草稿变化丢失原重试请求', async (_, failure) => {
+    const source = guardContext()
+    const capture = vi.fn(() => source)
+    const update = vi
+      .fn<ItemEditorSpec<Note, NoteDraft, NoteValues, NotePatch, GuardContext>['update']>()
+      .mockRejectedValueOnce(failure())
+      .mockResolvedValue(writeOutcome<Note>(receipt(note(), [], true), () => true))
+    const { spec, calls } = makeSpec({ captureIntentContext: capture, update })
+    const editor = useItemEditor(spec)
+    await editor.open(note())
+    editor.draft.notes = '原始备注'
+    await editor.save()
+    expect(capture).toHaveBeenCalledWith({
+      kind: 'update',
+      id: 'n1',
+      version: '1',
+      patch: { notes: '原始备注' },
+    })
+    source.guards[0]!.revision = 'changed'
+    editor.draft.notes = '之后的修改'
+    await editor.load()
+    await editor.loadLatest()
+    await editor.open(note({ id: 'other' }))
+    editor.latest.value = note({ version: '8' })
+    editor.adoptLatest()
+    editor.close()
+    expect(editor.opened.value).toBe(true)
+    expect(calls.get).toBe(1)
+    expect(editor.baseline.value?.id).toBe('n1')
+    expect(editor.baseline.value?.version).toBe('1')
+    await editor.save(true)
+    expect(capture).toHaveBeenCalledTimes(1)
+    expect(update.mock.calls[1]).toEqual(update.mock.calls[0])
+    expect(update.mock.calls[1]![2]).toBe(update.mock.calls[0]![2])
+    expect(update.mock.calls[1]![4]).toBe(update.mock.calls[0]![4])
+    expect(update.mock.calls[1]![2]).toEqual({ notes: '原始备注' })
+  })
+
+  it.each([
+    ['COLLECTION_BASE_REQUIRED', 428],
+    ['COLLECTION_CONFLICT', 412],
+  ] as const)('%s 不自动读取新基线或重发，保留草稿及原实体版本', async (code, status) => {
+    const source = guardContext()
+    const capture = vi.fn(() => source)
+    const update = vi.fn(async () => {
+      throw problem(code, status)
+    })
+    const { spec, calls } = makeSpec({ captureIntentContext: capture, update })
+    const editor = useItemEditor(spec)
+    await editor.open(note())
+    editor.draft.notes = '草稿'
+    await editor.save()
+    expect(update).toHaveBeenCalledTimes(1)
+    expect(capture).toHaveBeenCalledTimes(1)
+    expect(calls.get).toBe(1)
+    expect(editor.latest.value).toBeNull()
+    expect(editor.conflict.value).toBe(false)
+    expect(editor.baseline.value?.version).toBe('1')
+    expect(editor.draft.notes).toBe('草稿')
+    expect(editor.error.value).toContain('集合')
+  })
+
+  it('对最新版本重提后响应丢失，普通重试仍重放该版本和上下文', async () => {
+    const capture = vi.fn(() => guardContext())
+    const update = vi
+      .fn<ItemEditorSpec<Note, NoteDraft, NoteValues, NotePatch, GuardContext>['update']>()
+      .mockRejectedValueOnce(problem('VERSION_CONFLICT', 412))
+      .mockRejectedValueOnce(new TypeError('network'))
+      .mockResolvedValue(writeOutcome<Note>(receipt(note(), [], true), () => true))
+    let reads = 0
+    const { spec } = makeSpec({
+      captureIntentContext: capture,
+      update,
+      get: async () => note({ version: ++reads === 1 ? '1' : '4' }),
+    })
+    const editor = useItemEditor(spec)
+    await editor.open(note())
+    editor.draft.notes = '我的备注'
+    await editor.save()
+    expect(editor.conflict.value).toBe(true)
+    await editor.save(true)
+    expect(update.mock.calls[1]![1]).toBe('4')
+    expect(await editor.save()).not.toBeNull()
+    expect(update.mock.calls[2]).toEqual(update.mock.calls[1])
+    expect(capture).toHaveBeenCalledTimes(2)
+  })
+
+  it('未知结果重试明确失败后解除原请求固定，显式核对后形成新意图', async () => {
+    const source = guardContext()
+    const capture = vi.fn(() => source)
+    const update = vi
+      .fn<ItemEditorSpec<Note, NoteDraft, NoteValues, NotePatch, GuardContext>['update']>()
+      .mockRejectedValueOnce(new TypeError('network'))
+      .mockRejectedValueOnce(problem('COLLECTION_CONFLICT', 412))
+      .mockResolvedValue(writeOutcome<Note>(receipt(note()), () => true))
+    const { spec } = makeSpec({ captureIntentContext: capture, update })
+    const editor = useItemEditor(spec)
+    await editor.open(note())
+    editor.draft.notes = '我的备注'
+    await editor.save()
+    await editor.save()
+    expect(capture).toHaveBeenCalledTimes(1)
+    source.guards[0]!.revision = 'confirmed-new'
+    await editor.save()
+    expect(capture).toHaveBeenCalledTimes(2)
+    expect(update.mock.calls[2]![3]).not.toBe(update.mock.calls[1]![3])
+    expect(update.mock.calls[2]![4]?.guards[0]?.revision).toBe('confirmed-new')
+  })
+
+  it('捕获异常发生在发送和分配意图之前，保留字段错误与草稿', async () => {
+    const inputs = observeIntent()
+    const { spec, calls } = makeSpec<GuardContext>({
+      captureIntentContext: () => {
+        throw new DraftError({ notes: '请核对成员基线' })
+      },
+    })
+    const editor = useItemEditor(spec)
+    await editor.open()
+    editor.draft.title = '草稿'
+    expect(await editor.save()).toBeNull()
+    expect(editor.errors.value.notes).toBe('请核对成员基线')
+    expect(editor.draft.title).toBe('草稿')
+    expect(calls.create).toHaveLength(0)
+    expect(inputs).toHaveLength(0)
+    expect(editor.saving.value).toBe(false)
+    expect(editor.uncertainCreate.value).toBe(false)
+  })
+
+  it.each<[string, () => unknown]>([
+    ['undefined', () => undefined],
+    ['嵌套undefined', () => ({ guards: [undefined] })],
+    ['NaN', () => ({ revision: NaN })],
+    ['Infinity', () => Infinity],
+    ['bigint', () => ({ value: 1n })],
+    ['function', () => ({ value: () => 'revision' })],
+    ['symbol值', () => ({ value: Symbol('revision') })],
+    ['symbol键', () => ({ [Symbol('revision')]: 'old' })],
+    ['隐藏字段', () => Object.defineProperty({}, 'revision', { value: 'old' })],
+    ['Date', () => ({ when: new Date() })],
+    ['Map', () => new Map([['revision', 'old']])],
+    ['Promise', () => Promise.resolve({ revision: 'old' })],
+    [
+      'class',
+      () =>
+        new (class Context {
+          revision = 'old'
+        })(),
+    ],
+    ['Ref', () => ({ revision: ref('old') })],
+    ['响应式对象', () => reactive({ revision: 'old' })],
+    ['稀疏数组', () => new Array(1)],
+    ['超长稀疏数组', () => new Array(0xffffffff)],
+    ['数组附加字段', () => Object.assign(['old'], { revision: 'old' })],
+    [
+      '循环',
+      () => {
+        const value: { self?: unknown } = {}
+        value.self = value
+        return value
+      },
+    ],
+  ])('拒绝非JSON上下文：%s', async (_, value) => {
+    const { spec, calls } = makeSpec<unknown>({ captureIntentContext: value })
+    const editor = useItemEditor(spec)
+    await editor.open()
+    editor.draft.title = '保留'
+    expect(await editor.save()).toBeNull()
+    expect(calls.create).toHaveLength(0)
+    expect(editor.error.value).toContain('提交上下文')
+    expect(editor.draft.title).toBe('保留')
+  })
+
+  it.each(['revision', '__v_isRef', 'toJSON'])('拒绝访问器且不执行%s getter', async (key) => {
+    const getter = vi.fn(() => 'old')
+    const source = Object.defineProperty({}, key, { get: getter, enumerable: true })
+    const { spec, calls } = makeSpec<unknown>({ captureIntentContext: () => source })
+    const editor = useItemEditor(spec)
+    await editor.open()
+    editor.draft.title = '保留'
+    await editor.save()
+    expect(getter).not.toHaveBeenCalled()
+    expect(calls.create).toHaveLength(0)
+  })
+
+  it('接收JSON基本值及重复引用，保留特殊自有键而不改变原型', async () => {
+    const shared = { revision: 'old' }
+    const source = JSON.parse('{"__proto__":{"revision":"special"}}') as Record<string, unknown>
+    source.values = [null, true, false, 0, 'text', shared, shared]
+    const create = vi.fn<ItemEditorSpec<Note, NoteDraft, NoteValues, NotePatch, unknown>['create']>(
+      async () => writeOutcome<Note>(receipt(note()), () => true),
+    )
+    const { spec } = makeSpec<unknown>({ captureIntentContext: () => source, create })
+    const editor = useItemEditor(spec)
+    await editor.open()
+    editor.draft.title = '标题'
+    expect(await editor.save()).not.toBeNull()
+    const context = create.mock.calls[0]![2]
+    expect(context).toEqual(source)
+    expect(Object.getPrototypeOf(context)).toBe(Object.prototype)
+    expect(Object.hasOwn(context as object, '__proto__')).toBe(true)
+    expect(JSON.stringify(context)).toBe(JSON.stringify(source))
   })
 })

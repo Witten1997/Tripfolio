@@ -1,5 +1,7 @@
 import {
   computed,
+  isProxy,
+  isRef,
   reactive,
   ref,
   shallowRef,
@@ -13,8 +15,18 @@ import { actionError, createWriteIntent, fieldErrors, type WriteOutcome } from '
 import { randomId } from '@/shared/randomId'
 import { DraftError } from '@/shared/travel/tripDraft'
 
+export type ItemEditorSubmission<C, P> =
+  | { kind: 'create'; body: C & { id: string } }
+  | { kind: 'update'; id: string; version: string; patch: P }
+
 /** 一种旅行内容资源的编辑规格：草稿与校验、差异、读写；由各模块提供，编辑流程共用。 */
-export interface ItemEditorSpec<T extends { id: string; version: string }, D extends object, C, P> {
+export interface ItemEditorSpec<
+  T extends { id: string; version: string },
+  D extends object,
+  C,
+  P,
+  S = undefined,
+> {
   emptyDraft: () => D
   draftFrom: (item: T) => D
   /** 校验并规范化草稿；失败抛 DraftError。返回值用于创建正文或与基线做差异。 */
@@ -22,8 +34,71 @@ export interface ItemEditorSpec<T extends { id: string; version: string }, D ext
   /** 只含相对基线的主动修改；空对象表示没有变化。 */
   diff: (values: C, baseline: T) => P
   get: (id: string) => Promise<T>
-  create: (body: C & { id: string }, operationId: string) => Promise<WriteOutcome<T>>
-  update: (id: string, version: string, patch: P, operationId: string) => Promise<WriteOutcome<T>>
+  /** 同步捕获已准备好的基线；返回 JSON 安全值，不在此获取新基线。 */
+  captureIntentContext?: (submission: ItemEditorSubmission<C, P>) => S
+  create: (body: C & { id: string }, operationId: string, context?: S) => Promise<WriteOutcome<T>>
+  update: (
+    id: string,
+    version: string,
+    patch: P,
+    operationId: string,
+    context?: S,
+  ) => Promise<WriteOutcome<T>>
+}
+
+/** 不执行 getter/toJSON，不让 JSON.stringify 静默丢字段或转换运行对象。 */
+function immutableSnapshot<V>(value: V, allowUndefined = false): V {
+  const ancestors = new Set<object>()
+  function copy(input: unknown): unknown {
+    if (input === null || typeof input === 'string' || typeof input === 'boolean') return input
+    if (typeof input === 'number' && Number.isFinite(input)) return input
+    // 请求正文原有可选属性可保留 undefined；提交上下文本身必须严格 JSON 安全。
+    if (input === undefined && allowUndefined) return input
+    if (typeof input !== 'object') {
+      throw new Error('提交上下文必须是 JSON 安全的数据，请保留输入并重新核对。')
+    }
+    const array = Array.isArray(input)
+    const prototype = Object.getPrototypeOf(input)
+    if (
+      (array
+        ? prototype !== Array.prototype
+        : prototype !== Object.prototype && prototype !== null) ||
+      ancestors.has(input)
+    ) {
+      throw new Error('提交上下文不能包含循环引用或运行对象。')
+    }
+    ancestors.add(input)
+    const keys = Reflect.ownKeys(input)
+    for (const key of keys) {
+      const descriptor = Object.getOwnPropertyDescriptor(input, key)
+      if (typeof key !== 'string' || !descriptor || !('value' in descriptor)) {
+        throw new Error('提交上下文不能包含符号或访问器。')
+      }
+    }
+    if (isProxy(input) || isRef(input)) {
+      throw new Error('提交上下文不能包含响应式对象。')
+    }
+    const output: unknown[] | Record<string, unknown> = array ? [] : {}
+    if (array && keys.length !== input.length + 1) {
+      throw new Error('提交上下文不能包含稀疏数组或数组附加属性。')
+    }
+    const fields = array ? Array.from({ length: input.length }, (_, index) => String(index)) : keys
+    for (const key of fields) {
+      const descriptor = Object.getOwnPropertyDescriptor(input, key)
+      if (typeof key !== 'string' || !descriptor?.enumerable || !('value' in descriptor)) {
+        throw new Error('提交上下文不能包含隐藏属性、符号或访问器。')
+      }
+      Object.defineProperty(output, key, {
+        value: copy(descriptor.value),
+        enumerable: true,
+        configurable: false,
+        writable: false,
+      })
+    }
+    ancestors.delete(input)
+    return Object.freeze(output)
+  }
+  return copy(value) as V
 }
 
 export interface ItemEditor<T extends { id: string; version: string }, D extends object> {
@@ -58,7 +133,8 @@ export function useItemEditor<
   D extends object,
   C,
   P extends object,
->(spec: ItemEditorSpec<T, D, C, P>): ItemEditor<T, D> {
+  S = undefined,
+>(spec: ItemEditorSpec<T, D, C, P, S>): ItemEditor<T, D> {
   const opened = ref(false)
   const loading = ref(false)
   const saving = ref(false)
@@ -75,7 +151,14 @@ export function useItemEditor<
   const editId = ref<string | null>(null)
   const initial = ref(JSON.stringify(draft))
   let createId = ''
-  let pendingCreate: { body: C & { id: string }; operationId: string } | null = null
+  type Prepared = {
+    submission: ItemEditorSubmission<C, P>
+    operationId: string
+    contextual: boolean
+    context?: S
+  }
+  let pendingCreate: Prepared | null = null
+  let pendingUpdate: Prepared | null = null
   let generation = 0
   const intent = createWriteIntent()
 
@@ -89,7 +172,7 @@ export function useItemEditor<
   }
 
   async function load() {
-    if (!editId.value || saving.value || uncertainCreate.value) return
+    if (!editId.value || saving.value || uncertainCreate.value || pendingUpdate) return
     const request = ++generation
     loading.value = true
     error.value = null
@@ -104,7 +187,7 @@ export function useItemEditor<
   }
 
   async function open(item?: T, presets: Partial<D> = {}) {
-    if (saving.value || uncertainCreate.value) return
+    if (saving.value || uncertainCreate.value || pendingUpdate) return
     generation++
     opened.value = true
     loading.value = false
@@ -116,6 +199,7 @@ export function useItemEditor<
     errors.value = {}
     intent.reset()
     pendingCreate = null
+    pendingUpdate = null
     createId = randomId()
     Object.assign(draft, spec.emptyDraft(), presets)
     initial.value = JSON.stringify(draft)
@@ -123,15 +207,16 @@ export function useItemEditor<
   }
 
   function close(discardUncertain = false) {
-    if (saving.value || (uncertainCreate.value && !discardUncertain)) return
+    if (saving.value || ((uncertainCreate.value || pendingUpdate) && !discardUncertain)) return
     generation++
     opened.value = false
     pendingCreate = null
+    pendingUpdate = null
     uncertainCreate.value = false
   }
 
   async function loadLatest() {
-    if (!baseline.value || loadingLatest.value) return
+    if (!baseline.value || loadingLatest.value || pendingUpdate) return
     const request = generation
     loadingLatest.value = true
     latestError.value = null
@@ -146,7 +231,7 @@ export function useItemEditor<
   }
 
   function adoptLatest() {
-    if (!latest.value || saving.value) return
+    if (!latest.value || saving.value || pendingUpdate) return
     fill(latest.value)
     latest.value = null
     conflict.value = false
@@ -155,27 +240,48 @@ export function useItemEditor<
     intent.reset()
   }
 
+  function prepare(submission: ItemEditorSubmission<C, P>, fingerprint: unknown): Prepared {
+    const capture = spec.captureIntentContext
+    if (!capture) return { submission, operationId: intent.key(fingerprint), contextual: false }
+    const frozenSubmission = immutableSnapshot(submission, true)
+    const frozenFingerprint = immutableSnapshot(fingerprint, true)
+    const context = immutableSnapshot(capture(frozenSubmission))
+    return {
+      submission: frozenSubmission,
+      operationId: intent.key({ request: frozenFingerprint, context }),
+      contextual: true,
+      context,
+    }
+  }
+
   async function save(againstLatest = false): Promise<WriteOutcome<T> | null> {
-    if (!opened.value || saving.value || loading.value || (conflict.value && !againstLatest))
+    if (
+      !opened.value ||
+      saving.value ||
+      loading.value ||
+      (conflict.value && !againstLatest && !pendingUpdate)
+    )
       return null
     if (isEditing.value && !baseline.value) return null
-    if (againstLatest && !latest.value) return null
+    if (againstLatest && !latest.value && !pendingUpdate) return null
     error.value = null
     errors.value = {}
-    let patch: P | null = null
-    let createRequest = pendingCreate
-    if (!createRequest) {
+    let request = pendingCreate ?? pendingUpdate
+    if (!request) {
       try {
         const values = spec.validate(draft)
         if (baseline.value) {
-          patch = spec.diff(values, baseline.value)
+          const patch = spec.diff(values, baseline.value)
           if (!Object.keys(patch).length) {
             error.value = '没有需要保存的修改'
             return null
           }
+          const base = againstLatest ? latest.value! : baseline.value
+          const update = { id: base.id, version: base.version, patch }
+          request = prepare({ kind: 'update', ...update }, update)
         } else {
           const body = { ...values, id: createId }
-          createRequest = { body, operationId: intent.key({ id: createId, body: values }) }
+          request = prepare({ kind: 'create', body }, { id: createId, body: values })
         }
       } catch (cause) {
         if (cause instanceof DraftError) errors.value = cause.fields
@@ -185,17 +291,21 @@ export function useItemEditor<
     }
     saving.value = true
     try {
-      const base = againstLatest ? latest.value : baseline.value
-      const outcome = base
-        ? await spec.update(
-            base.id,
-            base.version,
-            patch!,
-            intent.key({ id: base.id, version: base.version, patch }),
-          )
-        : await spec.create(createRequest!.body, createRequest!.operationId)
+      const { submission, operationId, contextual, context } = request
+      let outcome: WriteOutcome<T>
+      if (submission.kind === 'update') {
+        const { id, version, patch } = submission
+        outcome = contextual
+          ? await spec.update(id, version, patch, operationId, context)
+          : await spec.update(id, version, patch, operationId)
+      } else {
+        outcome = contextual
+          ? await spec.create(submission.body, operationId, context)
+          : await spec.create(submission.body, operationId)
+      }
       intent.reset()
       pendingCreate = null
+      pendingUpdate = null
       uncertainCreate.value = false
       opened.value = false
       return outcome
@@ -205,12 +315,17 @@ export function useItemEditor<
         '网络连接中断，结果尚未确认。保留当前内容重试可避免重复提交。',
       )
       errors.value = fieldErrors(cause)
-      if (createRequest) {
-        uncertainCreate.value =
-          !(cause instanceof ApiError) || (cause.problem?.status ?? 500) >= 500
-        pendingCreate = uncertainCreate.value ? createRequest : null
+      const uncertain = !(cause instanceof ApiError) || (cause.problem?.status ?? 500) >= 500
+      if (request.submission.kind === 'create') {
+        uncertainCreate.value = uncertain
+        pendingCreate = uncertain ? request : null
         if (uncertainCreate.value) {
           error.value = '创建结果尚未确认，记录可能已经保存。请原样重试，确认后再编辑内容。'
+        }
+      } else if (request.contextual) {
+        pendingUpdate = uncertain ? request : null
+        if (uncertain) {
+          error.value = '保存结果尚未确认，请原样重试，确认后再编辑内容或核对新基线。'
         }
       }
       if (cause instanceof ApiError && cause.code === 'VERSION_CONFLICT') {
