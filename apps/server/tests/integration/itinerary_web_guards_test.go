@@ -201,9 +201,18 @@ func TestItineraryWebGuardsStaleSourceAndDestination(t *testing.T) {
 func TestItineraryWebGuardsOriginalFactsAndLegacyReplay(t *testing.T) {
 	f, trip := itineraryWebFixture(t)
 	cmd, guards := itineraryWebBaseline(t, f, trip, "2026-10-02", "2026-10-20")
+	lastSeq := func() int64 {
+		t.Helper()
+		var seq int64
+		if err := f.pool.QueryRow(context.Background(), `SELECT last_seq FROM account_sync_state WHERE account_id=$1`, f.owner).Scan(&seq); err != nil {
+			t.Fatal(err)
+		}
+		return seq
+	}
+	baselineSeq := lastSeq()
 	legacyID := uuid.New()
 	legacy := itineraryWebResult(t, itineraryWebOrder(f, trip, legacyID, cmd, nil))
-	if legacy.CommitCursor != nil || len(legacy.ScopeRevisions) != 2 {
+	if legacy.CommitCursor != nil || len(legacy.ScopeRevisions) != 2 || lastSeq() != baselineSeq {
 		t.Fatal("legacy no-op missing new final facts")
 	}
 	// Model a genuine pre-field receipt without changing its original fingerprint.
@@ -216,7 +225,7 @@ func TestItineraryWebGuardsOriginalFactsAndLegacyReplay(t *testing.T) {
 	expectStatus(t, itineraryWebOrder(f, trip, uuid.New(), cmd, nil), 428, "COLLECTION_BASE_REQUIRED")
 	key := uuid.New()
 	noOp := itineraryWebResult(t, itineraryWebOrder(f, trip, key, cmd, guards))
-	if noOp.CommitCursor != nil || len(noOp.Affected) != 2 || len(noOp.ScopeRevisions) != 2 {
+	if noOp.CommitCursor != nil || len(noOp.Affected) != 2 || len(noOp.ScopeRevisions) != 2 || lastSeq() != baselineSeq {
 		t.Fatalf("no-op facts %+v", noOp)
 	}
 	for _, fact := range noOp.ScopeRevisions {
@@ -229,8 +238,14 @@ func TestItineraryWebGuardsOriginalFactsAndLegacyReplay(t *testing.T) {
 	move.Days[0].Items = []itinerary.ReorderItem{}
 	moveKey := uuid.New()
 	moved := itineraryWebResult(t, itineraryWebOrder(f, trip, moveKey, move, moveGuards))
-	if moved.CommitCursor == nil || len(moved.ScopeRevisions) != 2 {
+	// Ordinary REST keeps its existing null cursor; persisted changes prove the commit.
+	if moved.CommitCursor != nil || len(moved.ScopeRevisions) != 2 || len(moved.Affected) != 2 || lastSeq() != baselineSeq+2 {
 		t.Fatalf("move facts %+v", moved)
+	}
+	for _, ref := range moved.Affected {
+		if ref.Version == nil || *ref.Version != 2 {
+			t.Fatalf("move version %+v", ref)
+		}
 	}
 	for _, fact := range moved.ScopeRevisions {
 		if fact.Revision != itineraryRevision(t, f, trip, strings.Split(fact.ScopeID, "/")[1]) {
@@ -246,7 +261,7 @@ func TestItineraryWebGuardsOriginalFactsAndLegacyReplay(t *testing.T) {
 	// All-empty days still carry verified scope facts and do not advance the cursor.
 	empty, emptyGuards := itineraryWebBaseline(t, f, trip, "2026-10-02", "2026-10-03")
 	emptyResult := itineraryWebResult(t, itineraryWebOrder(f, trip, uuid.New(), empty, emptyGuards))
-	if emptyResult.CommitCursor != nil || len(emptyResult.Affected) != 0 || len(emptyResult.ScopeRevisions) != 2 {
+	if emptyResult.CommitCursor != nil || len(emptyResult.Affected) != 0 || len(emptyResult.ScopeRevisions) != 2 || lastSeq() != baselineSeq+2 {
 		t.Fatal("empty-day facts missing")
 	}
 	// A later write must not replace the original successful move's facts either.
