@@ -314,6 +314,21 @@ func validGuard(g GuardReference) bool {
 
 func prepare(op Operation) (PreparedOperation, error) {
 	out := PreparedOperation{Operation: op}
+	var normalize func(Operation) (json.RawMessage, error)
+	switch op.EntityType {
+	case "itinerary_item":
+		normalize = normalizeItineraryPayload
+	case "photo", "asset":
+		normalize = normalizeMediaPayload
+	}
+	if normalize != nil {
+		payload, err := normalize(op)
+		if err != nil {
+			return out, err
+		}
+		out.Payload = payload
+		return finalizePrepared(out)
+	}
 	if op.EntityType != "trip" && op.EntityType != "packing_item" && op.EntityType != "todo" && op.EntityType != "reservation" && op.EntityType != "document" && op.EntityType != "expense_category" && op.EntityType != "trip_member" && op.EntityType != "ledger_entry" {
 		return out, apperr.Unprocessable("OFFLINE_OPERATION_NOT_ALLOWED", "该操作尚未实现")
 	}
@@ -518,6 +533,11 @@ func prepare(op Operation) (PreparedOperation, error) {
 	}
 
 	out.Payload, _ = json.Marshal(m)
+	return finalizePrepared(out)
+}
+
+func finalizePrepared(out PreparedOperation) (PreparedOperation, error) {
+	op := out.Operation
 	out.DependsOn = append([]uuid.UUID{}, op.DependsOn...)
 	sort.Slice(out.DependsOn, func(i, j int) bool { return out.DependsOn[i].String() < out.DependsOn[j].String() })
 	out.Guards = append([]GuardReference{}, op.Guards...)

@@ -176,7 +176,7 @@ func ResolvePatch(ctx context.Context, src MergeSource, accountID uuid.UUID, ent
 	if !complete {
 		return PatchDecision{Conflicting: nil}, nil
 	}
-	if entityType == "trip" || entityType == "packing_item" || entityType == "todo" || entityType == "reservation" || entityType == "ledger_entry" {
+	if entityType == "trip" || entityType == "packing_item" || entityType == "todo" || entityType == "reservation" || entityType == "ledger_entry" || entityType == "itinerary_item" || entityType == "photo" {
 		changed = entityFieldGroups(entityType, changed)
 		submitted = entityFieldGroups(entityType, submitted)
 	}
@@ -204,6 +204,10 @@ func entityFieldGroups(entityType string, fields []string) []string {
 		groups = [][]string{{"start_date", "end_date", "timezone"}, {"currency_code", "budget_amount", "currency_locked_at"}}
 	case "ledger_entry":
 		groups = [][]string{{"amount", "currency_code", "payer_member_id", "split_mode", "participant_member_ids", "splits", "personal_amount", "split_count"}, {"kind", "refunded_entry_id"}}
+	case "itinerary_item":
+		groups = [][]string{{"scheduled_on", "sort_order"}, {"estimated_amount", "currency_code"}, {"planned_start_local", "planned_end_local", "planned_duration_minutes"}, {"actual_start_local", "actual_end_local"}, {"poi_id", "place_name", "address", "latitude", "longitude"}}
+	case "photo":
+		groups = [][]string{{"taken_at_local", "recorded_on", "sort_order"}, {"place_name", "address", "latitude", "longitude"}}
 	case "reservation":
 		groups = [][]string{{"kind", "transport_number", "origin", "destination"}, {"start_local", "end_local"}}
 	case "packing_item":

@@ -131,3 +131,31 @@ func TestLedgerFinancialFieldsConflictBothDirections(t *testing.T) {
 		}
 	}
 }
+
+func TestItineraryAndPhotoFieldGroups(t *testing.T) {
+	for entity, groups := range map[string][][]string{
+		"itinerary_item": {{"scheduled_on", "sort_order"}, {"estimated_amount", "currency_code"}, {"planned_start_local", "planned_end_local", "planned_duration_minutes"}, {"actual_start_local", "actual_end_local"}, {"poi_id", "place_name", "address", "latitude", "longitude"}},
+		"photo":          {{"taken_at_local", "recorded_on", "sort_order"}, {"place_name", "address", "latitude", "longitude"}},
+	} {
+		independent := "notes"
+		if entity == "photo" {
+			independent = "caption"
+		}
+		for _, group := range groups {
+			for _, a := range group {
+				for _, b := range group {
+					d, err := write.ResolvePatch(context.Background(), &fakeSource{fields: []string{a}, complete: true}, uuid.New(), entity, uuid.New(), 1, 2, []string{b})
+					if err != nil || d.Merge || len(d.Conflicting) == 0 {
+						t.Fatalf("%s %s/%s: %+v %v", entity, a, b, d, err)
+					}
+				}
+				for _, complete := range []bool{true, false} {
+					d, err := write.ResolvePatch(context.Background(), &fakeSource{fields: []string{a}, complete: complete}, uuid.New(), entity, uuid.New(), 1, 2, []string{independent})
+					if err != nil || d.Merge != complete {
+						t.Fatalf("%s independent complete=%v: %+v %v", entity, complete, d, err)
+					}
+				}
+			}
+		}
+	}
+}

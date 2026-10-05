@@ -89,6 +89,12 @@ func (s *PushStore) Execute(ctx context.Context, a actor.Actor, epoch uuid.UUID,
 			}
 			return executeContent(ctx, scope, a, op.Operation, base)
 		}
+		if op.EntityType == "itinerary_item" {
+			return executeItinerary(ctx, scope, a, epoch, op, base, deps)
+		}
+		if op.EntityType == "photo" || op.EntityType == "asset" {
+			return executeMedia(ctx, scope, a, epoch, op, base, deps)
+		}
 		kind := "members"
 		switch op.EntityType {
 		case "packing_item":
@@ -144,6 +150,12 @@ func (s *PushStore) Execute(ctx context.Context, a actor.Actor, epoch uuid.UUID,
 		}
 		return nil
 	}, func(ctx context.Context, scope *pgcore.TxScope) (any, error) {
+		if op.EntityType == "itinerary_item" {
+			return reloadItinerary(ctx, scope, a, op.Operation)
+		}
+		if op.EntityType == "photo" || op.EntityType == "asset" {
+			return reloadMedia(ctx, scope, a, op.Operation)
+		}
 		if isFinanceEntity(op.EntityType) {
 			return reloadFinance(ctx, scope, a, op.Operation)
 		}

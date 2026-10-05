@@ -167,3 +167,41 @@ func TestPushFinanceStrictFields(t *testing.T) {
 		}
 	}
 }
+
+func TestPublicModuleCommandsAndFingerprint(t *testing.T) {
+	trip, id, dep1, dep2 := uuid.New(), uuid.New(), uuid.New(), uuid.New()
+	rev, base := "revision", "1"
+	cases := []struct{ kind, payload string }{
+		{"itinerary_item.create", `{"title":"walk","kind":"other","scheduled_on":"2026-10-02"}`},
+		{"itinerary_item.update", `{"notes":"note"}`}, {"itinerary_item.delete", `{}`},
+		{"itinerary_item.reorder", `{"days":[{"date":"2026-10-02","ordered_ids":[]}]}`},
+		{"photo.create", `{"asset_id":"` + id.String() + `","recorded_on":"2026-10-02"}`},
+		{"photo.update", `{"caption":"note"}`}, {"photo.delete", `{}`},
+		{"photo.reorder", `{"recorded_on":"2026-10-02","ordered_ids":[]}`},
+		{"asset.register", `{"scope":"trip","trip_id":"` + trip.String() + `","original_name":"a.png","expected_size":1,"declared_media_type":"image/png"}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.kind, func(t *testing.T) {
+			op := Operation{OperationID: uuid.New(), Type: tc.kind, EntityType: strings.Split(tc.kind, ".")[0], EntityID: &id, TripID: &trip, Payload: json.RawMessage(tc.payload), DependsOn: []uuid.UUID{dep1, dep2}, Guards: []GuardReference{{Kind: "photo_day", ScopeID: trip.String() + "/2026-10-02", Revision: &rev}, {Kind: "itinerary_day", ScopeID: trip.String() + "/2026-10-02", Revision: &rev}}}
+			a, err := prepare(op)
+			if err != nil {
+				t.Fatal(err)
+			}
+			op.Payload = a.Payload
+			op.DependsOn = []uuid.UUID{dep2, dep1}
+			op.Guards = []GuardReference{op.Guards[1], op.Guards[0]}
+			b, err := prepare(op)
+			if err != nil || a.Fingerprint != b.Fingerprint {
+				t.Fatalf("unstable canonical fingerprint: %v", err)
+			}
+			for _, mutate := range []func(*Operation){func(o *Operation) { o.OperationID = uuid.New() }, func(o *Operation) { o.Base = &BaseReference{Version: &base} }, func(o *Operation) { o.DependsOn = []uuid.UUID{dep1} }, func(o *Operation) { o.Guards = nil }} {
+				changed := op
+				mutate(&changed)
+				c, err := prepare(changed)
+				if err != nil || c.Fingerprint == a.Fingerprint {
+					t.Fatalf("facts omitted from fingerprint: %v", err)
+				}
+			}
+		})
+	}
+}
