@@ -162,6 +162,7 @@ describe('itineraryDraft', () => {
 })
 
 const basePacking: PackingItem = {
+  sort_order: 0,
   id: 'p1',
   trip_id: 't',
   name: '护照',
@@ -215,6 +216,7 @@ describe('packingDraft', () => {
 })
 
 const baseTodo: Todo = {
+  sort_order: 0,
   id: 'd1',
   trip_id: 't',
   title: '换日元',

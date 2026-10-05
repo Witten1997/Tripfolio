@@ -65,6 +65,10 @@ export function writeWarnings(result: WriteResult): string[] {
 export function actionError(cause: unknown, fallback = '网络连接失败，请重试'): string {
   if (!(cause instanceof ApiError)) return fallback
   switch (cause.code) {
+    case 'COLLECTION_BASE_REQUIRED':
+      return '缺少集合基线。请先保留当前输入，刷新升级页面后重新核对再提交。'
+    case 'COLLECTION_CONFLICT':
+      return '集合已在其他设备修改。请保留当前输入，核对最新内容后再提交。'
     case 'CURRENCY_LOCKED':
       return '这趟旅行已有账目，记账币种已锁定。删除全部有效账目后才可更改币种。'
     case 'CURRENCY_AMOUNTS_EXIST':

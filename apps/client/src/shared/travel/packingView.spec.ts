@@ -7,6 +7,7 @@ import { packingStatusOrder, packingStatusLabels } from '@/shared/api/packing'
 const noFilters = { category: '', status: '' } as const
 function item(overrides: Partial<PackingItem>): PackingItem {
   return {
+    sort_order: 0,
     id: crypto.randomUUID(),
     trip_id: 'trip',
     name: '测试物品',
