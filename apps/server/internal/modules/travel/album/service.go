@@ -11,6 +11,7 @@ import (
 	"tripfolio/server/internal/foundation/actor"
 	"tripfolio/server/internal/foundation/apperr"
 	"tripfolio/server/internal/foundation/clock"
+	"tripfolio/server/internal/foundation/collectionguard"
 	"tripfolio/server/internal/foundation/paging"
 	"tripfolio/server/internal/foundation/types"
 	"tripfolio/server/internal/foundation/write"
@@ -342,6 +343,12 @@ func (s *Service) Create(ctx context.Context, a actor.Actor, operationID, tripID
 		if err := validateResource(v); err != nil {
 			return err
 		}
+		if err := write.RequireCollections(ctx, scope, nil); err != nil {
+			return err
+		}
+		if err := write.RecordCollections(ctx, scope, photoScopes(tripID, v.RecordedOn)); err != nil {
+			return err
+		}
 		if cmd.Asset != nil {
 			asset, err := s.assets.CreateInTransaction(ctx, scope, repo.Assets(), a.AccountID, assetInput)
 			if err != nil {
@@ -406,6 +413,17 @@ func (s *Service) Update(ctx context.Context, a actor.Actor, operationID, tripID
 		if err := validateResource(v); err != nil {
 			return err
 		}
+		affected := photoScopes(tripID, before.RecordedOn, v.RecordedOn)
+		var required []collectionguard.Scope
+		if p.RecordedOn != nil || p.TakenAtLocalSet || p.SortOrder != nil {
+			required = affected
+		}
+		if err := write.RequireCollections(ctx, scope, required); err != nil {
+			return err
+		}
+		if err := write.RecordCollections(ctx, scope, affected); err != nil {
+			return err
+		}
 		if err := content.CheckAsset(ctx, repo, a.AccountID, tripID, v.AssetID, true); err != nil {
 			return err
 		}
@@ -442,6 +460,12 @@ func (s *Service) Delete(ctx context.Context, a actor.Actor, operationID, tripID
 		if int64(v.Version) != base {
 			return apperr.VersionConflict(&apperr.Conflict{EntityType: EntityType, EntityID: id, ExpectedVersion: base, CurrentVersion: int64(v.Version), Current: v})
 		}
+		if err := write.RequireCollections(ctx, scope, nil); err != nil {
+			return err
+		}
+		if err := write.RecordCollections(ctx, scope, photoScopes(tripID, v.RecordedOn)); err != nil {
+			return err
+		}
 		now := s.clock.Now()
 		deleted, err := repo.SoftDelete(ctx, a.AccountID, tripID, id, now)
 		if err != nil {
@@ -450,6 +474,18 @@ func (s *Service) Delete(ctx context.Context, a actor.Actor, operationID, tripID
 		record(scope, deleted, write.ChangeDelete, nil)
 		return nil
 	}, s.reload(a, tripID, id))
+}
+
+func photoScopes(tripID uuid.UUID, days ...types.Date) []collectionguard.Scope {
+	seen := make(map[types.Date]bool, len(days))
+	scopes := make([]collectionguard.Scope, 0, len(days))
+	for _, day := range days {
+		if !seen[day] {
+			seen[day] = true
+			scopes = append(scopes, collectionguard.Scope{Kind: "photo_day", ScopeID: tripID.String() + "/" + string(day)})
+		}
+	}
+	return scopes
 }
 func (s *Service) reload(a actor.Actor, tripID, id uuid.UUID) func(context.Context, Repo) (any, error) {
 	return func(ctx context.Context, repo Repo) (any, error) {

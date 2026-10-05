@@ -12,6 +12,7 @@ import (
 	travelpg "tripfolio/server/internal/adapters/postgres/travel"
 	"tripfolio/server/internal/foundation/actor"
 	"tripfolio/server/internal/foundation/apperr"
+	"tripfolio/server/internal/foundation/collectionguard"
 	"tripfolio/server/internal/foundation/types"
 	"tripfolio/server/internal/foundation/write"
 	"tripfolio/server/internal/modules/assets"
@@ -108,7 +109,7 @@ func executeMedia(ctx context.Context, scope *pgcore.TxScope, a actor.Actor, epo
 		orderedDays = append(orderedDays, day)
 	}
 	sort.Slice(orderedDays, func(i, j int) bool { return orderedDays[i] < orderedDays[j] })
-	if err := checkMediaGuards(ctx, scope, epoch, op, orderedDays, required, deps); err != nil {
+	if err := checkMediaGuards(ctx, scope, op, orderedDays, required, deps); err != nil {
 		return err
 	}
 	svc := album.NewService(boundItemUOW[album.Repo]{scope, repo}, nil, nil, transactionClock{scope.Now}, nil)
@@ -138,15 +139,14 @@ func executeMedia(ctx context.Context, scope *pgcore.TxScope, a actor.Actor, epo
 		}
 		return err
 	}
+	affected := make([]collectionguard.Scope, 0, len(orderedDays))
 	for _, day := range orderedDays {
-		if err := scope.RecordPhotoDayRevision(ctx, epoch, *op.TripID, day); err != nil {
-			return err
-		}
+		affected = append(affected, collectionguard.Scope{Kind: "photo_day", ScopeID: op.TripID.String() + "/" + string(day)})
 	}
-	return nil
+	return scope.RecordCollections(ctx, affected)
 }
 
-func checkMediaGuards(ctx context.Context, scope *pgcore.TxScope, epoch uuid.UUID, op syncmodule.PreparedOperation, days []types.Date, required bool, deps map[uuid.UUID]*write.SyncFacts) error {
+func checkMediaGuards(ctx context.Context, scope *pgcore.TxScope, op syncmodule.PreparedOperation, days []types.Date, required bool, deps map[uuid.UUID]*write.SyncFacts) error {
 	allowed := map[string]types.Date{}
 	for _, day := range days {
 		allowed[op.TripID.String()+"/"+string(day)] = day
@@ -162,33 +162,18 @@ func checkMediaGuards(ctx context.Context, scope *pgcore.TxScope, epoch uuid.UUI
 	if required && len(seen) != len(allowed) {
 		return apperr.New(428, "COLLECTION_BASE_REQUIRED", "需要全部来源和目标日期的集合版本")
 	}
-	for _, guard := range op.Guards {
-		day := allowed[guard.ScopeID]
-		expected := ""
-		if guard.Revision != nil {
-			expected = *guard.Revision
-		} else if guard.OperationID != nil {
-			if facts := deps[*guard.OperationID]; facts != nil {
-				for _, revision := range facts.ScopeRevisions {
-					if revision.Kind == guard.Kind && revision.ScopeID == guard.ScopeID {
-						expected = revision.Revision
-						break
-					}
-				}
-			}
-		}
-		if expected == "" {
-			return apperr.Unprocessable("INVALID_REFERENCE", "依赖没有记录目标集合版本")
-		}
-		current, err := scope.PhotoDayRevision(ctx, epoch, *op.TripID, day)
-		if err != nil {
-			return err
-		}
-		if current.Revision != expected {
-			return apperr.New(412, "COLLECTION_CONFLICT", "照片集合已变化")
-		}
+	if !required && len(op.Guards) == 0 {
+		return nil
 	}
-	return nil
+	guards, err := resolveCollectionGuards(op.Guards, deps)
+	if err != nil {
+		return err
+	}
+	checked := make([]collectionguard.Scope, 0, len(guards))
+	for _, guard := range guards {
+		checked = append(checked, collectionguard.Scope{Kind: guard.Kind, ScopeID: guard.ScopeID})
+	}
+	return scope.CheckCollections(ctx, guards, checked)
 }
 
 func reloadMedia(ctx context.Context, scope *pgcore.TxScope, a actor.Actor, op syncmodule.Operation) (any, error) {
