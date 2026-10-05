@@ -3,6 +3,7 @@ package pgcore
 import (
 	"context"
 	"errors"
+	"sort"
 	"strings"
 
 	"github.com/google/uuid"
@@ -10,6 +11,7 @@ import (
 	"tripfolio/server/internal/foundation/apperr"
 	"tripfolio/server/internal/foundation/collectionguard"
 	"tripfolio/server/internal/foundation/types"
+	"tripfolio/server/internal/foundation/write"
 )
 
 // WebPolicy separates sticky REST protection from epoch-bound native admission.
@@ -53,19 +55,133 @@ func (s *TxScope) disableSyncV2(ctx context.Context) error {
 }
 
 // RequireCollections is for REST service callbacks, before any writes or no-op.
-// No service calls it yet; merely merging this foundation does not protect endpoints.
+// Consumer services must call this with their final scopes before writing.
 func (s *TxScope) RequireCollections(ctx context.Context, required []collectionguard.Scope) error {
 	policy, err := s.WebPolicy(ctx)
 	if err != nil {
 		return err
 	}
-	return collectionguard.Check(ctx, policy.CollectionGuardsRequired, s.AccountID, collectionguard.Request(ctx), required, s.collectionRevision)
+	provided := collectionguard.Request(ctx)
+	enabled := policy.CollectionGuardsRequired
+	if native, ok := s.nativeCollectionGuards(required); provided == nil && ok {
+		provided, enabled = native, true
+	}
+	if err := collectionguard.Check(ctx, enabled, s.AccountID, provided, required, s.collectionRevision); err != nil {
+		return err
+	}
+	return s.RecordCollections(ctx, required)
 }
 
-// CheckCollections accepts guards resolved by a native adapter, including receipt
-// references. It never bypasses a check based on actor.ClientKind or request headers.
+// CheckCollections accepts only fully resolved native guards, then stores proof
+// bound to this transaction and account. No caller flag can establish proof.
 func (s *TxScope) CheckCollections(ctx context.Context, guards []collectionguard.Guard, required []collectionguard.Scope) error {
-	return collectionguard.Check(ctx, true, s.AccountID, guards, required, s.collectionRevision)
+	return s.checkCollections(ctx, guards, required, s.collectionRevision)
+}
+
+func (s *TxScope) checkCollections(ctx context.Context, guards []collectionguard.Guard, required []collectionguard.Scope, resolve func(context.Context, collectionguard.Scope) (string, error)) error {
+	if s.Tx == nil {
+		return apperr.New(503, "DEPENDENCY_UNAVAILABLE", "缺少集合校验事务")
+	}
+	if err := collectionguard.Check(ctx, true, s.AccountID, guards, required, resolve); err != nil {
+		return err
+	}
+	proof := make(map[collectionguard.Scope]string)
+	if s.collectionProofTx == s.Tx && s.collectionProofAccount == s.AccountID {
+		for key, value := range s.collectionProof {
+			proof[key] = value
+		}
+	}
+	for _, guard := range guards {
+		proof[collectionguard.Scope{Kind: guard.Kind, ScopeID: guard.ScopeID}] = guard.Revision
+	}
+	s.collectionProof, s.collectionProofTx, s.collectionProofAccount = proof, s.Tx, s.AccountID
+	s.addCollectionScopes(required)
+	return nil
+}
+
+// RecordCollections validates ownership without reading a premature revision.
+func (s *TxScope) RecordCollections(ctx context.Context, affected []collectionguard.Scope) error {
+	if err := collectionguard.Check(ctx, false, s.AccountID, nil, affected, nil); err != nil {
+		return err
+	}
+	for _, scope := range affected {
+		if err := s.collectionOwnership(ctx, scope); err != nil {
+			return err
+		}
+	}
+	s.addCollectionScopes(affected)
+	return nil
+}
+
+func (s *TxScope) addCollectionScopes(scopes []collectionguard.Scope) {
+	if s.collectionScopes == nil {
+		s.collectionScopes = make(map[collectionguard.Scope]struct{})
+	}
+	for _, scope := range scopes {
+		s.collectionScopes[scope] = struct{}{}
+	}
+}
+
+func (s *TxScope) finalCollectionRevisions(ctx context.Context) ([]write.ScopeRevision, error) {
+	if len(s.collectionScopes) == 0 {
+		return nil, nil
+	}
+	scopes := make([]collectionguard.Scope, 0, len(s.collectionScopes))
+	for scope := range s.collectionScopes {
+		scopes = append(scopes, scope)
+	}
+	sort.Slice(scopes, func(i, j int) bool {
+		if scopes[i].Kind != scopes[j].Kind {
+			return scopes[i].Kind < scopes[j].Kind
+		}
+		return scopes[i].ScopeID < scopes[j].ScopeID
+	})
+	out := make([]write.ScopeRevision, 0, len(scopes))
+	for _, scope := range scopes {
+		revision, err := s.collectionRevision(ctx, scope)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, write.ScopeRevision{Kind: scope.Kind, ScopeID: scope.ScopeID, Revision: revision})
+	}
+	// Preserve other native facts while replacing overlapping scopes with final facts.
+	native := append([]write.ScopeRevision(nil), s.revisions...)
+	for _, final := range out {
+		found := false
+		for i := range native {
+			if native[i].Kind == final.Kind && native[i].ScopeID == final.ScopeID {
+				native[i] = final
+				found = true
+			}
+		}
+		if !found {
+			native = append(native, final)
+		}
+	}
+	s.revisions = native
+	return out, nil
+}
+
+func (s *TxScope) collectionOwnership(ctx context.Context, scope collectionguard.Scope) error {
+	parts := strings.Split(scope.ScopeID, "/")
+	id, err := uuid.Parse(parts[0])
+	if err != nil {
+		return apperr.Unprocessable("INVALID_REFERENCE", "集合范围无效")
+	}
+	if scope.Kind == "categories" {
+		if id != s.AccountID {
+			return apperr.NotFound()
+		}
+		return nil
+	}
+	var owned bool
+	if err := s.Tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM trips WHERE id=$1 AND account_id=$2 AND deleted_at IS NULL AND purge_requested_at IS NULL)`, id, s.AccountID).Scan(&owned); err != nil {
+		return apperr.Internal(err)
+	}
+	if !owned {
+		return apperr.NotFound()
+	}
+	return nil
 }
 
 func (s *TxScope) collectionRevision(ctx context.Context, scope collectionguard.Scope) (string, error) {
@@ -78,18 +194,8 @@ func (s *TxScope) collectionRevision(ctx context.Context, scope collectionguard.
 	if err != nil {
 		return "", apperr.Unprocessable("INVALID_REFERENCE", "集合范围无效")
 	}
-	if scope.Kind == "categories" {
-		if id != s.AccountID {
-			return "", apperr.NotFound()
-		}
-	} else {
-		var owned bool
-		if err := s.Tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM trips WHERE id=$1 AND account_id=$2 AND deleted_at IS NULL AND purge_requested_at IS NULL)`, id, s.AccountID).Scan(&owned); err != nil {
-			return "", apperr.Internal(err)
-		}
-		if !owned {
-			return "", apperr.NotFound()
-		}
+	if err := s.collectionOwnership(ctx, scope); err != nil {
+		return "", err
 	}
 	if scope.Kind == "photo_day" || scope.Kind == "itinerary_day" {
 		if len(parts) != 2 {
@@ -104,4 +210,17 @@ func (s *TxScope) collectionRevision(ctx context.Context, scope collectionguard.
 	}
 	r, err := s.CollectionRevision(ctx, policy.Epoch, scope.Kind, id)
 	return r.Revision, err
+}
+
+func (s *TxScope) nativeCollectionGuards(required []collectionguard.Scope) ([]collectionguard.Guard, bool) {
+	if s.Tx == nil || s.collectionProofTx != s.Tx || s.collectionProofAccount != s.AccountID || len(s.collectionProof) == 0 {
+		return nil, false
+	}
+	guards := []collectionguard.Guard{}
+	for _, scope := range required {
+		if revision, ok := s.collectionProof[scope]; ok {
+			guards = append(guards, collectionguard.Guard{Kind: scope.Kind, ScopeID: scope.ScopeID, Revision: revision})
+		}
+	}
+	return guards, true
 }

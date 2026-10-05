@@ -51,12 +51,16 @@ type TxScope struct {
 	AccountID uuid.UUID
 	Now       time.Time
 
-	changes   []write.Change
-	warnings  []string
-	primary   *write.EntityRef
-	affected  []write.EntityRef
-	jobs      []write.JobArgs
-	revisions []write.ScopeRevision
+	changes                []write.Change
+	warnings               []string
+	primary                *write.EntityRef
+	affected               []write.EntityRef
+	jobs                   []write.JobArgs
+	revisions              []write.ScopeRevision
+	collectionScopes       map[collectionguard.Scope]struct{}
+	collectionProof        map[collectionguard.Scope]string
+	collectionProofTx      pgx.Tx
+	collectionProofAccount uuid.UUID
 }
 
 var _ write.Scope = (*TxScope)(nil)
@@ -303,12 +307,17 @@ func (w *Writer) run(ctx context.Context, req write.Request, syncOptions *SyncWr
 		return write.Result{}, apperr.Internal(err)
 	}
 
+	finalCollections, err := scope.finalCollectionRevisions(ctx)
+	if err != nil {
+		return write.Result{}, err
+	}
 	result := write.Result{
-		OperationID: req.OperationID,
-		Primary:     scope.primary,
-		Affected:    write.AffectedRefs(scope.primary, scope.changes, scope.affected),
-		Warnings:    scope.warnings,
-		Replayed:    false,
+		ScopeRevisions: finalCollections,
+		OperationID:    req.OperationID,
+		Primary:        scope.primary,
+		Affected:       write.AffectedRefs(scope.primary, scope.changes, scope.affected),
+		Warnings:       scope.warnings,
+		Replayed:       false,
 	}
 	if result.Warnings == nil {
 		result.Warnings = []string{}

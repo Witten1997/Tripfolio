@@ -11,6 +11,8 @@ import (
 
 	"github.com/google/uuid"
 
+	"tripfolio/server/internal/foundation/apperr"
+	"tripfolio/server/internal/foundation/collectionguard"
 	"tripfolio/server/internal/foundation/types"
 )
 
@@ -64,6 +66,32 @@ type Scope interface {
 	Enqueue(args JobArgs) error
 }
 
+// CollectionScope validates the final business preconditions in the current transaction.
+type CollectionScope interface {
+	RequireCollections(context.Context, []collectionguard.Scope) error
+}
+
+// CollectionRecorder registers affected scopes for facts captured after all writes.
+type CollectionRecorder interface {
+	RecordCollections(context.Context, []collectionguard.Scope) error
+}
+
+func RequireCollections(ctx context.Context, scope Scope, required []collectionguard.Scope) error {
+	capability, ok := scope.(CollectionScope)
+	if !ok {
+		return apperr.New(503, "DEPENDENCY_UNAVAILABLE", "事务不支持集合条件校验")
+	}
+	return capability.RequireCollections(ctx, required)
+}
+
+func RecordCollections(ctx context.Context, scope Scope, affected []collectionguard.Scope) error {
+	capability, ok := scope.(CollectionRecorder)
+	if !ok {
+		return apperr.New(503, "DEPENDENCY_UNAVAILABLE", "事务不支持集合结果记录")
+	}
+	return capability.RecordCollections(ctx, affected)
+}
+
 // AffectedRefs 汇总 affected：primary 在前，其后是各变更资源与附加引用，按类型与 ID 去重。
 func AffectedRefs(primary *EntityRef, changes []Change, extra []EntityRef) []EntityRef {
 	seen := map[string]struct{}{}
@@ -90,14 +118,15 @@ func AffectedRefs(primary *EntityRef, changes []Change, extra []EntityRef) []Ent
 
 // Result 是写操作的统一响应（接口设计 1.4 WriteResult）。
 type Result struct {
-	Sync         *SyncFacts  `json:"sync,omitempty"`
-	OperationID  uuid.UUID   `json:"operation_id"`
-	Primary      *EntityRef  `json:"primary"`
-	Affected     []EntityRef `json:"affected"`
-	CommitCursor *string     `json:"commit_cursor"`
-	Warnings     []string    `json:"warnings"`
-	Replayed     bool        `json:"replayed"`
-	Data         any         `json:"data"`
+	ScopeRevisions []ScopeRevision `json:"scope_revisions,omitempty"`
+	Sync           *SyncFacts      `json:"sync,omitempty"`
+	OperationID    uuid.UUID       `json:"operation_id"`
+	Primary        *EntityRef      `json:"primary"`
+	Affected       []EntityRef     `json:"affected"`
+	CommitCursor   *string         `json:"commit_cursor"`
+	Warnings       []string        `json:"warnings"`
+	Replayed       bool            `json:"replayed"`
+	Data           any             `json:"data"`
 }
 
 // SyncFacts contains immutable facts from the original transaction, never a resource body.

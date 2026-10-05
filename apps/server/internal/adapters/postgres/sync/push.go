@@ -12,6 +12,7 @@ import (
 	travelpg "tripfolio/server/internal/adapters/postgres/travel"
 	"tripfolio/server/internal/foundation/actor"
 	"tripfolio/server/internal/foundation/apperr"
+	"tripfolio/server/internal/foundation/collectionguard"
 	"tripfolio/server/internal/foundation/write"
 	syncmodule "tripfolio/server/internal/modules/sync"
 )
@@ -174,4 +175,29 @@ func (s *PushStore) Execute(ctx context.Context, a actor.Actor, epoch uuid.UUID,
 		}
 		return r, nil
 	})
+}
+
+// resolveCollectionGuards resolves immutable receipt references; it grants no proof.
+func resolveCollectionGuards(guards []syncmodule.GuardReference, deps map[uuid.UUID]*write.SyncFacts) ([]collectionguard.Guard, error) {
+	out := make([]collectionguard.Guard, 0, len(guards))
+	for _, guard := range guards {
+		revision := ""
+		if guard.Revision != nil {
+			revision = *guard.Revision
+		} else if guard.OperationID != nil {
+			if facts := deps[*guard.OperationID]; facts != nil {
+				for _, fact := range facts.ScopeRevisions {
+					if fact.Kind == guard.Kind && fact.ScopeID == guard.ScopeID {
+						revision = fact.Revision
+						break
+					}
+				}
+			}
+		}
+		if revision == "" {
+			return nil, apperr.Unprocessable("INVALID_REFERENCE", "依赖未记录目标集合版本")
+		}
+		out = append(out, collectionguard.Guard{Kind: guard.Kind, ScopeID: guard.ScopeID, Revision: revision})
+	}
+	return out, nil
 }

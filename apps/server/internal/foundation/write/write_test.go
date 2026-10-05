@@ -2,8 +2,11 @@ package write_test
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
+	"tripfolio/server/internal/foundation/apperr"
+	"tripfolio/server/internal/foundation/collectionguard"
 
 	"github.com/google/uuid"
 
@@ -157,5 +160,34 @@ func TestItineraryAndPhotoFieldGroups(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+type missingCollectionScope struct{ write.Scope }
+
+func TestCollectionCapabilityRequired(t *testing.T) {
+	for _, call := range []func(context.Context, write.Scope, []collectionguard.Scope) error{write.RequireCollections, write.RecordCollections} {
+		for _, scope := range []write.Scope{nil, missingCollectionScope{}} {
+			err := call(context.Background(), scope, nil)
+			e, ok := apperr.As(err)
+			if !ok || e.Code != "DEPENDENCY_UNAVAILABLE" {
+				t.Fatalf("missing capability: %v", err)
+			}
+		}
+	}
+}
+func TestResultCollectionFactsJSONCompatibility(t *testing.T) {
+	raw, err := json.Marshal(write.Result{})
+	if err != nil || strings.Contains(string(raw), "scope_revisions") {
+		t.Fatalf("legacy result: %s %v", raw, err)
+	}
+	fact := write.ScopeRevision{Kind: "members", ScopeID: uuid.NewString(), Revision: "sha256:" + strings.Repeat("a", 64)}
+	raw, err = json.Marshal(write.Result{ScopeRevisions: []write.ScopeRevision{fact}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result write.Result
+	if err = json.Unmarshal(raw, &result); err != nil || len(result.ScopeRevisions) != 1 || result.ScopeRevisions[0] != fact {
+		t.Fatalf("facts roundtrip: %+v %v", result, err)
 	}
 }

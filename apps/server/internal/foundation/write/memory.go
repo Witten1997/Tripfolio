@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 
 	"tripfolio/server/internal/foundation/apperr"
+	"tripfolio/server/internal/foundation/collectionguard"
 )
 
 // Snapshotter 由内存仓储实现，使 MemoryUnitOfWork 能在业务函数失败时回滚到调用前的状态。
@@ -16,11 +17,12 @@ type Snapshotter interface {
 
 // memoryScope 是内存写事务内的记录器。
 type memoryScope struct {
-	changes  []Change
-	warnings []string
-	primary  *EntityRef
-	affected []EntityRef
-	jobs     []JobArgs
+	accountID uuid.UUID
+	changes   []Change
+	warnings  []string
+	primary   *EntityRef
+	affected  []EntityRef
+	jobs      []JobArgs
 }
 
 var _ Scope = (*memoryScope)(nil)
@@ -135,7 +137,7 @@ func (u *MemoryUnitOfWork[T]) Run(ctx context.Context, req Request, fn func(ctx 
 			restore()
 		}
 	}
-	scope := &memoryScope{}
+	scope := &memoryScope{accountID: req.AccountID}
 	if err := fn(ctx, scope, u.repo); err != nil {
 		rollback()
 		if _, ok := apperr.As(err); ok {
@@ -167,4 +169,16 @@ func (u *MemoryUnitOfWork[T]) Run(ctx context.Context, req Request, fn func(ctx 
 	u.logMu.Unlock()
 	u.jobs = append(u.jobs, scope.jobs...)
 	return result, nil
+}
+
+func (s *memoryScope) RequireCollections(ctx context.Context, required []collectionguard.Scope) error {
+	if collectionguard.Request(ctx) != nil {
+		return apperr.New(503, "DEPENDENCY_UNAVAILABLE", "内存事务没有真实集合解析器")
+	}
+	return collectionguard.Check(ctx, false, s.accountID, nil, required, nil)
+}
+
+func (s *memoryScope) RecordCollections(ctx context.Context, affected []collectionguard.Scope) error {
+	// The test store validates scope syntax but never manufactures a revision.
+	return s.RequireCollections(ctx, affected)
 }

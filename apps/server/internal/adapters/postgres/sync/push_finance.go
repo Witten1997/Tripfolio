@@ -10,6 +10,7 @@ import (
 	travelpg "tripfolio/server/internal/adapters/postgres/travel"
 	"tripfolio/server/internal/foundation/actor"
 	"tripfolio/server/internal/foundation/apperr"
+	"tripfolio/server/internal/foundation/collectionguard"
 	"tripfolio/server/internal/foundation/write"
 	"tripfolio/server/internal/modules/finance"
 	syncmodule "tripfolio/server/internal/modules/sync"
@@ -42,37 +43,20 @@ func executeFinance(ctx context.Context, scope *pgcore.TxScope, a actor.Actor, e
 	if required && len(op.Guards) == 0 {
 		return apperr.New(428, "COLLECTION_BASE_REQUIRED", "本次修改需要集合版本")
 	}
-	for _, g := range op.Guards {
-		if g.Kind != kind || g.ScopeID != scopeID.String() {
-			return apperr.Unprocessable("INVALID_REFERENCE", "集合不属于本次操作")
-		}
-		expected := ""
-		if g.Revision != nil {
-			expected = *g.Revision
-		} else if facts := deps[*g.OperationID]; facts != nil {
-			for _, r := range facts.ScopeRevisions {
-				if r.Kind == g.Kind && r.ScopeID == g.ScopeID {
-					expected = r.Revision
-					break
-				}
-			}
-		}
-		if expected == "" {
-			return apperr.Unprocessable("INVALID_REFERENCE", "依赖未记录目标集合版本")
-		}
-		actual, err := scope.CollectionRevision(ctx, epoch, kind, scopeID)
-		if err != nil {
+	guards, err := resolveCollectionGuards(op.Guards, deps)
+	if err != nil {
+		return err
+	}
+	if required || len(guards) > 0 {
+		if err := scope.CheckCollections(ctx, guards, []collectionguard.Scope{{Kind: kind, ScopeID: scopeID.String()}}); err != nil {
 			return err
-		}
-		if actual.Revision != expected {
-			return apperr.New(412, "COLLECTION_CONFLICT", "集合已变化")
 		}
 	}
 	var id uuid.UUID
 	if op.EntityID != nil {
 		id = *op.EntityID
 	}
-	var err error
+	err = nil
 	switch op.EntityType {
 	case "expense_category":
 		svc := finance.NewCategoryService(boundItemUOW[finance.CategoryRepo]{scope, financepg.NewCategoryRepository(scope)}, nil, transactionClock{scope.Now})
@@ -140,6 +124,9 @@ func executeFinance(ctx context.Context, scope *pgcore.TxScope, a actor.Actor, e
 		return &copy
 	}
 	if err != nil {
+		return err
+	}
+	if err := scope.RecordCollections(ctx, []collectionguard.Scope{{Kind: kind, ScopeID: scopeID.String()}}); err != nil {
 		return err
 	}
 	return scope.RecordCollectionRevision(ctx, epoch, kind, scopeID)

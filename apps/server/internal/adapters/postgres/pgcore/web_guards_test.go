@@ -2,9 +2,12 @@ package pgcore
 
 import (
 	"context"
+	"errors"
 	"net/url"
 	"os"
+	"strings"
 	"testing"
+	"tripfolio/server/internal/foundation/collectionguard"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -93,5 +96,53 @@ CREATE TEMP TABLE account_sync_capabilities(account_id uuid PRIMARY KEY,collecti
 	}
 	if _, err = s.WebPolicy(ctx); err == nil {
 		t.Fatal("missing table silently downgraded protection")
+	}
+}
+
+type proofTestTx struct{ pgx.Tx }
+
+func TestCollectionProofAtomicAndTransactionBound(t *testing.T) {
+	ctx := context.Background()
+	account := uuid.New()
+	tx := &proofTestTx{}
+	s := &TxScope{Tx: tx, AccountID: account}
+	first := collectionguard.Scope{Kind: "members", ScopeID: uuid.NewString()}
+	second := collectionguard.Scope{Kind: "members", ScopeID: uuid.NewString()}
+	revision := "sha256:" + strings.Repeat("a", 64)
+	guards := []collectionguard.Guard{{Kind: first.Kind, ScopeID: first.ScopeID, Revision: revision}, {Kind: second.Kind, ScopeID: second.ScopeID, Revision: revision}}
+	resolver := func(_ context.Context, scope collectionguard.Scope) (string, error) {
+		if scope == second {
+			return "", errors.New("resolver failed")
+		}
+		return revision, nil
+	}
+	if err := s.checkCollections(ctx, guards, []collectionguard.Scope{first, second}, resolver); err == nil || len(s.collectionProof) != 0 || len(s.collectionScopes) != 0 {
+		t.Fatalf("partial proof: %v", err)
+	}
+	if err := s.checkCollections(ctx, guards[:1], []collectionguard.Scope{first}, resolver); err != nil {
+		t.Fatal(err)
+	}
+	guards[0].Revision = "changed"
+	got, ok := s.nativeCollectionGuards([]collectionguard.Scope{first})
+	if !ok || len(got) != 1 || got[0].Revision != revision {
+		t.Fatalf("proof changed: %+v", got)
+	}
+	got[0].Revision = "changed again"
+	got, _ = s.nativeCollectionGuards([]collectionguard.Scope{first})
+	if got[0].Revision != revision {
+		t.Fatal("proof aliased")
+	}
+	unrelated, _ := s.nativeCollectionGuards([]collectionguard.Scope{second})
+	if len(unrelated) != 0 {
+		t.Fatal("unrelated scope got proof")
+	}
+	s.Tx = &proofTestTx{}
+	if _, ok := s.nativeCollectionGuards([]collectionguard.Scope{first}); ok {
+		t.Fatal("proof crossed transaction")
+	}
+	s.Tx = tx
+	s.AccountID = uuid.New()
+	if _, ok := s.nativeCollectionGuards([]collectionguard.Scope{first}); ok {
+		t.Fatal("proof crossed account")
 	}
 }
