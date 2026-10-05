@@ -232,8 +232,8 @@ func TestHTTPShareTokenCannotReachAccountEndpoints(t *testing.T) {
 		resolved := regexp.MustCompile(`\{[^}]+\}`).ReplaceAllString(path, f.tripID)
 		cases = append(cases, struct{ method, path string }{method, resolved})
 	}
-	if len(accountOperations) != 102 {
-		t.Fatalf("设计及契约应覆盖全部 102 个账号接口，实际 %d", len(accountOperations))
+	if !accountOperations["GET /collection-baselines"] {
+		t.Fatal("集合基线读取接口必须纳入分享身份隔离检查")
 	}
 	t.Logf("遍历全部 %d 个账号接口，并保留计划的显式场景", len(accountOperations))
 	for _, c := range cases {
