@@ -156,3 +156,7 @@ func (r *reservationReader) List(ctx context.Context, accountID, tripID uuid.UUI
 	}
 	return out, nil
 }
+
+func NewReservationRepository(scope *pgcore.TxScope) reservation.Repo {
+	return &reservationRepo{reservationReader: reservationReader{contentReader{scope.Queries}}, scope: scope}
+}

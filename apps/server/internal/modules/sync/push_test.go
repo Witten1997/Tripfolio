@@ -64,3 +64,45 @@ func TestPushCanonicalFingerprintAndCommitPurpose(t *testing.T) {
 	_, _, _, err = s.decode(actor.AccountID, token)
 	expectCode(t, err, "INVALID_CURSOR")
 }
+func TestPushContentNullableAndCanonicalFields(t *testing.T) {
+	for _, entity := range []string{"reservation", "document"} {
+		op := pushTestInput().Operations[0]
+		op.EntityType = entity
+		op.Type = entity + ".create"
+		asset := uuid.New()
+		payload := map[string]any{"kind": "transport", "title": " title "}
+		if entity == "document" {
+			payload = map[string]any{"title": " title ", "asset_id": asset}
+		}
+		op.Payload, _ = json.Marshal(payload)
+		first, err := prepare(op)
+		if err != nil {
+			t.Fatal(err)
+		}
+		payload["notes"] = ""
+		if entity == "reservation" {
+			payload["start_local"] = nil
+			payload["booking_reference"] = ""
+		} else {
+			payload["reservation_id"] = nil
+			payload["asset_id"] = strings.ToUpper(asset.String())
+		}
+		op.Payload, _ = json.Marshal(payload)
+		second, err := prepare(op)
+		if err != nil || first.Fingerprint != second.Fingerprint {
+			t.Fatalf("canonical %s: %v", entity, err)
+		}
+		var canonical map[string]any
+		_ = json.Unmarshal(second.Payload, &canonical)
+		if canonical["title"] != " title " {
+			t.Fatal("changed REST text semantics")
+		}
+		for _, bad := range []map[string]any{{"title": nil}, {"reservation_id_set": true}, {"start_local_set": true}, {"account_id": uuid.NewString()}} {
+			op.Type = entity + ".update"
+			op.Payload, _ = json.Marshal(bad)
+			if _, err := prepare(op); err == nil {
+				t.Fatalf("accepted internal/null fields %v", bad)
+			}
+		}
+	}
+}

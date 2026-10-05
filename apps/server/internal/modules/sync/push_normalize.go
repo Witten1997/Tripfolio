@@ -314,12 +314,22 @@ func validGuard(g GuardReference) bool {
 
 func prepare(op Operation) (PreparedOperation, error) {
 	out := PreparedOperation{Operation: op}
-	if op.EntityType != "trip" && op.EntityType != "packing_item" && op.EntityType != "todo" {
+	if op.EntityType != "trip" && op.EntityType != "packing_item" && op.EntityType != "todo" && op.EntityType != "reservation" && op.EntityType != "document" {
 		return out, apperr.Unprocessable("OFFLINE_OPERATION_NOT_ALLOWED", "该操作尚未实现")
 	}
 	allowed := []string{}
 	required := []string{}
 	switch op.Type {
+	case "reservation.create", "reservation.update":
+		allowed = []string{"kind", "title", "booking_reference", "transport_number", "provider_name", "start_local", "end_local", "origin", "destination", "address", "contact_name", "contact_phone", "notes"}
+		if op.Type == "reservation.create" {
+			required = []string{"kind", "title"}
+		}
+	case "document.create", "document.update":
+		allowed = []string{"title", "notes", "asset_id", "reservation_id"}
+		if op.Type == "document.create" {
+			required = []string{"title", "asset_id"}
+		}
 	case "packing_item.create":
 		allowed = []string{"name", "category", "quantity", "notes", "status"}
 		required = []string{"name", "category"}
@@ -354,7 +364,7 @@ func prepare(op Operation) (PreparedOperation, error) {
 	}
 	for k, raw := range m {
 		if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
-			if k != "budget_amount" && k != "due_on" {
+			if k != "budget_amount" && k != "due_on" && !contentNullable(op.EntityType, k) {
 				return out, apperr.Validation(apperr.Field(k, "NOT_NULL", "字段不可为空"))
 			}
 			continue
@@ -388,7 +398,7 @@ func prepare(op Operation) (PreparedOperation, error) {
 			if json.Unmarshal(raw, &s) != nil || strings.ContainsRune(s, '\x00') {
 				return out, apperr.Validation(apperr.Field(k, "INVALID", "需要有效文本"))
 			}
-			if k == "name" || k == "destination" || k == "title" {
+			if op.EntityType != "reservation" && op.EntityType != "document" && (k == "name" || k == "destination" || k == "title") {
 				s = strings.TrimSpace(s)
 			}
 			if k == "budget_amount" {
@@ -397,10 +407,10 @@ func prepare(op Operation) (PreparedOperation, error) {
 					return out, apperr.Validation(apperr.Field(k, "INVALID", "金额格式错误"))
 				}
 			}
-			if k == "self_member_id" {
+			if k == "self_member_id" || k == "asset_id" || k == "reservation_id" {
 				id, e := uuid.Parse(s)
 				if e != nil || id == uuid.Nil {
-					return out, apperr.Validation(apperr.Field(k, "INVALID", "成员ID无效"))
+					return out, apperr.Validation(apperr.Field(k, "INVALID", "资源ID无效"))
 				}
 				s = id.String()
 			}
@@ -431,6 +441,26 @@ func prepare(op Operation) (PreparedOperation, error) {
 			}
 		}
 	}
+	if op.Type == "reservation.create" {
+		for _, k := range []string{"booking_reference", "address", "notes"} {
+			if _, ok := m[k]; !ok {
+				m[k] = json.RawMessage(`""`)
+			}
+		}
+		for _, k := range []string{"transport_number", "provider_name", "start_local", "end_local", "origin", "destination", "contact_name", "contact_phone"} {
+			if _, ok := m[k]; !ok {
+				m[k] = json.RawMessage(`null`)
+			}
+		}
+	}
+	if op.Type == "document.create" {
+		if _, ok := m["notes"]; !ok {
+			m["notes"] = json.RawMessage(`""`)
+		}
+		if _, ok := m["reservation_id"]; !ok {
+			m["reservation_id"] = json.RawMessage(`null`)
+		}
+	}
 	out.Payload, _ = json.Marshal(m)
 	out.DependsOn = append([]uuid.UUID{}, op.DependsOn...)
 	sort.Slice(out.DependsOn, func(i, j int) bool { return out.DependsOn[i].String() < out.DependsOn[j].String() })
@@ -456,4 +486,17 @@ func prepare(op Operation) (PreparedOperation, error) {
 	}
 	out.Fingerprint = sha256.Sum256(raw)
 	return out, nil
+}
+
+func contentNullable(entity, field string) bool {
+	if entity == "document" {
+		return field == "reservation_id"
+	}
+	if entity == "reservation" {
+		switch field {
+		case "transport_number", "provider_name", "start_local", "end_local", "origin", "destination", "contact_name", "contact_phone":
+			return true
+		}
+	}
+	return false
 }

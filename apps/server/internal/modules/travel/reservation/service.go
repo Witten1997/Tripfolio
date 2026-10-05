@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/google/uuid"
+	"reflect"
 	"time"
 	"tripfolio/server/internal/foundation/actor"
 	"tripfolio/server/internal/foundation/apperr"
@@ -372,10 +373,16 @@ func (s *Service) Update(ctx context.Context, a actor.Actor, operationID, tripID
 		if p.Kind != nil && *p.Kind != v.Kind && *p.Kind != "transport" && (!p.TransportNumberSet || p.TransportNumber != nil || !p.OriginSet || p.Origin != nil || !p.DestinationSet || p.Destination != nil) {
 			return apperr.Validation(apperr.Field("kind", "INVALID", "修改为非交通类型须显式清空交通专属字段"))
 		}
+		before := v
 		p.apply(&v)
 		if err := validateResource(v); err != nil {
 			return err
 		}
+		if reflect.DeepEqual(before, v) {
+			scope.SetPrimary(write.Ref(EntityType, v.ID, int64(v.Version)))
+			return nil
+		}
+		fields = actualChangedFields(before, v, fields)
 		v.UpdatedAt = s.clock.Now()
 		updated, err := repo.Update(ctx, a.AccountID, v)
 		if err != nil {
@@ -428,4 +435,43 @@ func (s *Service) reload(a actor.Actor, tripID, id uuid.UUID) func(context.Conte
 		}
 		return v, nil
 	}
+}
+
+func actualChangedFields(before, after Resource, fields []string) []string {
+	out := []string{}
+	for _, field := range fields {
+		same := false
+		switch field {
+		case "kind":
+			same = reflect.DeepEqual(before.Kind, after.Kind)
+		case "title":
+			same = reflect.DeepEqual(before.Title, after.Title)
+		case "booking_reference":
+			same = reflect.DeepEqual(before.BookingReference, after.BookingReference)
+		case "transport_number":
+			same = reflect.DeepEqual(before.TransportNumber, after.TransportNumber)
+		case "provider_name":
+			same = reflect.DeepEqual(before.ProviderName, after.ProviderName)
+		case "start_local":
+			same = reflect.DeepEqual(before.StartLocal, after.StartLocal)
+		case "end_local":
+			same = reflect.DeepEqual(before.EndLocal, after.EndLocal)
+		case "origin":
+			same = reflect.DeepEqual(before.Origin, after.Origin)
+		case "destination":
+			same = reflect.DeepEqual(before.Destination, after.Destination)
+		case "address":
+			same = reflect.DeepEqual(before.Address, after.Address)
+		case "contact_name":
+			same = reflect.DeepEqual(before.ContactName, after.ContactName)
+		case "contact_phone":
+			same = reflect.DeepEqual(before.ContactPhone, after.ContactPhone)
+		case "notes":
+			same = reflect.DeepEqual(before.Notes, after.Notes)
+		}
+		if !same {
+			out = append(out, field)
+		}
+	}
+	return out
 }

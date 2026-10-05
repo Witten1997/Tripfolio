@@ -113,3 +113,7 @@ func (r *documentReader) List(ctx context.Context, accountID, tripID uuid.UUID, 
 	}
 	return out, nil
 }
+
+func NewDocumentRepository(scope *pgcore.TxScope) document.Repo {
+	return &documentRepo{documentReader: documentReader{contentReader{scope.Queries}}, scope: scope}
+}

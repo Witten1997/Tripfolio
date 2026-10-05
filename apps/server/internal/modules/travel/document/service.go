@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/google/uuid"
+	"reflect"
 	"time"
 	"tripfolio/server/internal/foundation/actor"
 	"tripfolio/server/internal/foundation/apperr"
@@ -265,6 +266,7 @@ func (s *Service) Update(ctx context.Context, a actor.Actor, operationID, tripID
 		if d.Merged {
 			scope.Warn(write.WarnMergedWithNewerVersion)
 		}
+		before := v
 		p.apply(&v)
 		if err := validateResource(v); err != nil {
 			return err
@@ -277,6 +279,11 @@ func (s *Service) Update(ctx context.Context, a actor.Actor, operationID, tripID
 				return err
 			}
 		}
+		if reflect.DeepEqual(before, v) {
+			scope.SetPrimary(write.Ref(EntityType, v.ID, int64(v.Version)))
+			return nil
+		}
+		fields = actualChangedFields(before, v, fields)
 		v.UpdatedAt = s.clock.Now()
 		updated, err := repo.Update(ctx, a.AccountID, v)
 		if err != nil {
@@ -332,4 +339,25 @@ func checkReservation(ctx context.Context, r Repo, accountID, tripID, id uuid.UU
 		return apperr.NotFound()
 	}
 	return nil
+}
+
+func actualChangedFields(before, after Resource, fields []string) []string {
+	out := []string{}
+	for _, field := range fields {
+		same := false
+		switch field {
+		case "title":
+			same = reflect.DeepEqual(before.Title, after.Title)
+		case "notes":
+			same = reflect.DeepEqual(before.Notes, after.Notes)
+		case "asset_id":
+			same = reflect.DeepEqual(before.AssetID, after.AssetID)
+		case "reservation_id":
+			same = reflect.DeepEqual(before.ReservationID, after.ReservationID)
+		}
+		if !same {
+			out = append(out, field)
+		}
+	}
+	return out
 }

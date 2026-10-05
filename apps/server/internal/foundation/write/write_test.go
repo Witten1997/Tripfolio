@@ -101,3 +101,14 @@ func TestFingerprintIsDeterministicAndSensitive(t *testing.T) {
 		t.Fatal("base version must be part of the fingerprint")
 	}
 }
+func TestReservationFieldGroupsAreBidirectional(t *testing.T) {
+	for _, pair := range [][2]string{{"kind", "origin"}, {"kind", "destination"}, {"kind", "transport_number"}, {"start_local", "end_local"}} {
+		for i := range 2 {
+			src := &fakeSource{fields: []string{pair[i]}, complete: true}
+			d, err := write.ResolvePatch(context.Background(), src, uuid.New(), "reservation", uuid.New(), 1, 2, []string{pair[1-i]})
+			if err != nil || d.Merge || len(d.Conflicting) == 0 {
+				t.Fatalf("pair %v reversed=%d decision=%+v %v", pair, i, d, err)
+			}
+		}
+	}
+}
