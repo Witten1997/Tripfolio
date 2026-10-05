@@ -169,9 +169,10 @@ func RunServe(ctx context.Context, cfg config.Config, logger *slog.Logger) error
 	}
 
 	router := httpapi.NewRouter(httpapi.Deps{Deletions: services.Deletions,
-		AdminBasePath: cfg.AdminAPIPath(),
-		Admin:         adminapi.NewHandler(adminapi.Options{BasePath: cfg.AdminAPIPath(), Service: services.Admin, Runtime: adminRuntime(pool, readiness, worker, cfg), Secure: cfg.CookieSecure, Logger: logger}),
-		Logger:        logger, Metadata: metadata.Current(), Readiness: readiness, CORSOrigins: cfg.CORSOrigins,
+		CollectionBaselines: services.CollectionBaselines,
+		AdminBasePath:       cfg.AdminAPIPath(),
+		Admin:               adminapi.NewHandler(adminapi.Options{BasePath: cfg.AdminAPIPath(), Service: services.Admin, Runtime: adminRuntime(pool, readiness, worker, cfg), Secure: cfg.CookieSecure, Logger: logger}),
+		Logger:              logger, Metadata: metadata.Current(), Readiness: readiness, CORSOrigins: cfg.CORSOrigins,
 		Cookies:  httpapi.CookieSettings{Secure: cfg.CookieSecure},
 		Identity: services.Identity, Sessions: services.Sessions, Profile: services.Profile, Categories: services.Categories,
 		Photos: services.Photos, Reservations: services.Reservations, Documents: services.Documents,

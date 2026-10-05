@@ -14,6 +14,7 @@ import (
 
 	"tripfolio/server/internal/modules/account"
 	"tripfolio/server/internal/modules/assets"
+	"tripfolio/server/internal/modules/collectionbaseline"
 	"tripfolio/server/internal/modules/deletion"
 	"tripfolio/server/internal/modules/finance"
 	"tripfolio/server/internal/modules/geo"
@@ -35,29 +36,30 @@ import (
 
 // Deps 是路由需要的全部依赖，由 bootstrap 显式装配。
 type Deps struct {
-	Sync          *syncmodule.Service
-	Deletions     *deletion.Service
-	Photos        *album.Service
-	Reservations  *reservation.Service
-	Documents     *document.Service
-	AdminBasePath string
-	Admin         http.Handler
-	Dashboard     *dashboard.Service
-	Logger        *slog.Logger
-	Metadata      metadata.Metadata
-	Readiness     Readiness
-	CORSOrigins   []string
-	Cookies       CookieSettings
-	Identity      *account.IdentityService
-	Sessions      *account.SessionService
-	Profile       *account.ProfileService
-	Categories    *finance.CategoryService
-	Trips         *trip.Service
-	Itinerary     *itinerary.Service
-	RoutePlans    *routeplan.Service
-	Packing       *packing.Service
-	Todos         *todo.Service
-	Members       *member.Service
+	CollectionBaselines *collectionbaseline.Service
+	Sync                *syncmodule.Service
+	Deletions           *deletion.Service
+	Photos              *album.Service
+	Reservations        *reservation.Service
+	Documents           *document.Service
+	AdminBasePath       string
+	Admin               http.Handler
+	Dashboard           *dashboard.Service
+	Logger              *slog.Logger
+	Metadata            metadata.Metadata
+	Readiness           Readiness
+	CORSOrigins         []string
+	Cookies             CookieSettings
+	Identity            *account.IdentityService
+	Sessions            *account.SessionService
+	Profile             *account.ProfileService
+	Categories          *finance.CategoryService
+	Trips               *trip.Service
+	Itinerary           *itinerary.Service
+	RoutePlans          *routeplan.Service
+	Packing             *packing.Service
+	Todos               *todo.Service
+	Members             *member.Service
 	// Shares 未装配时，缺少分享头返回 401，有分享头返回 503。
 	Shares *share.Service
 	// 任一服务为 nil 时对应接口返回 503 DEPENDENCY_UNAVAILABLE。
@@ -140,9 +142,10 @@ func NewRouter(d Deps) http.Handler {
 	}
 
 	handler := &Handler{
-		sync:      d.Sync,
-		deletions: d.Deletions,
-		photos:    d.Photos, reservations: d.Reservations, documents: d.Documents,
+		collectionBaselines: d.CollectionBaselines,
+		sync:                d.Sync,
+		deletions:           d.Deletions,
+		photos:              d.Photos, reservations: d.Reservations, documents: d.Documents,
 		dashboard: d.Dashboard,
 		logger:    d.Logger, metadata: d.Metadata, identity: d.Identity, sessions: d.Sessions, profile: d.Profile,
 		categories: d.Categories, trips: d.Trips, itinerary: d.Itinerary, routePlans: d.RoutePlans, packing: d.Packing, todos: d.Todos,
@@ -167,6 +170,7 @@ func NewRouter(d Deps) http.Handler {
 	}
 
 	api.Use(collectionGuardRequests)
+	api.Use(collectionBaselineRequests)
 	api.Use(deletionRequests)
 	api.Use(contentRequests)
 	api.Use(syncRequests)

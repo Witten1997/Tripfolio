@@ -1,0 +1,36 @@
+CollectionBaselinePage:
+  type: object
+  x-go-type: collectionbaseline.Page
+  x-go-type-import:
+    path: tripfolio/server/internal/modules/collectionbaseline
+  required: [kind, scope_id, sync_epoch, revision, expires_at, items, next_cursor]
+  properties:
+    kind:
+      type: string
+      enum: [categories, itinerary_day, photo_day]
+    scope_id:
+      type: string
+    sync_epoch:
+      type: string
+      format: uuid
+    revision:
+      type: string
+      pattern: '^sha256:[0-9a-f]{64}$'
+    expires_at:
+      type: string
+      format: date-time
+      description: 首次读取后十分钟的固定 UTC 到期时间；后续分页不续期。
+    items:
+      type: array
+      maxItems: 100
+      description: 与 kind 对应的有效资源；实体 version 复用规范资源的精确字符串类型。
+      items:
+        oneOf:
+          - $ref: ../openapi.yaml#/components/schemas/ExpenseCategory
+          - $ref: ../openapi.yaml#/components/schemas/ItineraryItem
+          - $ref: ../openapi.yaml#/components/schemas/Photo
+    next_cursor:
+      type: string
+      nullable: true
+      minLength: 1
+      maxLength: 4096

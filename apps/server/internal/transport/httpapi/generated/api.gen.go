@@ -16,6 +16,7 @@ import (
 	"tripfolio/server/internal/foundation/write"
 	"tripfolio/server/internal/modules/account"
 	"tripfolio/server/internal/modules/assets"
+	"tripfolio/server/internal/modules/collectionbaseline"
 	"tripfolio/server/internal/modules/deletion"
 	"tripfolio/server/internal/modules/finance"
 	"tripfolio/server/internal/modules/geo"
@@ -766,28 +767,28 @@ func (e SyncOperationEntityType) Valid() bool {
 
 // Defines values for SyncOperationGuardsKind.
 const (
-	Categories   SyncOperationGuardsKind = "categories"
-	ItineraryDay SyncOperationGuardsKind = "itinerary_day"
-	Members      SyncOperationGuardsKind = "members"
-	PackingOrder SyncOperationGuardsKind = "packing_order"
-	PhotoDay     SyncOperationGuardsKind = "photo_day"
-	TodoOrder    SyncOperationGuardsKind = "todo_order"
+	SyncOperationGuardsKindCategories   SyncOperationGuardsKind = "categories"
+	SyncOperationGuardsKindItineraryDay SyncOperationGuardsKind = "itinerary_day"
+	SyncOperationGuardsKindMembers      SyncOperationGuardsKind = "members"
+	SyncOperationGuardsKindPackingOrder SyncOperationGuardsKind = "packing_order"
+	SyncOperationGuardsKindPhotoDay     SyncOperationGuardsKind = "photo_day"
+	SyncOperationGuardsKindTodoOrder    SyncOperationGuardsKind = "todo_order"
 )
 
 // Valid indicates whether the value is a known member of the SyncOperationGuardsKind enum.
 func (e SyncOperationGuardsKind) Valid() bool {
 	switch e {
-	case Categories:
+	case SyncOperationGuardsKindCategories:
 		return true
-	case ItineraryDay:
+	case SyncOperationGuardsKindItineraryDay:
 		return true
-	case Members:
+	case SyncOperationGuardsKindMembers:
 		return true
-	case PackingOrder:
+	case SyncOperationGuardsKindPackingOrder:
 		return true
-	case PhotoDay:
+	case SyncOperationGuardsKindPhotoDay:
 		return true
-	case TodoOrder:
+	case SyncOperationGuardsKindTodoOrder:
 		return true
 	default:
 		return false
@@ -995,6 +996,27 @@ const (
 func (e UploadAuthorizationMethod) Valid() bool {
 	switch e {
 	case PUT:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListCollectionBaselinesParamsKind.
+const (
+	ListCollectionBaselinesParamsKindCategories   ListCollectionBaselinesParamsKind = "categories"
+	ListCollectionBaselinesParamsKindItineraryDay ListCollectionBaselinesParamsKind = "itinerary_day"
+	ListCollectionBaselinesParamsKindPhotoDay     ListCollectionBaselinesParamsKind = "photo_day"
+)
+
+// Valid indicates whether the value is a known member of the ListCollectionBaselinesParamsKind enum.
+func (e ListCollectionBaselinesParamsKind) Valid() bool {
+	switch e {
+	case ListCollectionBaselinesParamsKindCategories:
+		return true
+	case ListCollectionBaselinesParamsKindItineraryDay:
+		return true
+	case ListCollectionBaselinesParamsKindPhotoDay:
 		return true
 	default:
 		return false
@@ -1282,6 +1304,9 @@ type ClientInfo struct {
 
 // ClientInfoKind defines model for ClientInfo.Kind.
 type ClientInfoKind string
+
+// CollectionBaselinePage defines model for CollectionBaselinePage.
+type CollectionBaselinePage = collectionbaseline.Page
 
 // Currency defines model for Currency.
 type Currency struct {
@@ -2913,6 +2938,19 @@ type AuthorizeAssetUploadParams struct {
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
 }
 
+// ListCollectionBaselinesParams defines parameters for ListCollectionBaselines.
+type ListCollectionBaselinesParams struct {
+	Kind ListCollectionBaselinesParamsKind `form:"kind" json:"kind"`
+
+	// ScopeId categories 为当前账号 UUID；日期集合为旅行 UUID/YYYY-MM-DD，UUID 须为规范小写，日期须真实有效。
+	ScopeId string  `form:"scope_id" json:"scope_id"`
+	Limit   *int    `form:"limit,omitempty" json:"limit,omitempty"`
+	Cursor  *string `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// ListCollectionBaselinesParamsKind defines parameters for ListCollectionBaselines.
+type ListCollectionBaselinesParamsKind string
+
 // GetDashboardParams defines parameters for GetDashboard.
 type GetDashboardParams struct {
 	// LocationAfter 使用上次返回的 next_location_after 继续识别坐标，不影响旅行与费用筛选
@@ -3894,6 +3932,9 @@ type ServerInterface interface {
 	// RegisterAccount 验证邮箱后创建账号并登录
 	// (POST /auth/register)
 	RegisterAccount(w http.ResponseWriter, r *http.Request)
+	// ListCollectionBaselines 分页读取完整集合基线
+	// (GET /collection-baselines)
+	ListCollectionBaselines(w http.ResponseWriter, r *http.Request, params ListCollectionBaselinesParams)
 	// GetDashboard 个人旅行看板，汇总已结束旅行的足迹、天数与分类花销
 	// (GET /dashboard)
 	GetDashboard(w http.ResponseWriter, r *http.Request, params GetDashboardParams)
@@ -4281,6 +4322,12 @@ func (_ Unimplemented) RefreshSession(w http.ResponseWriter, r *http.Request) {
 // RegisterAccount 验证邮箱后创建账号并登录
 // (POST /auth/register)
 func (_ Unimplemented) RegisterAccount(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// ListCollectionBaselines 分页读取完整集合基线
+// (GET /collection-baselines)
+func (_ Unimplemented) ListCollectionBaselines(w http.ResponseWriter, r *http.Request, params ListCollectionBaselinesParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -5394,6 +5441,78 @@ func (siw *ServerInterfaceWrapper) RegisterAccount(w http.ResponseWriter, r *htt
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.RegisterAccount(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListCollectionBaselines operation middleware
+func (siw *ServerInterfaceWrapper) ListCollectionBaselines(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListCollectionBaselinesParams
+
+	// ------------- Required query parameter "kind" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "kind", r.URL.Query(), &params.Kind, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "kind"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "kind", Err: err})
+		}
+		return
+	}
+
+	// ------------- Required query parameter "scope_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "scope_id", r.URL.Query(), &params.ScopeId, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "scope_id"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "scope_id", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListCollectionBaselines(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -10517,6 +10636,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	}
 
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/collection-baselines", wrapper.ListCollectionBaselines)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/sync/status", wrapper.GetSyncStatus)
 	})
 	r.Group(func(r chi.Router) {
@@ -12523,6 +12645,157 @@ func (response RegisterAccount422ApplicationProblemPlusJSONResponse) VisitRegist
 	}
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListCollectionBaselinesRequestObject struct {
+	Params ListCollectionBaselinesParams
+}
+
+type ListCollectionBaselinesResponseObject interface {
+	VisitListCollectionBaselinesResponse(w http.ResponseWriter) error
+}
+
+type ListCollectionBaselines200JSONResponse CollectionBaselinePage
+
+func (response ListCollectionBaselines200JSONResponse) VisitListCollectionBaselinesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListCollectionBaselines400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response ListCollectionBaselines400ApplicationProblemPlusJSONResponse) VisitListCollectionBaselinesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListCollectionBaselines401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response ListCollectionBaselines401ApplicationProblemPlusJSONResponse) VisitListCollectionBaselinesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListCollectionBaselines403ApplicationProblemPlusJSONResponse struct {
+	ForbiddenApplicationProblemPlusJSONResponse
+}
+
+func (response ListCollectionBaselines403ApplicationProblemPlusJSONResponse) VisitListCollectionBaselinesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListCollectionBaselines404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response ListCollectionBaselines404ApplicationProblemPlusJSONResponse) VisitListCollectionBaselinesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListCollectionBaselines410ApplicationProblemPlusJSONResponse struct {
+	GoneApplicationProblemPlusJSONResponse
+}
+
+func (response ListCollectionBaselines410ApplicationProblemPlusJSONResponse) VisitListCollectionBaselinesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(410)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListCollectionBaselines412ApplicationProblemPlusJSONResponse Problem
+
+func (response ListCollectionBaselines412ApplicationProblemPlusJSONResponse) VisitListCollectionBaselinesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(412)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListCollectionBaselines422ApplicationProblemPlusJSONResponse struct {
+	ValidationFailedApplicationProblemPlusJSONResponse
+}
+
+func (response ListCollectionBaselines422ApplicationProblemPlusJSONResponse) VisitListCollectionBaselinesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListCollectionBaselines503ApplicationProblemPlusJSONResponse struct {
+	DependencyUnavailableApplicationProblemPlusJSONResponse
+}
+
+func (response ListCollectionBaselines503ApplicationProblemPlusJSONResponse) VisitListCollectionBaselinesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(503)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -22900,6 +23173,9 @@ type StrictServerInterface interface {
 	// RegisterAccount 验证邮箱后创建账号并登录
 	// (POST /auth/register)
 	RegisterAccount(ctx context.Context, request RegisterAccountRequestObject) (RegisterAccountResponseObject, error)
+	// ListCollectionBaselines 分页读取完整集合基线
+	// (GET /collection-baselines)
+	ListCollectionBaselines(ctx context.Context, request ListCollectionBaselinesRequestObject) (ListCollectionBaselinesResponseObject, error)
 	// GetDashboard 个人旅行看板，汇总已结束旅行的足迹、天数与分类花销
 	// (GET /dashboard)
 	GetDashboard(ctx context.Context, request GetDashboardRequestObject) (GetDashboardResponseObject, error)
@@ -23806,6 +24082,32 @@ func (sh *strictHandler) RegisterAccount(w http.ResponseWriter, r *http.Request)
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(RegisterAccountResponseObject); ok {
 		if err := validResponse.VisitRegisterAccountResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListCollectionBaselines operation middleware
+func (sh *strictHandler) ListCollectionBaselines(w http.ResponseWriter, r *http.Request, params ListCollectionBaselinesParams) {
+	var request ListCollectionBaselinesRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListCollectionBaselines(ctx, request.(ListCollectionBaselinesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListCollectionBaselines")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListCollectionBaselinesResponseObject); ok {
+		if err := validResponse.VisitListCollectionBaselinesResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

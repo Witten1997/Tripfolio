@@ -372,6 +372,30 @@ export type paths = {
         patch?: never;
         trace?: never;
     };
+    "/collection-baselines": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 分页读取完整集合基线
+         * @description 仅真实账号会话可读，分享身份不可读，不接受 X-Collection-Guards。
+         *     每页来自一致快照，按实体 ID 升序；所有页具有相同的 epoch、revision 和固定 expires_at。
+         *     游标绑定账号、集合范围和 limit，十分钟内有效；页间集合变化或到期返回 412 COLLECTION_BASELINE_CHANGED。
+         *     必须取得所有页并核验完整集合摘要后才能将其用于编辑。版本保持精确十进制字符串。
+         *     未知、重复、空查询参数拒绝；省略 limit 使用 50，显式 0 或越界拒绝。
+         */
+        get: operations["listCollectionBaselines"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/dashboard": {
         parameters: {
             query?: never;
@@ -1693,6 +1717,22 @@ export type components = {
             device_name?: string;
             /** @enum {string} */
             kind: "web" | "android" | "harmony";
+        };
+        CollectionBaselinePage: {
+            /**
+             * Format: date-time
+             * @description 首次读取后十分钟的固定 UTC 到期时间；后续分页不续期。
+             */
+            expires_at: string;
+            /** @description 与 kind 对应的有效资源；实体 version 复用规范资源的精确字符串类型。 */
+            items: (components["schemas"]["ExpenseCategory"] | components["schemas"]["ItineraryItem"] | components["schemas"]["Photo"])[];
+            /** @enum {string} */
+            kind: "categories" | "itinerary_day" | "photo_day";
+            next_cursor: string | null;
+            revision: string;
+            scope_id: string;
+            /** Format: uuid */
+            sync_epoch: string;
         };
         Currency: {
             code: components["schemas"]["CurrencyCode"];
@@ -4237,6 +4277,48 @@ export interface operations {
             };
             409: components["responses"]["Conflict"];
             422: components["responses"]["ValidationFailed"];
+        };
+    };
+    listCollectionBaselines: {
+        parameters: {
+            query: {
+                cursor?: string;
+                kind: "categories" | "itinerary_day" | "photo_day";
+                limit?: number;
+                /** @description categories 为当前账号 UUID；日期集合为旅行 UUID/YYYY-MM-DD，UUID 须为规范小写，日期须真实有效。 */
+                scope_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 直接返回一页基线，无 data 包装；空集合 items 为 []，末页 next_cursor 为 null。 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CollectionBaselinePage"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            410: components["responses"]["Gone"];
+            /** @description COLLECTION_BASELINE_CHANGED；集合、账号同步代次变化或读取期限已过，须重新读取并核对。 */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            422: components["responses"]["ValidationFailed"];
+            503: components["responses"]["DependencyUnavailable"];
         };
     };
     getDashboard: {

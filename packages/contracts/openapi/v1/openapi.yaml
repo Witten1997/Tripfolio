@@ -44,6 +44,8 @@ tags:
 security:
   - bearerAuth: []
 paths:
+  /collection-baselines:
+    $ref: ./paths/collection-baselines.yaml#/collection
   /sync/status:
     $ref: ./paths/sync.yaml#/status
 
@@ -224,6 +226,8 @@ components:
   schemas:
     ScopeRevision:
       $ref: ./schemas/write.yaml#/ScopeRevision
+    CollectionBaselinePage:
+      $ref: ./schemas/collection-baseline.yaml#/CollectionBaselinePage
     DeletionJob:
       $ref: ./schemas/deletion.yaml#/DeletionJob
     DeletionReceipt:

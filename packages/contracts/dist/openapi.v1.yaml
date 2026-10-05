@@ -44,6 +44,74 @@ tags:
   - name: public
     description: 访客凭分享令牌读取的只读接口
 paths:
+  /collection-baselines:
+    get:
+      tags:
+        - sync
+      operationId: listCollectionBaselines
+      summary: 分页读取完整集合基线
+      description: |
+        仅真实账号会话可读，分享身份不可读，不接受 X-Collection-Guards。
+        每页来自一致快照，按实体 ID 升序；所有页具有相同的 epoch、revision 和固定 expires_at。
+        游标绑定账号、集合范围和 limit，十分钟内有效；页间集合变化或到期返回 412 COLLECTION_BASELINE_CHANGED。
+        必须取得所有页并核验完整集合摘要后才能将其用于编辑。版本保持精确十进制字符串。
+        未知、重复、空查询参数拒绝；省略 limit 使用 50，显式 0 或越界拒绝。
+      parameters:
+        - name: kind
+          in: query
+          required: true
+          schema:
+            type: string
+            enum:
+              - categories
+              - itinerary_day
+              - photo_day
+        - name: scope_id
+          in: query
+          required: true
+          description: categories 为当前账号 UUID；日期集合为旅行 UUID/YYYY-MM-DD，UUID 须为规范小写，日期须真实有效。
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+        - name: cursor
+          in: query
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 4096
+      responses:
+        '200':
+          description: 直接返回一页基线，无 data 包装；空集合 items 为 []，末页 next_cursor 为 null。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CollectionBaselinePage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '410':
+          $ref: '#/components/responses/Gone'
+        '412':
+          description: COLLECTION_BASELINE_CHANGED；集合、账号同步代次变化或读取期限已过，须重新读取并核对。
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '503':
+          $ref: '#/components/responses/DependencyUnavailable'
   /sync/status:
     get:
       tags:
@@ -4238,6 +4306,52 @@ components:
         revision:
           type: string
           pattern: ^sha256:[0-9a-f]{64}$
+    CollectionBaselinePage:
+      type: object
+      x-go-type: collectionbaseline.Page
+      x-go-type-import:
+        path: tripfolio/server/internal/modules/collectionbaseline
+      required:
+        - kind
+        - scope_id
+        - sync_epoch
+        - revision
+        - expires_at
+        - items
+        - next_cursor
+      properties:
+        kind:
+          type: string
+          enum:
+            - categories
+            - itinerary_day
+            - photo_day
+        scope_id:
+          type: string
+        sync_epoch:
+          type: string
+          format: uuid
+        revision:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+        expires_at:
+          type: string
+          format: date-time
+          description: 首次读取后十分钟的固定 UTC 到期时间；后续分页不续期。
+        items:
+          type: array
+          maxItems: 100
+          description: 与 kind 对应的有效资源；实体 version 复用规范资源的精确字符串类型。
+          items:
+            oneOf:
+              - $ref: '#/components/schemas/ExpenseCategory'
+              - $ref: '#/components/schemas/ItineraryItem'
+              - $ref: '#/components/schemas/Photo'
+        next_cursor:
+          type: string
+          nullable: true
+          minLength: 1
+          maxLength: 4096
     DeletionJob:
       type: object
       x-go-type: deletion.Job

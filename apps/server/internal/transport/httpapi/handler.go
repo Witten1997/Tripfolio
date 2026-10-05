@@ -8,6 +8,7 @@ import (
 	"tripfolio/server/internal/foundation/apperr"
 	"tripfolio/server/internal/modules/account"
 	"tripfolio/server/internal/modules/assets"
+	"tripfolio/server/internal/modules/collectionbaseline"
 	"tripfolio/server/internal/modules/deletion"
 	"tripfolio/server/internal/modules/finance"
 	"tripfolio/server/internal/modules/geo"
@@ -31,32 +32,33 @@ import (
 // Handler 实现生成的 StrictServerInterface。它只做分发与模型转换，业务状态与规则留在模块服务中；
 // 各业务的方法分散在对应文件（metadata.go、account.go、finance.go、travel_*.go 等）。
 type Handler struct {
-	sync         *syncmodule.Service
-	deletions    *deletion.Service
-	photos       *album.Service
-	reservations *reservation.Service
-	documents    *document.Service
-	dashboard    *dashboard.Service
-	logger       *slog.Logger
-	metadata     metadata.Metadata
-	identity     *account.IdentityService
-	sessions     *account.SessionService
-	profile      *account.ProfileService
-	categories   *finance.CategoryService
-	ledger       *finance.LedgerService
-	statistics   *finance.StatisticsService
-	settlement   *finance.SettlementService
-	assets       *assets.Service
-	geo          *geo.Service
-	trips        *trip.Service
-	itinerary    *itinerary.Service
-	routePlans   *routeplan.Service
-	packing      *packing.Service
-	todos        *todo.Service
-	members      *member.Service
-	shares       *share.Service
-	cookies      CookieSettings
-	corsOrigins  []string
+	collectionBaselines *collectionbaseline.Service
+	sync                *syncmodule.Service
+	deletions           *deletion.Service
+	photos              *album.Service
+	reservations        *reservation.Service
+	documents           *document.Service
+	dashboard           *dashboard.Service
+	logger              *slog.Logger
+	metadata            metadata.Metadata
+	identity            *account.IdentityService
+	sessions            *account.SessionService
+	profile             *account.ProfileService
+	categories          *finance.CategoryService
+	ledger              *finance.LedgerService
+	statistics          *finance.StatisticsService
+	settlement          *finance.SettlementService
+	assets              *assets.Service
+	geo                 *geo.Service
+	trips               *trip.Service
+	itinerary           *itinerary.Service
+	routePlans          *routeplan.Service
+	packing             *packing.Service
+	todos               *todo.Service
+	members             *member.Service
+	shares              *share.Service
+	cookies             CookieSettings
+	corsOrigins         []string
 }
 
 var _ generated.StrictServerInterface = (*Handler)(nil)
