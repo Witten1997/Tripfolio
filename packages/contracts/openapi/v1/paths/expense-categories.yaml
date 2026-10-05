@@ -71,8 +71,10 @@ item:
     tags: [finance]
     operationId: updateExpenseCategory
     summary: 改名、改图标或排序
+    description: 集合保护开启时，提交 sort_order 时需要本账号完整 categories 基线；同值提交也校验。
     parameters:
       - $ref: ../openapi.yaml#/components/parameters/IdempotencyKey
+      - $ref: ../openapi.yaml#/components/parameters/CollectionGuards
       - $ref: ../openapi.yaml#/components/parameters/IfMatch
     requestBody:
       required: true
@@ -87,6 +89,8 @@ item:
           application/json:
             schema:
               $ref: ../openapi.yaml#/components/schemas/WriteResponse
+      '400':
+        $ref: ../openapi.yaml#/components/responses/BadRequest
       '401':
         $ref: ../openapi.yaml#/components/responses/Unauthorized
       '404':
@@ -94,11 +98,11 @@ item:
       '410':
         $ref: ../openapi.yaml#/components/responses/Gone
       '412':
-        $ref: ../openapi.yaml#/components/responses/PreconditionFailed
+        $ref: ../openapi.yaml#/components/responses/CollectionPreconditionFailed
       '422':
         $ref: ../openapi.yaml#/components/responses/ValidationFailed
       '428':
-        $ref: ../openapi.yaml#/components/responses/VersionRequired
+        $ref: ../openapi.yaml#/components/responses/CollectionPreconditionRequired
   delete:
     tags: [finance]
     operationId: deleteExpenseCategory

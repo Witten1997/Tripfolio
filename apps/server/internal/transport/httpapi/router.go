@@ -166,6 +166,7 @@ func NewRouter(d Deps) http.Handler {
 		api.Use(middleware.Share(unavailableResolver{}, isSharePath))
 	}
 
+	api.Use(collectionGuardRequests)
 	api.Use(deletionRequests)
 	api.Use(contentRequests)
 	api.Use(syncRequests)

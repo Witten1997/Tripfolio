@@ -55,6 +55,11 @@ TripMemberListResponse:
   type: object
   required: [data]
   properties:
+    scope_revisions:
+      type: array
+      description: 可选的 members 集合基线，必须与本响应全部成员处于同一一致性读取；缺省时不能据此形成集合编辑基线。
+      items:
+        $ref: ./write.yaml#/ScopeRevision
     data:
       type: array
       items:

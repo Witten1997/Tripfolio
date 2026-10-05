@@ -2375,6 +2375,9 @@ type RouteSummary struct {
 // RouteSummaryStatus defines model for RouteSummary.Status.
 type RouteSummaryStatus string
 
+// ScopeRevision 与完整读取或原提交事务绑定的集合版本；不是当前资源 data 的推导值。
+type ScopeRevision = write.ScopeRevision
+
 // Session defines model for Session.
 type Session = account.SessionResource
 
@@ -2669,6 +2672,9 @@ type TripMemberInput struct {
 // TripMemberListResponse defines model for TripMemberListResponse.
 type TripMemberListResponse struct {
 	Data []TripMember `json:"data"`
+
+	// ScopeRevisions 可选的 members 集合基线，必须与本响应全部成员处于同一一致性读取；缺省时不能据此形成集合编辑基线。
+	ScopeRevisions *[]ScopeRevision `json:"scope_revisions,omitempty"`
 }
 
 // TripMembersSave 整体保存旅行成员：按数组顺序写 sort_order；未出现的有效成员被删除。
@@ -2814,6 +2820,9 @@ type WriteResponse struct {
 // WriteResult 写操作的统一响应（接口设计 1.4）；data 为 primary 的当前规范资源
 type WriteResult = write.Result
 
+// CollectionGuards Example: [{"kind":"members","scope_id":"22222222-2222-4222-8222-222222222222","revision":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]
+type CollectionGuards = string
+
 // IdempotencyKey defines model for IdempotencyKey.
 type IdempotencyKey = openapi_types.UUID
 
@@ -2822,6 +2831,12 @@ type IfMatch = string
 
 // BadRequest 统一错误响应，媒体类型 application/problem+json；代码清单见接口设计 1.4
 type BadRequest = Problem
+
+// CollectionPreconditionFailed 统一错误响应，媒体类型 application/problem+json；代码清单见接口设计 1.4
+type CollectionPreconditionFailed = Problem
+
+// CollectionPreconditionRequired 统一错误响应，媒体类型 application/problem+json；代码清单见接口设计 1.4
+type CollectionPreconditionRequired = Problem
 
 // Conflict 统一错误响应，媒体类型 application/problem+json；代码清单见接口设计 1.4
 type Conflict = Problem
@@ -2934,6 +2949,13 @@ type DeleteExpenseCategoryParams struct {
 type UpdateExpenseCategoryParams struct {
 	// IdempotencyKey 写请求的操作编号（UUID）；相同成功操作重试复用同一键
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+
+	// XCollectionGuards JSON 数组字符串，每项严格为 ScopeRevision 的 kind、scope_id、revision 三个字符串字段；不是逗号分隔数组。
+	// 上限 16 KiB UTF-8，仅接受一个请求头值，不允许重复字段、重复集合或其他字段。省略与显式 [] 不同。
+	// 未开启集合保护的账号省略此头保持兼容；开启后按本次业务需要的最终集合检查，缺项返回 428 COLLECTION_BASE_REQUIRED，过期返回 412 COLLECTION_CONFLICT。
+	// 显式提供的前置条件始终校验；非法集合值、重复或无关范围返回 422 INVALID_REFERENCE，畸形 JSON、重复头/字段或超长返回 400 MALFORMED_REQUEST。
+	// 同一操作编号重试必须保留原正文和原集合基线；明确核对并更换基线后使用新操作编号。此头不代表已验证权限或版本。
+	XCollectionGuards *CollectionGuards `json:"X-Collection-Guards,omitempty"`
 
 	// IfMatch 客户端所基于的资源版本，形如 "7"（带引号）
 	IfMatch *IfMatch `json:"If-Match,omitempty"`
@@ -3170,6 +3192,13 @@ type CreateItineraryItemParams struct {
 type ReorderItineraryItemsParams struct {
 	// IdempotencyKey 写请求的操作编号（UUID）；相同成功操作重试复用同一键
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+
+	// XCollectionGuards JSON 数组字符串，每项严格为 ScopeRevision 的 kind、scope_id、revision 三个字符串字段；不是逗号分隔数组。
+	// 上限 16 KiB UTF-8，仅接受一个请求头值，不允许重复字段、重复集合或其他字段。省略与显式 [] 不同。
+	// 未开启集合保护的账号省略此头保持兼容；开启后按本次业务需要的最终集合检查，缺项返回 428 COLLECTION_BASE_REQUIRED，过期返回 412 COLLECTION_CONFLICT。
+	// 显式提供的前置条件始终校验；非法集合值、重复或无关范围返回 422 INVALID_REFERENCE，畸形 JSON、重复头/字段或超长返回 400 MALFORMED_REQUEST。
+	// 同一操作编号重试必须保留原正文和原集合基线；明确核对并更换基线后使用新操作编号。此头不代表已验证权限或版本。
+	XCollectionGuards *CollectionGuards `json:"X-Collection-Guards,omitempty"`
 }
 
 // DeleteItineraryItemParams defines parameters for DeleteItineraryItem.
@@ -3214,6 +3243,13 @@ type ListLedgerEntriesParams struct {
 type CreateLedgerEntryParams struct {
 	// IdempotencyKey 写请求的操作编号（UUID）；相同成功操作重试复用同一键
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+
+	// XCollectionGuards JSON 数组字符串，每项严格为 ScopeRevision 的 kind、scope_id、revision 三个字符串字段；不是逗号分隔数组。
+	// 上限 16 KiB UTF-8，仅接受一个请求头值，不允许重复字段、重复集合或其他字段。省略与显式 [] 不同。
+	// 未开启集合保护的账号省略此头保持兼容；开启后按本次业务需要的最终集合检查，缺项返回 428 COLLECTION_BASE_REQUIRED，过期返回 412 COLLECTION_CONFLICT。
+	// 显式提供的前置条件始终校验；非法集合值、重复或无关范围返回 422 INVALID_REFERENCE，畸形 JSON、重复头/字段或超长返回 400 MALFORMED_REQUEST。
+	// 同一操作编号重试必须保留原正文和原集合基线；明确核对并更换基线后使用新操作编号。此头不代表已验证权限或版本。
+	XCollectionGuards *CollectionGuards `json:"X-Collection-Guards,omitempty"`
 }
 
 // DeleteLedgerEntryParams defines parameters for DeleteLedgerEntry.
@@ -3230,6 +3266,13 @@ type UpdateLedgerEntryParams struct {
 	// IdempotencyKey 写请求的操作编号（UUID）；相同成功操作重试复用同一键
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
 
+	// XCollectionGuards JSON 数组字符串，每项严格为 ScopeRevision 的 kind、scope_id、revision 三个字符串字段；不是逗号分隔数组。
+	// 上限 16 KiB UTF-8，仅接受一个请求头值，不允许重复字段、重复集合或其他字段。省略与显式 [] 不同。
+	// 未开启集合保护的账号省略此头保持兼容；开启后按本次业务需要的最终集合检查，缺项返回 428 COLLECTION_BASE_REQUIRED，过期返回 412 COLLECTION_CONFLICT。
+	// 显式提供的前置条件始终校验；非法集合值、重复或无关范围返回 422 INVALID_REFERENCE，畸形 JSON、重复头/字段或超长返回 400 MALFORMED_REQUEST。
+	// 同一操作编号重试必须保留原正文和原集合基线；明确核对并更换基线后使用新操作编号。此头不代表已验证权限或版本。
+	XCollectionGuards *CollectionGuards `json:"X-Collection-Guards,omitempty"`
+
 	// IfMatch 客户端所基于的资源版本，形如 "7"（带引号）
 	IfMatch *IfMatch `json:"If-Match,omitempty"`
 }
@@ -3241,12 +3284,26 @@ type CommitLedgerImportParams struct {
 
 	// IdempotencyKey 写请求的操作编号（UUID）；相同成功操作重试复用同一键
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+
+	// XCollectionGuards JSON 数组字符串，每项严格为 ScopeRevision 的 kind、scope_id、revision 三个字符串字段；不是逗号分隔数组。
+	// 上限 16 KiB UTF-8，仅接受一个请求头值，不允许重复字段、重复集合或其他字段。省略与显式 [] 不同。
+	// 未开启集合保护的账号省略此头保持兼容；开启后按本次业务需要的最终集合检查，缺项返回 428 COLLECTION_BASE_REQUIRED，过期返回 412 COLLECTION_CONFLICT。
+	// 显式提供的前置条件始终校验；非法集合值、重复或无关范围返回 422 INVALID_REFERENCE，畸形 JSON、重复头/字段或超长返回 400 MALFORMED_REQUEST。
+	// 同一操作编号重试必须保留原正文和原集合基线；明确核对并更换基线后使用新操作编号。此头不代表已验证权限或版本。
+	XCollectionGuards *CollectionGuards `json:"X-Collection-Guards,omitempty"`
 }
 
 // SaveTripMembersParams defines parameters for SaveTripMembers.
 type SaveTripMembersParams struct {
 	// IdempotencyKey 写请求的操作编号（UUID）；相同成功操作重试复用同一键
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+
+	// XCollectionGuards JSON 数组字符串，每项严格为 ScopeRevision 的 kind、scope_id、revision 三个字符串字段；不是逗号分隔数组。
+	// 上限 16 KiB UTF-8，仅接受一个请求头值，不允许重复字段、重复集合或其他字段。省略与显式 [] 不同。
+	// 未开启集合保护的账号省略此头保持兼容；开启后按本次业务需要的最终集合检查，缺项返回 428 COLLECTION_BASE_REQUIRED，过期返回 412 COLLECTION_CONFLICT。
+	// 显式提供的前置条件始终校验；非法集合值、重复或无关范围返回 422 INVALID_REFERENCE，畸形 JSON、重复头/字段或超长返回 400 MALFORMED_REQUEST。
+	// 同一操作编号重试必须保留原正文和原集合基线；明确核对并更换基线后使用新操作编号。此头不代表已验证权限或版本。
+	XCollectionGuards *CollectionGuards `json:"X-Collection-Guards,omitempty"`
 }
 
 // ListPackingItemsParams defines parameters for ListPackingItems.
@@ -3314,6 +3371,13 @@ type DeletePhotoParams struct {
 type UpdatePhotoParams struct {
 	// IdempotencyKey 写请求的操作编号（UUID）；相同成功操作重试复用同一键
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+
+	// XCollectionGuards JSON 数组字符串，每项严格为 ScopeRevision 的 kind、scope_id、revision 三个字符串字段；不是逗号分隔数组。
+	// 上限 16 KiB UTF-8，仅接受一个请求头值，不允许重复字段、重复集合或其他字段。省略与显式 [] 不同。
+	// 未开启集合保护的账号省略此头保持兼容；开启后按本次业务需要的最终集合检查，缺项返回 428 COLLECTION_BASE_REQUIRED，过期返回 412 COLLECTION_CONFLICT。
+	// 显式提供的前置条件始终校验；非法集合值、重复或无关范围返回 422 INVALID_REFERENCE，畸形 JSON、重复头/字段或超长返回 400 MALFORMED_REQUEST。
+	// 同一操作编号重试必须保留原正文和原集合基线；明确核对并更换基线后使用新操作编号。此头不代表已验证权限或版本。
+	XCollectionGuards *CollectionGuards `json:"X-Collection-Guards,omitempty"`
 
 	// IfMatch 客户端所基于的资源版本，形如 "7"（带引号）
 	IfMatch *IfMatch `json:"If-Match,omitempty"`
@@ -5698,6 +5762,25 @@ func (siw *ServerInterfaceWrapper) UpdateExpenseCategory(w http.ResponseWriter, 
 		return
 	}
 
+	// ------------- Optional header parameter "X-Collection-Guards" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Collection-Guards")]; found {
+		var XCollectionGuards CollectionGuards
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-Collection-Guards", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Collection-Guards", valueList[0], &XCollectionGuards, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-Collection-Guards", Err: err})
+			return
+		}
+
+		params.XCollectionGuards = &XCollectionGuards
+
+	}
+
 	// ------------- Optional header parameter "If-Match" -------------
 	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
 		var IfMatch IfMatch
@@ -7635,6 +7718,25 @@ func (siw *ServerInterfaceWrapper) ReorderItineraryItems(w http.ResponseWriter, 
 		return
 	}
 
+	// ------------- Optional header parameter "X-Collection-Guards" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Collection-Guards")]; found {
+		var XCollectionGuards CollectionGuards
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-Collection-Guards", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Collection-Guards", valueList[0], &XCollectionGuards, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-Collection-Guards", Err: err})
+			return
+		}
+
+		params.XCollectionGuards = &XCollectionGuards
+
+	}
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ReorderItineraryItems(w, r, tripId, params)
 	}))
@@ -8034,6 +8136,25 @@ func (siw *ServerInterfaceWrapper) CreateLedgerEntry(w http.ResponseWriter, r *h
 		return
 	}
 
+	// ------------- Optional header parameter "X-Collection-Guards" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Collection-Guards")]; found {
+		var XCollectionGuards CollectionGuards
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-Collection-Guards", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Collection-Guards", valueList[0], &XCollectionGuards, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-Collection-Guards", Err: err})
+			return
+		}
+
+		params.XCollectionGuards = &XCollectionGuards
+
+	}
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.CreateLedgerEntry(w, r, tripId, params)
 	}))
@@ -8214,6 +8335,25 @@ func (siw *ServerInterfaceWrapper) UpdateLedgerEntry(w http.ResponseWriter, r *h
 		return
 	}
 
+	// ------------- Optional header parameter "X-Collection-Guards" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Collection-Guards")]; found {
+		var XCollectionGuards CollectionGuards
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-Collection-Guards", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Collection-Guards", valueList[0], &XCollectionGuards, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-Collection-Guards", Err: err})
+			return
+		}
+
+		params.XCollectionGuards = &XCollectionGuards
+
+	}
+
 	// ------------- Optional header parameter "If-Match" -------------
 	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
 		var IfMatch IfMatch
@@ -8298,6 +8438,25 @@ func (siw *ServerInterfaceWrapper) CommitLedgerImport(w http.ResponseWriter, r *
 		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
 		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
 		return
+	}
+
+	// ------------- Optional header parameter "X-Collection-Guards" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Collection-Guards")]; found {
+		var XCollectionGuards CollectionGuards
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-Collection-Guards", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Collection-Guards", valueList[0], &XCollectionGuards, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-Collection-Guards", Err: err})
+			return
+		}
+
+		params.XCollectionGuards = &XCollectionGuards
+
 	}
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -8430,6 +8589,25 @@ func (siw *ServerInterfaceWrapper) SaveTripMembers(w http.ResponseWriter, r *htt
 		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
 		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
 		return
+	}
+
+	// ------------- Optional header parameter "X-Collection-Guards" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Collection-Guards")]; found {
+		var XCollectionGuards CollectionGuards
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-Collection-Guards", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Collection-Guards", valueList[0], &XCollectionGuards, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-Collection-Guards", Err: err})
+			return
+		}
+
+		params.XCollectionGuards = &XCollectionGuards
+
 	}
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -9133,6 +9311,25 @@ func (siw *ServerInterfaceWrapper) UpdatePhoto(w http.ResponseWriter, r *http.Re
 		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
 		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
 		return
+	}
+
+	// ------------- Optional header parameter "X-Collection-Guards" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Collection-Guards")]; found {
+		var XCollectionGuards CollectionGuards
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-Collection-Guards", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Collection-Guards", valueList[0], &XCollectionGuards, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-Collection-Guards", Err: err})
+			return
+		}
+
+		params.XCollectionGuards = &XCollectionGuards
+
 	}
 
 	// ------------- Optional header parameter "If-Match" -------------
@@ -10645,6 +10842,10 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 }
 
 type BadRequestApplicationProblemPlusJSONResponse Problem
+
+type CollectionPreconditionFailedApplicationProblemPlusJSONResponse Problem
+
+type CollectionPreconditionRequiredApplicationProblemPlusJSONResponse Problem
 
 type ConflictApplicationProblemPlusJSONResponse Problem
 
@@ -13024,6 +13225,22 @@ func (response UpdateExpenseCategory200JSONResponse) VisitUpdateExpenseCategoryR
 	return err
 }
 
+type UpdateExpenseCategory400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response UpdateExpenseCategory400ApplicationProblemPlusJSONResponse) VisitUpdateExpenseCategoryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type UpdateExpenseCategory401ApplicationProblemPlusJSONResponse struct {
 	UnauthorizedApplicationProblemPlusJSONResponse
 }
@@ -13073,7 +13290,7 @@ func (response UpdateExpenseCategory410ApplicationProblemPlusJSONResponse) Visit
 }
 
 type UpdateExpenseCategory412ApplicationProblemPlusJSONResponse struct {
-	PreconditionFailedApplicationProblemPlusJSONResponse
+	CollectionPreconditionFailedApplicationProblemPlusJSONResponse
 }
 
 func (response UpdateExpenseCategory412ApplicationProblemPlusJSONResponse) VisitUpdateExpenseCategoryResponse(w http.ResponseWriter) error {
@@ -13105,7 +13322,7 @@ func (response UpdateExpenseCategory422ApplicationProblemPlusJSONResponse) Visit
 }
 
 type UpdateExpenseCategory428ApplicationProblemPlusJSONResponse struct {
-	VersionRequiredApplicationProblemPlusJSONResponse
+	CollectionPreconditionRequiredApplicationProblemPlusJSONResponse
 }
 
 func (response UpdateExpenseCategory428ApplicationProblemPlusJSONResponse) VisitUpdateExpenseCategoryResponse(w http.ResponseWriter) error {
@@ -17297,6 +17514,22 @@ func (response ReorderItineraryItems200JSONResponse) VisitReorderItineraryItemsR
 	return err
 }
 
+type ReorderItineraryItems400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response ReorderItineraryItems400ApplicationProblemPlusJSONResponse) VisitReorderItineraryItemsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ReorderItineraryItems401ApplicationProblemPlusJSONResponse struct {
 	UnauthorizedApplicationProblemPlusJSONResponse
 }
@@ -17362,7 +17595,7 @@ func (response ReorderItineraryItems410ApplicationProblemPlusJSONResponse) Visit
 }
 
 type ReorderItineraryItems412ApplicationProblemPlusJSONResponse struct {
-	PreconditionFailedApplicationProblemPlusJSONResponse
+	CollectionPreconditionFailedApplicationProblemPlusJSONResponse
 }
 
 func (response ReorderItineraryItems412ApplicationProblemPlusJSONResponse) VisitReorderItineraryItemsResponse(w http.ResponseWriter) error {
@@ -17389,6 +17622,22 @@ func (response ReorderItineraryItems422ApplicationProblemPlusJSONResponse) Visit
 	}
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReorderItineraryItems428ApplicationProblemPlusJSONResponse struct {
+	CollectionPreconditionRequiredApplicationProblemPlusJSONResponse
+}
+
+func (response ReorderItineraryItems428ApplicationProblemPlusJSONResponse) VisitReorderItineraryItemsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(428)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -17826,6 +18075,22 @@ func (response CreateLedgerEntry201JSONResponse) VisitCreateLedgerEntryResponse(
 	return err
 }
 
+type CreateLedgerEntry400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response CreateLedgerEntry400ApplicationProblemPlusJSONResponse) VisitCreateLedgerEntryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type CreateLedgerEntry401ApplicationProblemPlusJSONResponse struct {
 	UnauthorizedApplicationProblemPlusJSONResponse
 }
@@ -17890,6 +18155,22 @@ func (response CreateLedgerEntry410ApplicationProblemPlusJSONResponse) VisitCrea
 	return err
 }
 
+type CreateLedgerEntry412ApplicationProblemPlusJSONResponse struct {
+	CollectionPreconditionFailedApplicationProblemPlusJSONResponse
+}
+
+func (response CreateLedgerEntry412ApplicationProblemPlusJSONResponse) VisitCreateLedgerEntryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(412)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type CreateLedgerEntry422ApplicationProblemPlusJSONResponse Problem
 
 func (response CreateLedgerEntry422ApplicationProblemPlusJSONResponse) VisitCreateLedgerEntryResponse(w http.ResponseWriter) error {
@@ -17900,6 +18181,22 @@ func (response CreateLedgerEntry422ApplicationProblemPlusJSONResponse) VisitCrea
 	}
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateLedgerEntry428ApplicationProblemPlusJSONResponse struct {
+	CollectionPreconditionRequiredApplicationProblemPlusJSONResponse
+}
+
+func (response CreateLedgerEntry428ApplicationProblemPlusJSONResponse) VisitCreateLedgerEntryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(428)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -18114,6 +18411,22 @@ func (response UpdateLedgerEntry200JSONResponse) VisitUpdateLedgerEntryResponse(
 	return err
 }
 
+type UpdateLedgerEntry400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response UpdateLedgerEntry400ApplicationProblemPlusJSONResponse) VisitUpdateLedgerEntryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type UpdateLedgerEntry401ApplicationProblemPlusJSONResponse struct {
 	UnauthorizedApplicationProblemPlusJSONResponse
 }
@@ -18163,7 +18476,7 @@ func (response UpdateLedgerEntry410ApplicationProblemPlusJSONResponse) VisitUpda
 }
 
 type UpdateLedgerEntry412ApplicationProblemPlusJSONResponse struct {
-	PreconditionFailedApplicationProblemPlusJSONResponse
+	CollectionPreconditionFailedApplicationProblemPlusJSONResponse
 }
 
 func (response UpdateLedgerEntry412ApplicationProblemPlusJSONResponse) VisitUpdateLedgerEntryResponse(w http.ResponseWriter) error {
@@ -18193,7 +18506,7 @@ func (response UpdateLedgerEntry422ApplicationProblemPlusJSONResponse) VisitUpda
 }
 
 type UpdateLedgerEntry428ApplicationProblemPlusJSONResponse struct {
-	VersionRequiredApplicationProblemPlusJSONResponse
+	CollectionPreconditionRequiredApplicationProblemPlusJSONResponse
 }
 
 func (response UpdateLedgerEntry428ApplicationProblemPlusJSONResponse) VisitUpdateLedgerEntryResponse(w http.ResponseWriter) error {
@@ -18312,6 +18625,22 @@ func (response CommitLedgerImport410ApplicationProblemPlusJSONResponse) VisitCom
 	return err
 }
 
+type CommitLedgerImport412ApplicationProblemPlusJSONResponse struct {
+	CollectionPreconditionFailedApplicationProblemPlusJSONResponse
+}
+
+func (response CommitLedgerImport412ApplicationProblemPlusJSONResponse) VisitCommitLedgerImportResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(412)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type CommitLedgerImport422ApplicationProblemPlusJSONResponse struct {
 	ValidationFailedApplicationProblemPlusJSONResponse
 }
@@ -18324,6 +18653,22 @@ func (response CommitLedgerImport422ApplicationProblemPlusJSONResponse) VisitCom
 	}
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CommitLedgerImport428ApplicationProblemPlusJSONResponse struct {
+	CollectionPreconditionRequiredApplicationProblemPlusJSONResponse
+}
+
+func (response CommitLedgerImport428ApplicationProblemPlusJSONResponse) VisitCommitLedgerImportResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(428)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -18619,6 +18964,22 @@ func (response SaveTripMembers200JSONResponse) VisitSaveTripMembersResponse(w ht
 	return err
 }
 
+type SaveTripMembers400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response SaveTripMembers400ApplicationProblemPlusJSONResponse) VisitSaveTripMembersResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type SaveTripMembers401ApplicationProblemPlusJSONResponse struct {
 	UnauthorizedApplicationProblemPlusJSONResponse
 }
@@ -18683,6 +19044,22 @@ func (response SaveTripMembers410ApplicationProblemPlusJSONResponse) VisitSaveTr
 	return err
 }
 
+type SaveTripMembers412ApplicationProblemPlusJSONResponse struct {
+	CollectionPreconditionFailedApplicationProblemPlusJSONResponse
+}
+
+func (response SaveTripMembers412ApplicationProblemPlusJSONResponse) VisitSaveTripMembersResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(412)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type SaveTripMembers422ApplicationProblemPlusJSONResponse struct {
 	ValidationFailedApplicationProblemPlusJSONResponse
 }
@@ -18695,6 +19072,22 @@ func (response SaveTripMembers422ApplicationProblemPlusJSONResponse) VisitSaveTr
 	}
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SaveTripMembers428ApplicationProblemPlusJSONResponse struct {
+	CollectionPreconditionRequiredApplicationProblemPlusJSONResponse
+}
+
+func (response SaveTripMembers428ApplicationProblemPlusJSONResponse) VisitSaveTripMembersResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(428)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -20194,7 +20587,7 @@ func (response UpdatePhoto410ApplicationProblemPlusJSONResponse) VisitUpdatePhot
 }
 
 type UpdatePhoto412ApplicationProblemPlusJSONResponse struct {
-	PreconditionFailedApplicationProblemPlusJSONResponse
+	CollectionPreconditionFailedApplicationProblemPlusJSONResponse
 }
 
 func (response UpdatePhoto412ApplicationProblemPlusJSONResponse) VisitUpdatePhotoResponse(w http.ResponseWriter) error {
@@ -20226,7 +20619,7 @@ func (response UpdatePhoto422ApplicationProblemPlusJSONResponse) VisitUpdatePhot
 }
 
 type UpdatePhoto428ApplicationProblemPlusJSONResponse struct {
-	VersionRequiredApplicationProblemPlusJSONResponse
+	CollectionPreconditionRequiredApplicationProblemPlusJSONResponse
 }
 
 func (response UpdatePhoto428ApplicationProblemPlusJSONResponse) VisitUpdatePhotoResponse(w http.ResponseWriter) error {

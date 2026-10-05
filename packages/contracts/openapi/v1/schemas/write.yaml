@@ -39,6 +39,26 @@ EntityRef:
       description: 资源版本；任务等没有版本时为 null
       pattern: '^[1-9][0-9]*$'
 
+ScopeRevision:
+  type: object
+  additionalProperties: false
+  description: 与完整读取或原提交事务绑定的集合版本；不是当前资源 data 的推导值。
+  x-go-type: write.ScopeRevision
+  x-go-type-import:
+    path: tripfolio/server/internal/foundation/write
+  required: [kind, scope_id, revision]
+  properties:
+    kind:
+      type: string
+      enum: [categories, members, itinerary_day, packing_order, todo_order, photo_day]
+    scope_id:
+      type: string
+      description: categories 为账号 UUID；members/packing_order/todo_order 为旅行 UUID；日期集合为旅行 UUID/YYYY-MM-DD。
+      pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(/[0-9]{4}-[0-9]{2}-[0-9]{2})?$'
+    revision:
+      type: string
+      pattern: '^sha256:[0-9a-f]{64}$'
+
 WriteResult:
   type: object
   description: 写操作的统一响应（接口设计 1.4）；data 为 primary 的当前规范资源
@@ -75,6 +95,11 @@ WriteResult:
         type: string
     replayed:
       type: boolean
+    scope_revisions:
+      type: array
+      description: 原提交事务完成后的集合事实，成功重放保持原值；旧收据可缺省，不得从当前 data 推算或以新读取覆盖。
+      items:
+        $ref: '#/ScopeRevision'
     data:
       type: object
       nullable: true
@@ -106,3 +131,20 @@ IfMatch:
   schema:
     type: string
     pattern: '^"[1-9][0-9]*"$'
+
+CollectionGuards:
+  name: X-Collection-Guards
+  in: header
+  required: false
+  style: simple
+  explode: false
+  description: |
+    JSON 数组字符串，每项严格为 ScopeRevision 的 kind、scope_id、revision 三个字符串字段；不是逗号分隔数组。
+    上限 16 KiB UTF-8，仅接受一个请求头值，不允许重复字段、重复集合或其他字段。省略与显式 [] 不同。
+    未开启集合保护的账号省略此头保持兼容；开启后按本次业务需要的最终集合检查，缺项返回 428 COLLECTION_BASE_REQUIRED，过期返回 412 COLLECTION_CONFLICT。
+    显式提供的前置条件始终校验；非法集合值、重复或无关范围返回 422 INVALID_REFERENCE，畸形 JSON、重复头/字段或超长返回 400 MALFORMED_REQUEST。
+    同一操作编号重试必须保留原正文和原集合基线；明确核对并更换基线后使用新操作编号。此头不代表已验证权限或版本。
+  schema:
+    type: string
+    maxLength: 16384
+    example: '[{"kind":"members","scope_id":"22222222-2222-4222-8222-222222222222","revision":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]'

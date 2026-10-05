@@ -3,6 +3,7 @@ package middleware_test
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"tripfolio/server/internal/transport/httpapi/middleware"
@@ -61,5 +62,26 @@ func TestCORSIgnoresUnknownOrigin(t *testing.T) {
 	}
 	if rec.Header().Get("Access-Control-Allow-Origin") != "" {
 		t.Fatal("unknown origin must not receive Allow-Origin")
+	}
+}
+
+func TestCORSCollectionGuardsPreflight(t *testing.T) {
+	for _, origin := range []string{"http://localhost:5173", "https://evil.example"} {
+		r := httptest.NewRequest(http.MethodOptions, "/api/v1/trips/any/members", nil)
+		r.Header.Set("Origin", origin)
+		r.Header.Set("Access-Control-Request-Method", "PUT")
+		r.Header.Set("Access-Control-Request-Headers", "x-collection-guards, idempotency-key")
+		w := httptest.NewRecorder()
+		newCORSHandler(t).ServeHTTP(w, r)
+		if w.Code != 204 {
+			t.Fatalf("status=%d", w.Code)
+		}
+		allowed := strings.Contains(strings.ToLower(w.Header().Get("Access-Control-Allow-Headers")), "x-collection-guards")
+		if allowed != (origin == "http://localhost:5173") {
+			t.Fatalf("origin=%s allow=%s", origin, w.Header().Get("Access-Control-Allow-Headers"))
+		}
+		if strings.Contains(strings.ToLower(w.Header().Get("Access-Control-Expose-Headers")), "x-collection-guards") {
+			t.Fatal("request-only guard header should not be exposed")
+		}
 	}
 }

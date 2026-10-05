@@ -193,8 +193,10 @@ reorder:
     tags: [travel]
     operationId: reorderItineraryItems
     summary: 重排受影响日期的行程；支持跨日移动，整体在一个事务中完成
+    description: 集合保护开启时，需要受影响的全部来源和目标日期的 itinerary_day 基线，包含空日；保留原 days/items/base_version 正文。
     parameters:
       - $ref: ../openapi.yaml#/components/parameters/IdempotencyKey
+      - $ref: ../openapi.yaml#/components/parameters/CollectionGuards
     requestBody:
       required: true
       content:
@@ -208,6 +210,8 @@ reorder:
           application/json:
             schema:
               $ref: ../openapi.yaml#/components/schemas/WriteResponse
+      '400':
+        $ref: ../openapi.yaml#/components/responses/BadRequest
       '401':
         $ref: ../openapi.yaml#/components/responses/Unauthorized
       '404':
@@ -217,6 +221,8 @@ reorder:
       '410':
         $ref: ../openapi.yaml#/components/responses/Gone
       '412':
-        $ref: ../openapi.yaml#/components/responses/PreconditionFailed
+        $ref: ../openapi.yaml#/components/responses/CollectionPreconditionFailed
       '422':
         $ref: ../openapi.yaml#/components/responses/ValidationFailed
+      '428':
+        $ref: ../openapi.yaml#/components/responses/CollectionPreconditionRequired

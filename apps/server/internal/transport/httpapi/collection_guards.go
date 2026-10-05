@@ -14,7 +14,7 @@ import (
 const collectionGuardsHeader = "X-Collection-Guards"
 const collectionGuardsMaxBytes = 16 * 1024
 
-// parseCollectionGuards is not yet wired to routes. nil means an absent header;
+// parseCollectionGuards returns nil for an absent header;
 // an explicit [] remains non-nil. Ownership and freshness are checked in the writer.
 func parseCollectionGuards(h http.Header) ([]collectionguard.Guard, error) {
 	var values []string
@@ -92,4 +92,75 @@ func parseCollectionGuards(h http.Header) ([]collectionguard.Guard, error) {
 
 func malformedGuards() error {
 	return apperr.BadRequest("MALFORMED_REQUEST", "集合基线请求头格式无效或超过16KiB")
+}
+
+// collectionGuardRequests only carries unverified REST preconditions. Services
+// must determine the final required scopes and check them inside the write UOW.
+func collectionGuardRequests(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// This boundary owns the REST context, including clearing inherited values
+		// on native, public and read requests. It never constructs a proof.
+		ctx, _ := collectionguard.WithRequest(r.Context(), nil)
+		r = r.WithContext(ctx)
+		present := false
+		for name := range r.Header {
+			if strings.EqualFold(name, collectionGuardsHeader) {
+				present = true
+				break
+			}
+		}
+		if !present {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if !acceptsCollectionGuards(r) {
+			writeAppError(w, r, apperr.Unprocessable("INVALID_REFERENCE", "此操作不接受集合基线请求头"))
+			return
+		}
+		if _, err := mustActor(r.Context()); err != nil {
+			writeCollectionGuardError(w, r, err)
+			return
+		}
+		guards, err := parseCollectionGuards(r.Header)
+		if err != nil {
+			writeCollectionGuardError(w, r, err)
+			return
+		}
+		ctx, err = collectionguard.WithRequest(r.Context(), guards)
+		if err != nil {
+			writeCollectionGuardError(w, r, err)
+			return
+		}
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+func writeCollectionGuardError(w http.ResponseWriter, r *http.Request, err error) {
+	e, ok := apperr.As(err)
+	if !ok {
+		e = apperr.Internal(err)
+	}
+	writeAppError(w, r, e)
+}
+
+func acceptsCollectionGuards(r *http.Request) bool {
+	parts := strings.Split(r.URL.Path, "/")
+	if len(parts) < 5 || parts[0] != "" || parts[1] != "api" || parts[2] != "v1" {
+		return false
+	}
+	if len(parts) == 5 && parts[3] == "expense-categories" && parts[4] != "" {
+		return r.Method == http.MethodPatch
+	}
+	if parts[3] != "trips" || parts[4] == "" {
+		return false
+	}
+	if len(parts) == 6 {
+		return (parts[5] == "members" && r.Method == http.MethodPut) ||
+			((parts[5] == "ledger-entries" || parts[5] == "ledger-import") && r.Method == http.MethodPost)
+	}
+	if len(parts) == 7 && parts[6] != "" {
+		return ((parts[5] == "ledger-entries" || parts[5] == "photos") && r.Method == http.MethodPatch) ||
+			(parts[5] == "itinerary-items" && parts[6] == "reorder" && r.Method == http.MethodPost)
+	}
+	return false
 }

@@ -5,6 +5,11 @@ LedgerImportPreview:
     path: tripfolio/server/internal/modules/finance
   required: [rows, errors, warnings, count, valid_count, total_amount, currency_code, digest]
   properties:
+    scope_revisions:
+      type: array
+      description: 与本次预览的旅行、分类和完整成员来自同一一致性读取的 members 基线；提交时仍须校验原 digest，缺省不代表可跳过集合校验。
+      items:
+        $ref: ./write.yaml#/ScopeRevision
     rows:
       type: array
       items:

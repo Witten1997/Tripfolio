@@ -151,8 +151,10 @@ item:
       - travel
     operationId: updatePhoto
     summary: 更新Photo
+    description: 集合保护开启时，涉及日期、排序或 taken_at_local 的修改按最终旧/新日期检查 photo_day 基线；无变化也不跳过所需基线。
     parameters:
       - $ref: ../openapi.yaml#/components/parameters/IdempotencyKey
+      - $ref: ../openapi.yaml#/components/parameters/CollectionGuards
       - $ref: ../openapi.yaml#/components/parameters/IfMatch
     requestBody:
       required: true
@@ -180,11 +182,11 @@ item:
       '410':
         $ref: ../openapi.yaml#/components/responses/Gone
       '412':
-        $ref: ../openapi.yaml#/components/responses/PreconditionFailed
+        $ref: ../openapi.yaml#/components/responses/CollectionPreconditionFailed
       '422':
         $ref: ../openapi.yaml#/components/responses/ValidationFailed
       '428':
-        $ref: ../openapi.yaml#/components/responses/VersionRequired
+        $ref: ../openapi.yaml#/components/responses/CollectionPreconditionRequired
       '503':
         $ref: ../openapi.yaml#/components/responses/DependencyUnavailable
   delete:

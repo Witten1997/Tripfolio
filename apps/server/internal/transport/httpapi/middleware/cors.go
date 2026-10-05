@@ -8,7 +8,7 @@ import (
 // 允许的请求方法与请求头。请求头覆盖幂等键、版本、CSRF 与请求编号（接口设计 1.2、3.1）。
 const (
 	corsAllowMethods  = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
-	corsAllowHeaders  = "Authorization, Content-Type, Accept, Idempotency-Key, If-Match, If-None-Match, X-Request-ID, X-CSRF-Token"
+	corsAllowHeaders  = "Authorization, Content-Type, Accept, Idempotency-Key, If-Match, If-None-Match, X-Request-ID, X-CSRF-Token, X-Collection-Guards"
 	corsExposeHeaders = "ETag, X-Request-ID, Location, Retry-After, Content-Disposition"
 	corsMaxAge        = "600"
 )

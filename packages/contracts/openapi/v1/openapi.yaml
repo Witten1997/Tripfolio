@@ -219,7 +219,11 @@ components:
       $ref: ./schemas/write.yaml#/IdempotencyKey
     IfMatch:
       $ref: ./schemas/write.yaml#/IfMatch
+    CollectionGuards:
+      $ref: ./schemas/write.yaml#/CollectionGuards
   schemas:
+    ScopeRevision:
+      $ref: ./schemas/write.yaml#/ScopeRevision
     DeletionJob:
       $ref: ./schemas/deletion.yaml#/DeletionJob
     DeletionReceipt:
@@ -593,6 +597,18 @@ components:
     PhotoWriteResponse:
       $ref: ./schemas/photo.yaml#/PhotoWriteResponse
   responses:
+    CollectionPreconditionFailed:
+      description: 412 COLLECTION_CONFLICT 表示原集合基线已变化，保留输入并核对后再提交；VERSION_CONFLICT 表示实体版本冲突，conflict 提供当前版本与内容。不得自动换集合基线重试。
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    CollectionPreconditionRequired:
+      description: 428 COLLECTION_BASE_REQUIRED 表示缺少本次操作需要的集合基线；需要实体版本的操作仍可返回 VERSION_REQUIRED（缺 If-Match）。
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
     BadRequest:
       description: 请求无法解析、含未知字段或游标无效（MALFORMED_REQUEST、INVALID_CURSOR）
       content:

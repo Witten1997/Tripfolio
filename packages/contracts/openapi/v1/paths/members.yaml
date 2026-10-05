@@ -27,8 +27,10 @@ collection:
     tags: [travel]
     operationId: saveTripMembers
     summary: 整体保存旅行成员：新增、改名、改比例、排序与删除；百分比之和须为 100
+    description: 集合保护开启时，需要本旅行完整 members 基线；整体保存及无变化提交均按事务内最终集合校验。
     parameters:
       - $ref: ../openapi.yaml#/components/parameters/IdempotencyKey
+      - $ref: ../openapi.yaml#/components/parameters/CollectionGuards
     requestBody:
       required: true
       content:
@@ -42,6 +44,8 @@ collection:
           application/json:
             schema:
               $ref: ../openapi.yaml#/components/schemas/WriteResponse
+      '400':
+        $ref: ../openapi.yaml#/components/responses/BadRequest
       '401':
         $ref: ../openapi.yaml#/components/responses/Unauthorized
       '404':
@@ -50,5 +54,9 @@ collection:
         $ref: ../openapi.yaml#/components/responses/Conflict
       '410':
         $ref: ../openapi.yaml#/components/responses/Gone
+      '412':
+        $ref: ../openapi.yaml#/components/responses/CollectionPreconditionFailed
       '422':
         $ref: ../openapi.yaml#/components/responses/ValidationFailed
+      '428':
+        $ref: ../openapi.yaml#/components/responses/CollectionPreconditionRequired

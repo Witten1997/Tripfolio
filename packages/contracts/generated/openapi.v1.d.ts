@@ -461,7 +461,10 @@ export type paths = {
         delete: operations["deleteExpenseCategory"];
         options?: never;
         head?: never;
-        /** 改名、改图标或排序 */
+        /**
+         * 改名、改图标或排序
+         * @description 集合保护开启时，提交 sort_order 时需要本账号完整 categories 基线；同值提交也校验。
+         */
         patch: operations["updateExpenseCategory"];
         trace?: never;
     };
@@ -1006,7 +1009,10 @@ export type paths = {
         };
         get?: never;
         put?: never;
-        /** 重排受影响日期的行程；支持跨日移动，整体在一个事务中完成 */
+        /**
+         * 重排受影响日期的行程；支持跨日移动，整体在一个事务中完成
+         * @description 集合保护开启时，需要受影响的全部来源和目标日期的 itinerary_day 基线，包含空日；保留原 days/items/base_version 正文。
+         */
         post: operations["reorderItineraryItems"];
         delete?: never;
         options?: never;
@@ -1026,7 +1032,10 @@ export type paths = {
         /** 旅行的账目列表；按实际日期、分类、类型及关联筛选，键集分页 */
         get: operations["listLedgerEntries"];
         put?: never;
-        /** 记录支出或退款；校验币种、分类有效与原支出关系，第一条有效账目锁定旅行币种 */
+        /**
+         * 记录支出或退款；校验币种、分类有效与原支出关系，第一条有效账目锁定旅行币种
+         * @description 集合保护开启时，创建账目需要本旅行 members 基线。
+         */
         post: operations["createLedgerEntry"];
         delete?: never;
         options?: never;
@@ -1052,7 +1061,10 @@ export type paths = {
         delete: operations["deleteLedgerEntry"];
         options?: never;
         head?: never;
-        /** 局部更新；类型不可改，修改金额与分类须与关联退款保持一致 */
+        /**
+         * 局部更新；类型不可改，修改金额与分类须与关联退款保持一致
+         * @description 集合保护开启时，提交 amount、currency_code、payer_member_id、split_mode 或 participant_member_ids 时需要本旅行 members 基线；同值提交也校验，单独修改备注等独立字段不要求该基线。
+         */
         patch: operations["updateLedgerEntry"];
         trace?: never;
     };
@@ -1067,7 +1079,10 @@ export type paths = {
         };
         get?: never;
         put?: never;
-        /** 确认已预览的 Excel，整批事务导入支出；同一批次重试不重复入账 */
+        /**
+         * 确认已预览的 Excel，整批事务导入支出；同一批次重试不重复入账
+         * @description 集合保护开启时，提交预览返回的 members 基线和原 preview_digest，整批在同一事务中校验；保留原文件与基线重试。
+         */
         post: operations["commitLedgerImport"];
         delete?: never;
         options?: never;
@@ -1124,7 +1139,10 @@ export type paths = {
         };
         /** 旅行的有效成员，按 sort_order、id 排序 */
         get: operations["listTripMembers"];
-        /** 整体保存旅行成员：新增、改名、改比例、排序与删除；百分比之和须为 100 */
+        /**
+         * 整体保存旅行成员：新增、改名、改比例、排序与删除；百分比之和须为 100
+         * @description 集合保护开启时，需要本旅行完整 members 基线；整体保存及无变化提交均按事务内最终集合校验。
+         */
         put: operations["saveTripMembers"];
         post?: never;
         delete?: never;
@@ -1232,7 +1250,10 @@ export type paths = {
         delete: operations["deletePhoto"];
         options?: never;
         head?: never;
-        /** 更新Photo */
+        /**
+         * 更新Photo
+         * @description 集合保护开启时，涉及日期、排序或 taken_at_local 的修改按最终旧/新日期检查 photo_day 基线；无变化也不跳过所需基线。
+         */
         patch: operations["updatePhoto"];
         trace?: never;
     };
@@ -2293,6 +2314,8 @@ export type components = {
                     member: string;
                 }[];
             }[];
+            /** @description 与本次预览的旅行、分类和完整成员来自同一一致性读取的 members 基线；提交时仍须校验原 digest，缺省不代表可跳过集合校验。 */
+            scope_revisions?: components["schemas"]["ScopeRevision"][];
             total_amount: string;
             valid_count: number;
             warnings: string[];
@@ -2853,6 +2876,14 @@ export type components = {
             total_duration_seconds: number | null;
             total_leg_count: number;
         };
+        /** @description 与完整读取或原提交事务绑定的集合版本；不是当前资源 data 的推导值。 */
+        ScopeRevision: {
+            /** @enum {string} */
+            kind: "categories" | "members" | "itinerary_day" | "packing_order" | "todo_order" | "photo_day";
+            revision: string;
+            /** @description categories 为账号 UUID；members/packing_order/todo_order 为旅行 UUID；日期集合为旅行 UUID/YYYY-MM-DD。 */
+            scope_id: string;
+        };
         Session: {
             /** @enum {string} */
             client_kind: "web" | "android" | "harmony";
@@ -3260,6 +3291,8 @@ export type components = {
         };
         TripMemberListResponse: {
             data: components["schemas"]["TripMember"][];
+            /** @description 可选的 members 集合基线，必须与本响应全部成员处于同一一致性读取；缺省时不能据此形成集合编辑基线。 */
+            scope_revisions?: components["schemas"]["ScopeRevision"][];
         };
         /**
          * @description 整体保存旅行成员：按数组顺序写 sort_order；未出现的有效成员被删除。
@@ -3422,12 +3455,32 @@ export type components = {
             operation_id: string;
             primary: components["schemas"]["EntityRef"] | null;
             replayed: boolean;
+            /** @description 原提交事务完成后的集合事实，成功重放保持原值；旧收据可缺省，不得从当前 data 推算或以新读取覆盖。 */
+            scope_revisions?: components["schemas"]["ScopeRevision"][];
             warnings: string[];
         };
     };
     responses: {
         /** @description 请求无法解析、含未知字段或游标无效（MALFORMED_REQUEST、INVALID_CURSOR） */
         BadRequest: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["Problem"];
+            };
+        };
+        /** @description 412 COLLECTION_CONFLICT 表示原集合基线已变化，保留输入并核对后再提交；VERSION_CONFLICT 表示实体版本冲突，conflict 提供当前版本与内容。不得自动换集合基线重试。 */
+        CollectionPreconditionFailed: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["Problem"];
+            };
+        };
+        /** @description 428 COLLECTION_BASE_REQUIRED 表示缺少本次操作需要的集合基线；需要实体版本的操作仍可返回 VERSION_REQUIRED（缺 If-Match）。 */
+        CollectionPreconditionRequired: {
             headers: {
                 [name: string]: unknown;
             };
@@ -3539,6 +3592,14 @@ export type components = {
         };
     };
     parameters: {
+        /**
+         * @description JSON 数组字符串，每项严格为 ScopeRevision 的 kind、scope_id、revision 三个字符串字段；不是逗号分隔数组。
+         *     上限 16 KiB UTF-8，仅接受一个请求头值，不允许重复字段、重复集合或其他字段。省略与显式 [] 不同。
+         *     未开启集合保护的账号省略此头保持兼容；开启后按本次业务需要的最终集合检查，缺项返回 428 COLLECTION_BASE_REQUIRED，过期返回 412 COLLECTION_CONFLICT。
+         *     显式提供的前置条件始终校验；非法集合值、重复或无关范围返回 422 INVALID_REFERENCE，畸形 JSON、重复头/字段或超长返回 400 MALFORMED_REQUEST。
+         *     同一操作编号重试必须保留原正文和原集合基线；明确核对并更换基线后使用新操作编号。此头不代表已验证权限或版本。
+         */
+        CollectionGuards: string;
         /** @description 写请求的操作编号（UUID）；相同成功操作重试复用同一键 */
         IdempotencyKey: string;
         /** @description 客户端所基于的资源版本，形如 "7"（带引号） */
@@ -4394,6 +4455,14 @@ export interface operations {
                 "Idempotency-Key": components["parameters"]["IdempotencyKey"];
                 /** @description 客户端所基于的资源版本，形如 "7"（带引号） */
                 "If-Match"?: components["parameters"]["IfMatch"];
+                /**
+                 * @description JSON 数组字符串，每项严格为 ScopeRevision 的 kind、scope_id、revision 三个字符串字段；不是逗号分隔数组。
+                 *     上限 16 KiB UTF-8，仅接受一个请求头值，不允许重复字段、重复集合或其他字段。省略与显式 [] 不同。
+                 *     未开启集合保护的账号省略此头保持兼容；开启后按本次业务需要的最终集合检查，缺项返回 428 COLLECTION_BASE_REQUIRED，过期返回 412 COLLECTION_CONFLICT。
+                 *     显式提供的前置条件始终校验；非法集合值、重复或无关范围返回 422 INVALID_REFERENCE，畸形 JSON、重复头/字段或超长返回 400 MALFORMED_REQUEST。
+                 *     同一操作编号重试必须保留原正文和原集合基线；明确核对并更换基线后使用新操作编号。此头不代表已验证权限或版本。
+                 */
+                "X-Collection-Guards"?: components["parameters"]["CollectionGuards"];
             };
             path: {
                 category_id: string;
@@ -4415,12 +4484,13 @@ export interface operations {
                     "application/json": components["schemas"]["WriteResponse"];
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
             410: components["responses"]["Gone"];
-            412: components["responses"]["PreconditionFailed"];
+            412: components["responses"]["CollectionPreconditionFailed"];
             422: components["responses"]["ValidationFailed"];
-            428: components["responses"]["VersionRequired"];
+            428: components["responses"]["CollectionPreconditionRequired"];
         };
     };
     searchPlaces: {
@@ -5928,6 +5998,14 @@ export interface operations {
             header: {
                 /** @description 写请求的操作编号（UUID）；相同成功操作重试复用同一键 */
                 "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /**
+                 * @description JSON 数组字符串，每项严格为 ScopeRevision 的 kind、scope_id、revision 三个字符串字段；不是逗号分隔数组。
+                 *     上限 16 KiB UTF-8，仅接受一个请求头值，不允许重复字段、重复集合或其他字段。省略与显式 [] 不同。
+                 *     未开启集合保护的账号省略此头保持兼容；开启后按本次业务需要的最终集合检查，缺项返回 428 COLLECTION_BASE_REQUIRED，过期返回 412 COLLECTION_CONFLICT。
+                 *     显式提供的前置条件始终校验；非法集合值、重复或无关范围返回 422 INVALID_REFERENCE，畸形 JSON、重复头/字段或超长返回 400 MALFORMED_REQUEST。
+                 *     同一操作编号重试必须保留原正文和原集合基线；明确核对并更换基线后使用新操作编号。此头不代表已验证权限或版本。
+                 */
+                "X-Collection-Guards"?: components["parameters"]["CollectionGuards"];
             };
             path: {
                 trip_id: string;
@@ -5949,12 +6027,14 @@ export interface operations {
                     "application/json": components["schemas"]["WriteResponse"];
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
             410: components["responses"]["Gone"];
-            412: components["responses"]["PreconditionFailed"];
+            412: components["responses"]["CollectionPreconditionFailed"];
             422: components["responses"]["ValidationFailed"];
+            428: components["responses"]["CollectionPreconditionRequired"];
         };
     };
     listLedgerEntries: {
@@ -6004,6 +6084,14 @@ export interface operations {
             header: {
                 /** @description 写请求的操作编号（UUID）；相同成功操作重试复用同一键 */
                 "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /**
+                 * @description JSON 数组字符串，每项严格为 ScopeRevision 的 kind、scope_id、revision 三个字符串字段；不是逗号分隔数组。
+                 *     上限 16 KiB UTF-8，仅接受一个请求头值，不允许重复字段、重复集合或其他字段。省略与显式 [] 不同。
+                 *     未开启集合保护的账号省略此头保持兼容；开启后按本次业务需要的最终集合检查，缺项返回 428 COLLECTION_BASE_REQUIRED，过期返回 412 COLLECTION_CONFLICT。
+                 *     显式提供的前置条件始终校验；非法集合值、重复或无关范围返回 422 INVALID_REFERENCE，畸形 JSON、重复头/字段或超长返回 400 MALFORMED_REQUEST。
+                 *     同一操作编号重试必须保留原正文和原集合基线；明确核对并更换基线后使用新操作编号。此头不代表已验证权限或版本。
+                 */
+                "X-Collection-Guards"?: components["parameters"]["CollectionGuards"];
             };
             path: {
                 trip_id: string;
@@ -6025,10 +6113,12 @@ export interface operations {
                     "application/json": components["schemas"]["WriteResponse"];
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
             410: components["responses"]["Gone"];
+            412: components["responses"]["CollectionPreconditionFailed"];
             /** @description 校验失败（VALIDATION_FAILED）、币种与旅行不符（CURRENCY_MISMATCH）、退款超额（REFUND_AMOUNT_EXCEEDED）或分类/原支出/票据无效（INVALID_REFERENCE） */
             422: {
                 headers: {
@@ -6038,6 +6128,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
+            428: components["responses"]["CollectionPreconditionRequired"];
         };
     };
     getLedgerEntry: {
@@ -6108,6 +6199,14 @@ export interface operations {
                 "Idempotency-Key": components["parameters"]["IdempotencyKey"];
                 /** @description 客户端所基于的资源版本，形如 "7"（带引号） */
                 "If-Match"?: components["parameters"]["IfMatch"];
+                /**
+                 * @description JSON 数组字符串，每项严格为 ScopeRevision 的 kind、scope_id、revision 三个字符串字段；不是逗号分隔数组。
+                 *     上限 16 KiB UTF-8，仅接受一个请求头值，不允许重复字段、重复集合或其他字段。省略与显式 [] 不同。
+                 *     未开启集合保护的账号省略此头保持兼容；开启后按本次业务需要的最终集合检查，缺项返回 428 COLLECTION_BASE_REQUIRED，过期返回 412 COLLECTION_CONFLICT。
+                 *     显式提供的前置条件始终校验；非法集合值、重复或无关范围返回 422 INVALID_REFERENCE，畸形 JSON、重复头/字段或超长返回 400 MALFORMED_REQUEST。
+                 *     同一操作编号重试必须保留原正文和原集合基线；明确核对并更换基线后使用新操作编号。此头不代表已验证权限或版本。
+                 */
+                "X-Collection-Guards"?: components["parameters"]["CollectionGuards"];
             };
             path: {
                 entry_id: string;
@@ -6130,10 +6229,11 @@ export interface operations {
                     "application/json": components["schemas"]["WriteResponse"];
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
             410: components["responses"]["Gone"];
-            412: components["responses"]["PreconditionFailed"];
+            412: components["responses"]["CollectionPreconditionFailed"];
             /** @description 校验失败（VALIDATION_FAILED）、币种与旅行不符（CURRENCY_MISMATCH）、退款超额（REFUND_AMOUNT_EXCEEDED）或引用无效（INVALID_REFERENCE） */
             422: {
                 headers: {
@@ -6143,7 +6243,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            428: components["responses"]["VersionRequired"];
+            428: components["responses"]["CollectionPreconditionRequired"];
         };
     };
     commitLedgerImport: {
@@ -6155,6 +6255,14 @@ export interface operations {
             header: {
                 /** @description 写请求的操作编号（UUID）；相同成功操作重试复用同一键 */
                 "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /**
+                 * @description JSON 数组字符串，每项严格为 ScopeRevision 的 kind、scope_id、revision 三个字符串字段；不是逗号分隔数组。
+                 *     上限 16 KiB UTF-8，仅接受一个请求头值，不允许重复字段、重复集合或其他字段。省略与显式 [] 不同。
+                 *     未开启集合保护的账号省略此头保持兼容；开启后按本次业务需要的最终集合检查，缺项返回 428 COLLECTION_BASE_REQUIRED，过期返回 412 COLLECTION_CONFLICT。
+                 *     显式提供的前置条件始终校验；非法集合值、重复或无关范围返回 422 INVALID_REFERENCE，畸形 JSON、重复头/字段或超长返回 400 MALFORMED_REQUEST。
+                 *     同一操作编号重试必须保留原正文和原集合基线；明确核对并更换基线后使用新操作编号。此头不代表已验证权限或版本。
+                 */
+                "X-Collection-Guards"?: components["parameters"]["CollectionGuards"];
             };
             path: {
                 trip_id: string;
@@ -6181,7 +6289,9 @@ export interface operations {
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
             410: components["responses"]["Gone"];
+            412: components["responses"]["CollectionPreconditionFailed"];
             422: components["responses"]["ValidationFailed"];
+            428: components["responses"]["CollectionPreconditionRequired"];
         };
     };
     previewLedgerImport: {
@@ -6274,6 +6384,14 @@ export interface operations {
             header: {
                 /** @description 写请求的操作编号（UUID）；相同成功操作重试复用同一键 */
                 "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /**
+                 * @description JSON 数组字符串，每项严格为 ScopeRevision 的 kind、scope_id、revision 三个字符串字段；不是逗号分隔数组。
+                 *     上限 16 KiB UTF-8，仅接受一个请求头值，不允许重复字段、重复集合或其他字段。省略与显式 [] 不同。
+                 *     未开启集合保护的账号省略此头保持兼容；开启后按本次业务需要的最终集合检查，缺项返回 428 COLLECTION_BASE_REQUIRED，过期返回 412 COLLECTION_CONFLICT。
+                 *     显式提供的前置条件始终校验；非法集合值、重复或无关范围返回 422 INVALID_REFERENCE，畸形 JSON、重复头/字段或超长返回 400 MALFORMED_REQUEST。
+                 *     同一操作编号重试必须保留原正文和原集合基线；明确核对并更换基线后使用新操作编号。此头不代表已验证权限或版本。
+                 */
+                "X-Collection-Guards"?: components["parameters"]["CollectionGuards"];
             };
             path: {
                 trip_id: string;
@@ -6295,11 +6413,14 @@ export interface operations {
                     "application/json": components["schemas"]["WriteResponse"];
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
             410: components["responses"]["Gone"];
+            412: components["responses"]["CollectionPreconditionFailed"];
             422: components["responses"]["ValidationFailed"];
+            428: components["responses"]["CollectionPreconditionRequired"];
         };
     };
     listPackingItems: {
@@ -6656,6 +6777,14 @@ export interface operations {
                 "Idempotency-Key": components["parameters"]["IdempotencyKey"];
                 /** @description 客户端所基于的资源版本，形如 "7"（带引号） */
                 "If-Match"?: components["parameters"]["IfMatch"];
+                /**
+                 * @description JSON 数组字符串，每项严格为 ScopeRevision 的 kind、scope_id、revision 三个字符串字段；不是逗号分隔数组。
+                 *     上限 16 KiB UTF-8，仅接受一个请求头值，不允许重复字段、重复集合或其他字段。省略与显式 [] 不同。
+                 *     未开启集合保护的账号省略此头保持兼容；开启后按本次业务需要的最终集合检查，缺项返回 428 COLLECTION_BASE_REQUIRED，过期返回 412 COLLECTION_CONFLICT。
+                 *     显式提供的前置条件始终校验；非法集合值、重复或无关范围返回 422 INVALID_REFERENCE，畸形 JSON、重复头/字段或超长返回 400 MALFORMED_REQUEST。
+                 *     同一操作编号重试必须保留原正文和原集合基线；明确核对并更换基线后使用新操作编号。此头不代表已验证权限或版本。
+                 */
+                "X-Collection-Guards"?: components["parameters"]["CollectionGuards"];
             };
             path: {
                 photo_id: string;
@@ -6684,9 +6813,9 @@ export interface operations {
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
             410: components["responses"]["Gone"];
-            412: components["responses"]["PreconditionFailed"];
+            412: components["responses"]["CollectionPreconditionFailed"];
             422: components["responses"]["ValidationFailed"];
-            428: components["responses"]["VersionRequired"];
+            428: components["responses"]["CollectionPreconditionRequired"];
             503: components["responses"]["DependencyUnavailable"];
         };
     };

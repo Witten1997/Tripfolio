@@ -88,8 +88,10 @@ collection:
     tags: [finance]
     operationId: createLedgerEntry
     summary: 记录支出或退款；校验币种、分类有效与原支出关系，第一条有效账目锁定旅行币种
+    description: 集合保护开启时，创建账目需要本旅行 members 基线。
     parameters:
       - $ref: ../openapi.yaml#/components/parameters/IdempotencyKey
+      - $ref: ../openapi.yaml#/components/parameters/CollectionGuards
     requestBody:
       required: true
       content:
@@ -103,6 +105,8 @@ collection:
           application/json:
             schema:
               $ref: ../openapi.yaml#/components/schemas/WriteResponse
+      '400':
+        $ref: ../openapi.yaml#/components/responses/BadRequest
       '401':
         $ref: ../openapi.yaml#/components/responses/Unauthorized
       '404':
@@ -111,12 +115,16 @@ collection:
         $ref: ../openapi.yaml#/components/responses/Conflict
       '410':
         $ref: ../openapi.yaml#/components/responses/Gone
+      '412':
+        $ref: ../openapi.yaml#/components/responses/CollectionPreconditionFailed
       '422':
         description: 校验失败（VALIDATION_FAILED）、币种与旅行不符（CURRENCY_MISMATCH）、退款超额（REFUND_AMOUNT_EXCEEDED）或分类/原支出/票据无效（INVALID_REFERENCE）
         content:
           application/problem+json:
             schema:
               $ref: ../openapi.yaml#/components/schemas/Problem
+      '428':
+        $ref: ../openapi.yaml#/components/responses/CollectionPreconditionRequired
 
 item:
   parameters:
@@ -157,8 +165,10 @@ item:
     tags: [finance]
     operationId: updateLedgerEntry
     summary: 局部更新；类型不可改，修改金额与分类须与关联退款保持一致
+    description: 集合保护开启时，提交 amount、currency_code、payer_member_id、split_mode 或 participant_member_ids 时需要本旅行 members 基线；同值提交也校验，单独修改备注等独立字段不要求该基线。
     parameters:
       - $ref: ../openapi.yaml#/components/parameters/IdempotencyKey
+      - $ref: ../openapi.yaml#/components/parameters/CollectionGuards
       - $ref: ../openapi.yaml#/components/parameters/IfMatch
     requestBody:
       required: true
@@ -173,6 +183,8 @@ item:
           application/json:
             schema:
               $ref: ../openapi.yaml#/components/schemas/WriteResponse
+      '400':
+        $ref: ../openapi.yaml#/components/responses/BadRequest
       '401':
         $ref: ../openapi.yaml#/components/responses/Unauthorized
       '404':
@@ -180,7 +192,7 @@ item:
       '410':
         $ref: ../openapi.yaml#/components/responses/Gone
       '412':
-        $ref: ../openapi.yaml#/components/responses/PreconditionFailed
+        $ref: ../openapi.yaml#/components/responses/CollectionPreconditionFailed
       '422':
         description: 校验失败（VALIDATION_FAILED）、币种与旅行不符（CURRENCY_MISMATCH）、退款超额（REFUND_AMOUNT_EXCEEDED）或引用无效（INVALID_REFERENCE）
         content:
@@ -188,7 +200,7 @@ item:
             schema:
               $ref: ../openapi.yaml#/components/schemas/Problem
       '428':
-        $ref: ../openapi.yaml#/components/responses/VersionRequired
+        $ref: ../openapi.yaml#/components/responses/CollectionPreconditionRequired
   delete:
     tags: [finance]
     operationId: deleteLedgerEntry

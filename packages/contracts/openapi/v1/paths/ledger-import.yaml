@@ -79,8 +79,10 @@ commit:
     tags: [finance]
     operationId: commitLedgerImport
     summary: 确认已预览的 Excel，整批事务导入支出；同一批次重试不重复入账
+    description: 集合保护开启时，提交预览返回的 members 基线和原 preview_digest，整批在同一事务中校验；保留原文件与基线重试。
     parameters:
       - $ref: ../openapi.yaml#/components/parameters/IdempotencyKey
+      - $ref: ../openapi.yaml#/components/parameters/CollectionGuards
       - name: preview_digest
         in: query
         required: true
@@ -113,5 +115,9 @@ commit:
         $ref: ../openapi.yaml#/components/responses/Conflict
       '410':
         $ref: ../openapi.yaml#/components/responses/Gone
+      '412':
+        $ref: ../openapi.yaml#/components/responses/CollectionPreconditionFailed
       '422':
         $ref: ../openapi.yaml#/components/responses/ValidationFailed
+      '428':
+        $ref: ../openapi.yaml#/components/responses/CollectionPreconditionRequired
