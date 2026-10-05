@@ -22,8 +22,8 @@ import (
 
 func TestHTTPSyncReadProtocol(t *testing.T) {
 	u, err := url.Parse(testDatabaseURL(t))
-	if err != nil || u.Path != "/h07_sync_test" {
-		t.Fatal("sync verification requires the dedicated h07_sync_test database")
+	if err != nil || (u.Path != "/h07_sync_test" && u.Path != "/tripfolio_test") {
+		t.Fatal("sync verification requires h07_sync_test or the CI tripfolio_test database")
 	}
 	f := newAPIFixture(t)
 	ctx := context.Background()
