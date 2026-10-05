@@ -31,6 +31,8 @@ beforeEach(() => {
 })
 
 const tripId = '10000000-0000-4000-8000-000000000001'
+const guards = [{ kind: 'members', scope_id: tripId, revision: `sha256:${'a'.repeat(64)}` }]
+const nextGuards = [{ ...guards[0]!, revision: `sha256:${'b'.repeat(64)}` }]
 const self = {
   id: '40000000-0000-4000-8000-000000000001',
   trip_id: tripId,
@@ -70,7 +72,7 @@ describe('useTripMembers', () => {
     const requests: Request[] = []
     transport.mockImplementation(async (request) => {
       requests.push(request.clone())
-      if (request.method === 'GET') return json(200, { data: [self] })
+      if (request.method === 'GET') return json(200, { data: [self], scope_revisions: guards })
       return json(200, { data: receipt(null) })
     })
     const m = useTripMembers(tripId)
@@ -103,7 +105,7 @@ describe('useTripMembers', () => {
   })
 
   it('「我」不能删除，可以上下移动；名称重复与非法百分比阻止保存', async () => {
-    transport.mockResolvedValue(json(200, { data: [self] }))
+    transport.mockResolvedValue(json(200, { data: [self], scope_revisions: guards }))
     const m = useTripMembers(tripId)
     await m.open()
     m.remove(0)
@@ -130,7 +132,7 @@ describe('useTripMembers', () => {
     }
     transport.mockImplementation(async (request) =>
       request.method === 'GET'
-        ? json(200, { data: [self, friend] })
+        ? json(200, { data: [self, friend], scope_revisions: guards })
         : problem('MEMBER_IN_USE', 409, { detail: '成员「小王」仍被 2 条账目引用，不能删除' }),
     )
     const m = useTripMembers(tripId)
@@ -140,5 +142,184 @@ describe('useTripMembers', () => {
     expect(await m.save()).toBe(false)
     expect(m.error.value).toContain('小王')
     expect(m.rows.length).toBe(1)
+  })
+})
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((done) => {
+    resolve = done
+  })
+  return { promise, resolve }
+}
+
+describe('成员基线和恢复', () => {
+  it('没有基线时不允许编辑或无头保存', async () => {
+    transport.mockResolvedValue(json(200, { data: [self] }))
+    const m = useTripMembers(tripId)
+    await m.open()
+    expect(m.loadError.value).toContain('基线')
+    m.add()
+    expect(m.rows).toHaveLength(0)
+    expect(m.canSave.value).toBe(false)
+    expect(await m.save()).toBe(false)
+    expect(transport).toHaveBeenCalledTimes(1)
+  })
+
+  it.each(['COLLECTION_CONFLICT', 'COLLECTION_BASE_REQUIRED'])(
+    '%s保留输入和原基线，显式确认才采用候选',
+    async (code) => {
+      const puts: Request[] = []
+      let latest = false
+      transport.mockImplementation(async (request) => {
+        if (request.method === 'GET')
+          return json(200, {
+            data: [{ ...self, name: latest ? '远端' : '我' }],
+            scope_revisions: latest ? nextGuards : guards,
+          })
+        puts.push(request.clone())
+        if (puts.length === 1) return problem(code, code === 'COLLECTION_CONFLICT' ? 412 : 428)
+        return json(200, { data: receipt(null) })
+      })
+      const m = useTripMembers(tripId)
+      await m.open()
+      m.rows[0]!.name = '我的输入'
+      expect(await m.save()).toBe(false)
+      expect(m.rows[0]!.name).toBe('我的输入')
+      expect(m.needsReview.value).toBe(true)
+      expect(m.baseline.value!.guards).toEqual(guards)
+      expect(transport).toHaveBeenCalledTimes(2)
+      expect(await m.save()).toBe(false)
+      latest = true
+      await m.loadLatest()
+      expect(m.latest.value!.members[0]!.name).toBe('远端')
+      expect(m.rows[0]!.name).toBe('我的输入')
+      expect(m.baseline.value!.guards).toEqual(guards)
+      m.adoptLatest()
+      expect(m.rows[0]!.name).toBe('远端')
+      expect(m.dirty.value).toBe(false)
+      m.rows[0]!.name = '核对后修改'
+      expect(await m.save()).toBe(true)
+      expect(puts[0]!.headers.get('X-Collection-Guards')).toBe(JSON.stringify(guards))
+      expect(puts[1]!.headers.get('X-Collection-Guards')).toBe(JSON.stringify(nextGuards))
+      expect(puts[1]!.headers.get('Idempotency-Key')).not.toBe(
+        puts[0]!.headers.get('Idempotency-Key'),
+      )
+    },
+  )
+
+  it('未知结果关闭重开仍只重试原body、guard、key；禁用修改和重新读取', async () => {
+    const puts: Request[] = []
+    transport.mockImplementation(async (request) => {
+      if (request.method === 'GET') return json(200, { data: [self], scope_revisions: guards })
+      puts.push(request.clone())
+      if (puts.length === 1) throw new Error('offline')
+      return json(200, { data: receipt(null, [], true) })
+    })
+    const m = useTripMembers(tripId)
+    await m.open()
+    m.rows[0]!.name = '提交内容'
+    expect(await m.save()).toBe(false)
+    expect(m.uncertain.value).toBe(true)
+    expect(m.editingLocked.value).toBe(true)
+    m.add()
+    m.remove(0)
+    m.move(0, 1)
+    m.equalize()
+    await m.load()
+    await m.loadLatest()
+    m.close()
+    await m.open()
+    expect(transport).toHaveBeenCalledTimes(2)
+    // Even an external mutation cannot alter the prepared request.
+    m.rows[0]!.name = '不能进入重试'
+    expect(await m.save()).toBe(true)
+    expect(await puts[1]!.json()).toEqual(await puts[0]!.json())
+    expect(puts[1]!.headers.get('Idempotency-Key')).toBe(puts[0]!.headers.get('Idempotency-Key'))
+    expect(puts[1]!.headers.get('X-Collection-Guards')).toBe(
+      puts[0]!.headers.get('X-Collection-Guards'),
+    )
+    expect(m.uncertain.value).toBe(false)
+  })
+
+  it('已保存但GET失败不会再写，也不会变为未知状态', async () => {
+    let gets = 0
+    const put = vi.fn()
+    transport.mockImplementation(async (request) => {
+      if (request.method === 'PUT') {
+        put()
+        return json(200, { data: receipt(null) })
+      }
+      if (++gets > 1) throw new Error('refresh offline')
+      return json(200, { data: [self], scope_revisions: guards })
+    })
+    const m = useTripMembers(tripId)
+    await m.open()
+    m.rows[0]!.name = '已提交'
+    expect(await m.save()).toBe(true)
+    expect(m.feedback.value).toContain('已保存')
+    expect(m.loadError.value).toBeTruthy()
+    expect(m.uncertain.value).toBe(false)
+    expect(m.baseline.value).toBeNull()
+    expect(m.rows[0]!.name).toBe('已提交')
+    expect(m.dirty.value).toBe(false)
+    expect(await m.save()).toBe(false)
+    expect(put).toHaveBeenCalledTimes(1)
+  })
+
+  it('核对加载失败保留姓名、比例、排序及原guard', async () => {
+    transport
+      .mockResolvedValueOnce(json(200, { data: [self], scope_revisions: guards }))
+      .mockRejectedValue(new Error('offline'))
+    const m = useTripMembers(tripId)
+    await m.open()
+    m.add()
+    m.rows[1]!.name = '朋友'
+    m.equalize()
+    m.move(1, -1)
+    const before = JSON.stringify(m.rows)
+    await m.load()
+    expect(m.latestError.value).toBeTruthy()
+    expect(JSON.stringify(m.rows)).toBe(before)
+    expect(m.baseline.value!.guards).toEqual(guards)
+  })
+
+  it('关闭重开的迟到GET不能覆盖新一代内容', async () => {
+    const late = deferred<Response>()
+    transport
+      .mockReturnValueOnce(late.promise)
+      .mockResolvedValue(
+        json(200, { data: [{ ...self, name: '新一代' }], scope_revisions: nextGuards }),
+      )
+    const m = useTripMembers(tripId)
+    const old = m.open()
+    m.close()
+    await m.open()
+    late.resolve(json(200, { data: [self], scope_revisions: guards }))
+    await old
+    expect(m.rows[0]!.name).toBe('新一代')
+    expect(m.baseline.value!.guards).toEqual(nextGuards)
+  })
+
+  it('保存进行中不能关闭、重开、再次提交或让load覆盖输入', async () => {
+    const write = deferred<Response>()
+    transport.mockImplementation(async (request) =>
+      request.method === 'PUT'
+        ? write.promise
+        : json(200, { data: [self], scope_revisions: guards }),
+    )
+    const m = useTripMembers(tripId)
+    await m.open()
+    m.rows[0]!.name = '提交'
+    const saving = m.save()
+    m.close()
+    await m.open()
+    await m.load()
+    await m.loadLatest()
+    expect(m.opened.value).toBe(true)
+    expect(await m.save()).toBe(false)
+    expect(transport).toHaveBeenCalledTimes(2)
+    write.resolve(json(200, { data: receipt(null) }))
+    expect(await saving).toBe(true)
   })
 })

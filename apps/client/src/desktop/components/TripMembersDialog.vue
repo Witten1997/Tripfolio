@@ -14,6 +14,12 @@ const {
   opened,
   loading,
   saving,
+  checking,
+  uncertain,
+  needsReview,
+  editingLocked,
+  latest,
+  latestError,
   loadError,
   error,
   feedback,
@@ -27,24 +33,50 @@ const {
 
 const sortableRows = computed({
   get: () => rows,
-  set: (value) => rows.splice(0, rows.length, ...value),
+  set: (value) => {
+    if (!editingLocked.value) rows.splice(0, rows.length, ...value)
+  },
 })
 
 async function requestClose(done?: () => void) {
   if (saving.value) return
-  if (dirty.value) {
+  if (dirty.value || uncertain.value) {
     try {
-      await ElMessageBox.confirm('尚有未保存的成员改动，关闭后将放弃这些改动。', '关闭成员管理', {
-        confirmButtonText: '放弃改动并关闭',
-        cancelButtonText: '继续编辑',
-        type: 'warning',
-      })
+      await ElMessageBox.confirm(
+        uncertain.value
+          ? '保存结果尚未确认。关闭后会保留本次提交，重新打开可原样重试。'
+          : '尚有未保存的成员改动，关闭后将放弃这些改动。',
+        '关闭成员管理',
+        {
+          confirmButtonText: uncertain.value ? '保留提交并关闭' : '放弃改动并关闭',
+          cancelButtonText: '继续编辑',
+          type: 'warning',
+        },
+      )
     } catch {
       return
     }
   }
   manager.close()
   done?.()
+}
+
+async function adoptLatest() {
+  if (!latest.value || checking.value || saving.value || uncertain.value) return
+  try {
+    await ElMessageBox.confirm(
+      '当前姓名、比例和顺序将被最新成员替换，未保存的改动将被放弃。',
+      '采用最新成员',
+      {
+        confirmButtonText: '放弃改动并采用',
+        cancelButtonText: '保留当前输入',
+        type: 'warning',
+      },
+    )
+    manager.adoptLatest()
+  } catch {
+    /* 保留当前草稿和原基线 */
+  }
 }
 
 async function save() {
@@ -95,8 +127,33 @@ defineExpose({ open: manager.open })
       show-icon
       class="members-alert"
     >
-      <ElButton size="small" @click="manager.load">重新加载</ElButton>
+      <ElButton
+        size="small"
+        :disabled="saving || uncertain || loading || checking"
+        @click="manager.load"
+        >重新加载</ElButton
+      >
     </ElAlert>
+    <div v-if="needsReview || latest || latestError" class="members-alert" aria-live="polite">
+      <p>当前输入已保留。请查看最新成员，核对后决定是否放弃当前改动并采用。</p>
+      <ElButton
+        :loading="checking"
+        :disabled="saving || uncertain || loading"
+        @click="manager.loadLatest"
+        >查看最新成员</ElButton
+      >
+      <ElAlert v-if="latestError" :title="latestError" type="error" :closable="false" />
+      <section v-if="latest" aria-label="最新成员">
+        <ol>
+          <li v-for="member in latest.members" :key="member.id">
+            {{ member.name }} · {{ member.share_percent }}%
+          </li>
+        </ol>
+        <ElButton :disabled="saving || uncertain || checking" @click="adoptLatest"
+          >采用最新成员</ElButton
+        >
+      </section>
+    </div>
     <ElSkeleton v-if="loading && !rows.length" :rows="3" animated />
     <template v-else>
       <div class="members-toolbar">
@@ -111,13 +168,13 @@ defineExpose({ open: manager.open })
           >
         </span>
         <div class="tf-actions">
-          <ElButton size="small" :disabled="saving || !rows.length" @click="manager.equalize"
+          <ElButton size="small" :disabled="editingLocked || !rows.length" @click="manager.equalize"
             >平均分配</ElButton
           >
           <ElButton
             size="small"
             type="primary"
-            :disabled="saving || rows.length >= MAX_TRIP_MEMBERS"
+            :disabled="editingLocked || rows.length >= MAX_TRIP_MEMBERS"
             @click="manager.add"
             >添加成员</ElButton
           >
@@ -133,14 +190,14 @@ defineExpose({ open: manager.open })
         ghost-class="member-row--ghost"
         :animation="150"
         :force-fallback="true"
-        :disabled="saving || loading"
+        :disabled="editingLocked"
       >
         <li v-for="(row, index) in rows" :key="row.id" class="member-row">
           <button
             type="button"
             class="member-drag-handle"
             :aria-label="`拖动 ${row.name || '未命名成员'}，或按上下方向键调整顺序`"
-            :disabled="saving || loading"
+            :disabled="editingLocked"
             @keydown.up.prevent="manager.move(index, -1)"
             @keydown.down.prevent="manager.move(index, 1)"
           >
@@ -152,7 +209,7 @@ defineExpose({ open: manager.open })
               maxlength="30"
               placeholder="成员名称"
               :aria-label="`成员名称 ${index + 1}`"
-              :disabled="saving"
+              :disabled="editingLocked"
             />
             <span v-if="rowError(index, 'name')" class="member-error">{{
               rowError(index, 'name')
@@ -164,7 +221,7 @@ defineExpose({ open: manager.open })
               inputmode="decimal"
               placeholder="0"
               :aria-label="`分摊百分比 ${index + 1}`"
-              :disabled="saving"
+              :disabled="editingLocked"
             >
               <template #suffix>%</template>
             </ElInput>
@@ -179,14 +236,16 @@ defineExpose({ open: manager.open })
             :label="`删除成员：${row.name || '未命名成员'}`"
             text
             type="danger"
-            :disabled="saving"
+            :disabled="editingLocked"
             @click="manager.remove(index)"
           />
         </li>
       </VueDraggable>
     </template>
     <template #footer>
-      <ElButton type="primary" :loading="saving" :disabled="!canSave" @click="save">保存</ElButton>
+      <ElButton type="primary" :loading="saving" :disabled="!canSave" @click="save">{{
+        uncertain ? '重试确认' : '保存'
+      }}</ElButton>
     </template>
   </ResponsiveEditorShell>
 </template>
