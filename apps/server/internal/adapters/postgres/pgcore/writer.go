@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -48,11 +50,12 @@ type TxScope struct {
 	AccountID uuid.UUID
 	Now       time.Time
 
-	changes  []write.Change
-	warnings []string
-	primary  *write.EntityRef
-	affected []write.EntityRef
-	jobs     []write.JobArgs
+	changes   []write.Change
+	warnings  []string
+	primary   *write.EntityRef
+	affected  []write.EntityRef
+	jobs      []write.JobArgs
+	revisions []write.ScopeRevision
 }
 
 var _ write.Scope = (*TxScope)(nil)
@@ -177,6 +180,10 @@ func encodeChanges(changes []write.Change) ([]byte, error) {
 
 // Run 执行一次写事务。fn 在账号锁内执行业务写入；reload 读取 primary 的当前资源填充 Data。
 func (w *Writer) Run(ctx context.Context, req write.Request, fn func(ctx context.Context, scope *TxScope) error, reload func(ctx context.Context, scope *TxScope) (any, error)) (write.Result, error) {
+	return w.run(ctx, req, nil, fn, reload)
+}
+
+func (w *Writer) run(ctx context.Context, req write.Request, syncOptions *SyncWriteOptions, fn func(context.Context, *TxScope) error, reload func(context.Context, *TxScope) (any, error)) (write.Result, error) {
 	started := time.Now()
 	conn, err := w.pool.Acquire(ctx)
 	write.RecordTiming(ctx, "pool_acquire", time.Since(started))
@@ -242,6 +249,11 @@ func (w *Writer) Run(ctx context.Context, req write.Request, fn func(ctx context
 	}
 	now := w.clock.Now()
 	scope := &TxScope{Tx: tx, Queries: dbgen.New(tx), AccountID: req.AccountID, Now: now}
+	if syncOptions != nil {
+		if err := syncOptions.authorize(ctx, scope); err != nil {
+			return write.Result{}, err
+		}
+	}
 
 	// 幂等：已成功的相同操作直接重放
 	if receiptFound {
@@ -251,6 +263,9 @@ func (w *Writer) Run(ctx context.Context, req write.Request, fn func(ctx context
 		var result write.Result
 		if err := json.Unmarshal(receipt.Result, &result); err != nil {
 			return write.Result{}, apperr.Internal(err)
+		}
+		if syncOptions != nil && (result.Sync == nil || result.Sync.Epoch != syncOptions.Epoch) {
+			return write.Result{}, apperr.Conflicted("SYNC_RECEIPT_UNAVAILABLE", "原操作缺少可验证的同步收据，请核对原结果")
 		}
 		result.Replayed = true
 		if reload != nil {
@@ -291,6 +306,20 @@ func (w *Writer) Run(ctx context.Context, req write.Request, fn func(ctx context
 	}
 	if result.Warnings == nil {
 		result.Warnings = []string{}
+	}
+	if int64(len(scope.changes)) > math.MaxInt64-lock.LastSeq {
+		return write.Result{}, apperr.New(503, "DEPENDENCY_UNAVAILABLE", "同步序号已达上限")
+	}
+	if syncOptions != nil {
+		facts := &write.SyncFacts{Epoch: syncOptions.Epoch, References: result.Affected, ScopeRevisions: scope.revisions}
+		if facts.ScopeRevisions == nil {
+			facts.ScopeRevisions = []write.ScopeRevision{}
+		}
+		if len(scope.changes) > 0 {
+			seq := strconv.FormatInt(lock.LastSeq+int64(len(scope.changes)), 10)
+			facts.CommitSeq = &seq
+		}
+		result.Sync = facts
 	}
 	stored, err := json.Marshal(result)
 	if err != nil {

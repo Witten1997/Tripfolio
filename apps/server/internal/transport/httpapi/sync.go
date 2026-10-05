@@ -17,6 +17,27 @@ func syncProtocol(value *string) string {
 	return *value
 }
 
+func (h *Handler) PushSync(ctx context.Context, req generated.PushSyncRequestObject) (generated.PushSyncResponseObject, error) {
+	a, err := mustActor(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err = syncBearer(ctx); err != nil {
+		return nil, err
+	}
+	if h.sync == nil {
+		return nil, notWired()
+	}
+	if req.Body == nil {
+		return nil, apperr.BadRequest("MALFORMED_REQUEST", "缺少请求正文")
+	}
+	result, err := h.sync.Push(ctx, a, syncProtocol(req.Params.XTripfolioSyncVersion), *req.Body)
+	if err != nil {
+		return nil, err
+	}
+	return generated.PushSync200JSONResponse(result), nil
+}
+
 func (h *Handler) CreateSyncSnapshot(ctx context.Context, req generated.CreateSyncSnapshotRequestObject) (generated.CreateSyncSnapshotResponseObject, error) {
 	a, err := mustActor(ctx)
 	if err != nil {

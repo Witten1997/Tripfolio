@@ -46,6 +46,9 @@ security:
 paths:
   /sync/status:
     $ref: ./paths/sync.yaml#/status
+
+  /sync/push:
+    $ref: ./paths/sync.yaml#/push
   /sync/changes:
     $ref: ./paths/sync.yaml#/changes
   /sync/snapshots:

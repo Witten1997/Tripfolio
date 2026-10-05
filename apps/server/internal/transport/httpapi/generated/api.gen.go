@@ -719,6 +719,207 @@ func (e SyncChangeSchemaVersion) Valid() bool {
 	}
 }
 
+// Defines values for SyncOperationEntityType.
+const (
+	SyncOperationEntityTypeAsset           SyncOperationEntityType = "asset"
+	SyncOperationEntityTypeDocument        SyncOperationEntityType = "document"
+	SyncOperationEntityTypeExpenseCategory SyncOperationEntityType = "expense_category"
+	SyncOperationEntityTypeItineraryItem   SyncOperationEntityType = "itinerary_item"
+	SyncOperationEntityTypeLedgerEntry     SyncOperationEntityType = "ledger_entry"
+	SyncOperationEntityTypePackingItem     SyncOperationEntityType = "packing_item"
+	SyncOperationEntityTypePhoto           SyncOperationEntityType = "photo"
+	SyncOperationEntityTypeReservation     SyncOperationEntityType = "reservation"
+	SyncOperationEntityTypeTodo            SyncOperationEntityType = "todo"
+	SyncOperationEntityTypeTrip            SyncOperationEntityType = "trip"
+	SyncOperationEntityTypeTripMember      SyncOperationEntityType = "trip_member"
+)
+
+// Valid indicates whether the value is a known member of the SyncOperationEntityType enum.
+func (e SyncOperationEntityType) Valid() bool {
+	switch e {
+	case SyncOperationEntityTypeAsset:
+		return true
+	case SyncOperationEntityTypeDocument:
+		return true
+	case SyncOperationEntityTypeExpenseCategory:
+		return true
+	case SyncOperationEntityTypeItineraryItem:
+		return true
+	case SyncOperationEntityTypeLedgerEntry:
+		return true
+	case SyncOperationEntityTypePackingItem:
+		return true
+	case SyncOperationEntityTypePhoto:
+		return true
+	case SyncOperationEntityTypeReservation:
+		return true
+	case SyncOperationEntityTypeTodo:
+		return true
+	case SyncOperationEntityTypeTrip:
+		return true
+	case SyncOperationEntityTypeTripMember:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SyncOperationGuardsKind.
+const (
+	Categories   SyncOperationGuardsKind = "categories"
+	ItineraryDay SyncOperationGuardsKind = "itinerary_day"
+	Members      SyncOperationGuardsKind = "members"
+	PackingOrder SyncOperationGuardsKind = "packing_order"
+	PhotoDay     SyncOperationGuardsKind = "photo_day"
+	TodoOrder    SyncOperationGuardsKind = "todo_order"
+)
+
+// Valid indicates whether the value is a known member of the SyncOperationGuardsKind enum.
+func (e SyncOperationGuardsKind) Valid() bool {
+	switch e {
+	case Categories:
+		return true
+	case ItineraryDay:
+		return true
+	case Members:
+		return true
+	case PackingOrder:
+		return true
+	case PhotoDay:
+		return true
+	case TodoOrder:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SyncOperationType.
+const (
+	SyncOperationTypeAssetRegister          SyncOperationType = "asset.register"
+	SyncOperationTypeDocumentCreate         SyncOperationType = "document.create"
+	SyncOperationTypeDocumentDelete         SyncOperationType = "document.delete"
+	SyncOperationTypeDocumentUpdate         SyncOperationType = "document.update"
+	SyncOperationTypeExpenseCategoryCreate  SyncOperationType = "expense_category.create"
+	SyncOperationTypeExpenseCategoryDelete  SyncOperationType = "expense_category.delete"
+	SyncOperationTypeExpenseCategoryReorder SyncOperationType = "expense_category.reorder"
+	SyncOperationTypeExpenseCategoryUpdate  SyncOperationType = "expense_category.update"
+	SyncOperationTypeItineraryItemCreate    SyncOperationType = "itinerary_item.create"
+	SyncOperationTypeItineraryItemDelete    SyncOperationType = "itinerary_item.delete"
+	SyncOperationTypeItineraryItemReorder   SyncOperationType = "itinerary_item.reorder"
+	SyncOperationTypeItineraryItemUpdate    SyncOperationType = "itinerary_item.update"
+	SyncOperationTypeLedgerEntryCreate      SyncOperationType = "ledger_entry.create"
+	SyncOperationTypeLedgerEntryDelete      SyncOperationType = "ledger_entry.delete"
+	SyncOperationTypeLedgerEntryUpdate      SyncOperationType = "ledger_entry.update"
+	SyncOperationTypePackingItemCreate      SyncOperationType = "packing_item.create"
+	SyncOperationTypePackingItemDelete      SyncOperationType = "packing_item.delete"
+	SyncOperationTypePackingItemReorder     SyncOperationType = "packing_item.reorder"
+	SyncOperationTypePackingItemSetStatus   SyncOperationType = "packing_item.set_status"
+	SyncOperationTypePackingItemUpdate      SyncOperationType = "packing_item.update"
+	SyncOperationTypePhotoCreate            SyncOperationType = "photo.create"
+	SyncOperationTypePhotoDelete            SyncOperationType = "photo.delete"
+	SyncOperationTypePhotoReorder           SyncOperationType = "photo.reorder"
+	SyncOperationTypePhotoUpdate            SyncOperationType = "photo.update"
+	SyncOperationTypeReservationCreate      SyncOperationType = "reservation.create"
+	SyncOperationTypeReservationDelete      SyncOperationType = "reservation.delete"
+	SyncOperationTypeReservationUpdate      SyncOperationType = "reservation.update"
+	SyncOperationTypeTodoCreate             SyncOperationType = "todo.create"
+	SyncOperationTypeTodoDelete             SyncOperationType = "todo.delete"
+	SyncOperationTypeTodoReorder            SyncOperationType = "todo.reorder"
+	SyncOperationTypeTodoSetCompleted       SyncOperationType = "todo.set_completed"
+	SyncOperationTypeTodoUpdate             SyncOperationType = "todo.update"
+	SyncOperationTypeTripCreate             SyncOperationType = "trip.create"
+	SyncOperationTypeTripDelete             SyncOperationType = "trip.delete"
+	SyncOperationTypeTripMemberReplace      SyncOperationType = "trip_member.replace"
+	SyncOperationTypeTripRestore            SyncOperationType = "trip.restore"
+	SyncOperationTypeTripSetArchived        SyncOperationType = "trip.set_archived"
+	SyncOperationTypeTripUpdate             SyncOperationType = "trip.update"
+)
+
+// Valid indicates whether the value is a known member of the SyncOperationType enum.
+func (e SyncOperationType) Valid() bool {
+	switch e {
+	case SyncOperationTypeAssetRegister:
+		return true
+	case SyncOperationTypeDocumentCreate:
+		return true
+	case SyncOperationTypeDocumentDelete:
+		return true
+	case SyncOperationTypeDocumentUpdate:
+		return true
+	case SyncOperationTypeExpenseCategoryCreate:
+		return true
+	case SyncOperationTypeExpenseCategoryDelete:
+		return true
+	case SyncOperationTypeExpenseCategoryReorder:
+		return true
+	case SyncOperationTypeExpenseCategoryUpdate:
+		return true
+	case SyncOperationTypeItineraryItemCreate:
+		return true
+	case SyncOperationTypeItineraryItemDelete:
+		return true
+	case SyncOperationTypeItineraryItemReorder:
+		return true
+	case SyncOperationTypeItineraryItemUpdate:
+		return true
+	case SyncOperationTypeLedgerEntryCreate:
+		return true
+	case SyncOperationTypeLedgerEntryDelete:
+		return true
+	case SyncOperationTypeLedgerEntryUpdate:
+		return true
+	case SyncOperationTypePackingItemCreate:
+		return true
+	case SyncOperationTypePackingItemDelete:
+		return true
+	case SyncOperationTypePackingItemReorder:
+		return true
+	case SyncOperationTypePackingItemSetStatus:
+		return true
+	case SyncOperationTypePackingItemUpdate:
+		return true
+	case SyncOperationTypePhotoCreate:
+		return true
+	case SyncOperationTypePhotoDelete:
+		return true
+	case SyncOperationTypePhotoReorder:
+		return true
+	case SyncOperationTypePhotoUpdate:
+		return true
+	case SyncOperationTypeReservationCreate:
+		return true
+	case SyncOperationTypeReservationDelete:
+		return true
+	case SyncOperationTypeReservationUpdate:
+		return true
+	case SyncOperationTypeTodoCreate:
+		return true
+	case SyncOperationTypeTodoDelete:
+		return true
+	case SyncOperationTypeTodoReorder:
+		return true
+	case SyncOperationTypeTodoSetCompleted:
+		return true
+	case SyncOperationTypeTodoUpdate:
+		return true
+	case SyncOperationTypeTripCreate:
+		return true
+	case SyncOperationTypeTripDelete:
+		return true
+	case SyncOperationTypeTripMemberReplace:
+		return true
+	case SyncOperationTypeTripRestore:
+		return true
+	case SyncOperationTypeTripSetArchived:
+		return true
+	case SyncOperationTypeTripUpdate:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ThumbnailStatus.
 const (
 	ThumbnailStatusFailed     ThumbnailStatus = "failed"
@@ -2301,6 +2502,45 @@ type SyncChangeSchemaVersion int
 // SyncChangesPage defines model for SyncChangesPage.
 type SyncChangesPage = syncmodel.Page
 
+// SyncOperation defines model for SyncOperation.
+type SyncOperation struct {
+	// Base 创建与集合命令为null；其他只能提供version或operation_id其中之一。
+	Base nullable.Nullable[struct {
+		OperationId *openapi_types.UUID `json:"operation_id,omitempty"`
+		Version     *string             `json:"version,omitempty"`
+	}] `json:"base"`
+	DependsOn  []openapi_types.UUID                  `json:"depends_on"`
+	EntityId   nullable.Nullable[openapi_types.UUID] `json:"entity_id"`
+	EntityType SyncOperationEntityType               `json:"entity_type"`
+	Guards     []struct {
+		Kind        SyncOperationGuardsKind `json:"kind"`
+		OperationId *openapi_types.UUID     `json:"operation_id,omitempty"`
+		Revision    *string                 `json:"revision,omitempty"`
+		ScopeId     string                  `json:"scope_id"`
+	} `json:"guards"`
+	OperationId openapi_types.UUID `json:"operation_id"`
+
+	// Payload 由封闭操作类型决定字段白名单，派生字段及未知字段拒绝。
+	Payload map[string]interface{}                `json:"payload"`
+	TripId  nullable.Nullable[openapi_types.UUID] `json:"trip_id"`
+	Type    SyncOperationType                     `json:"type"`
+}
+
+// SyncOperationEntityType defines model for SyncOperation.EntityType.
+type SyncOperationEntityType string
+
+// SyncOperationGuardsKind defines model for SyncOperation.Guards.Kind.
+type SyncOperationGuardsKind string
+
+// SyncOperationType defines model for SyncOperation.Type.
+type SyncOperationType string
+
+// SyncPushInput defines model for SyncPushInput.
+type SyncPushInput = syncmodel.PushInput
+
+// SyncPushOutput defines model for SyncPushOutput.
+type SyncPushOutput = syncmodel.PushOutput
+
 // SyncSeq 精确的非负十进制整数，不超过 9223372036854775807；不得转浮点数。
 type SyncSeq = string
 
@@ -2776,6 +3016,12 @@ type GetSyncChangesParams struct {
 	XTripfolioSyncVersion *string `json:"X-Tripfolio-Sync-Version,omitempty"`
 }
 
+// PushSyncParams defines parameters for PushSync.
+type PushSyncParams struct {
+	// XTripfolioSyncVersion 必须为2；缺失返回426。
+	XTripfolioSyncVersion *string `json:"X-Tripfolio-Sync-Version,omitempty"`
+}
+
 // CreateSyncSnapshotParams defines parameters for CreateSyncSnapshot.
 type CreateSyncSnapshotParams struct {
 	// XTripfolioSyncVersion 必须为2，否则返回426。
@@ -3216,6 +3462,9 @@ type UpdateExpenseCategoryJSONRequestBody = ExpenseCategoryPatch
 // PurgeTripJSONRequestBody defines body for PurgeTrip for application/json ContentType.
 type PurgeTripJSONRequestBody = PurgeTripRequest
 
+// PushSyncJSONRequestBody defines body for PushSync for application/json ContentType.
+type PushSyncJSONRequestBody = SyncPushInput
+
 // CreateSyncSnapshotJSONRequestBody defines body for CreateSyncSnapshot for application/json ContentType.
 type CreateSyncSnapshotJSONRequestBody = SnapshotInput
 
@@ -3650,6 +3899,9 @@ type ServerInterface interface {
 	// GetSyncChanges 读取账号固定高水位的一页增量
 	// (GET /sync/changes)
 	GetSyncChanges(w http.ResponseWriter, r *http.Request, params GetSyncChangesParams)
+	// PushSync 按依赖顺序推送原生客户端操作
+	// (POST /sync/push)
+	PushSync(w http.ResponseWriter, r *http.Request, params PushSyncParams)
 	// CreateSyncSnapshot 创建账号一致快照任务
 	// (POST /sync/snapshots)
 	CreateSyncSnapshot(w http.ResponseWriter, r *http.Request, params CreateSyncSnapshotParams)
@@ -4103,6 +4355,12 @@ func (_ Unimplemented) RestoreTrip(w http.ResponseWriter, r *http.Request, tripI
 // GetSyncChanges 读取账号固定高水位的一页增量
 // (GET /sync/changes)
 func (_ Unimplemented) GetSyncChanges(w http.ResponseWriter, r *http.Request, params GetSyncChangesParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// PushSync 按依赖顺序推送原生客户端操作
+// (POST /sync/push)
+func (_ Unimplemented) PushSync(w http.ResponseWriter, r *http.Request, params PushSyncParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -6142,6 +6400,47 @@ func (siw *ServerInterfaceWrapper) GetSyncChanges(w http.ResponseWriter, r *http
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetSyncChanges(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PushSync operation middleware
+func (siw *ServerInterfaceWrapper) PushSync(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params PushSyncParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "X-Tripfolio-Sync-Version" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Tripfolio-Sync-Version")]; found {
+		var XTripfolioSyncVersion string
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-Tripfolio-Sync-Version", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Tripfolio-Sync-Version", valueList[0], &XTripfolioSyncVersion, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-Tripfolio-Sync-Version", Err: err})
+			return
+		}
+
+		params.XTripfolioSyncVersion = &XTripfolioSyncVersion
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PushSync(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -10022,6 +10321,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/sync/status", wrapper.GetSyncStatus)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/sync/push", wrapper.PushSync)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/sync/changes", wrapper.GetSyncChanges)
@@ -14394,6 +14696,170 @@ func (response GetSyncChanges503ApplicationProblemPlusJSONResponse) VisitGetSync
 		return err
 	}
 	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PushSyncRequestObject struct {
+	Params PushSyncParams
+	Body   *PushSyncJSONRequestBody
+}
+
+type PushSyncResponseObject interface {
+	VisitPushSyncResponse(w http.ResponseWriter) error
+}
+
+type PushSync200JSONResponse SyncPushOutput
+
+func (response PushSync200JSONResponse) VisitPushSyncResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PushSync400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response PushSync400ApplicationProblemPlusJSONResponse) VisitPushSyncResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PushSync401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response PushSync401ApplicationProblemPlusJSONResponse) VisitPushSyncResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PushSync403ApplicationProblemPlusJSONResponse struct {
+	ForbiddenApplicationProblemPlusJSONResponse
+}
+
+func (response PushSync403ApplicationProblemPlusJSONResponse) VisitPushSyncResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PushSync409ApplicationProblemPlusJSONResponse struct {
+	ConflictApplicationProblemPlusJSONResponse
+}
+
+func (response PushSync409ApplicationProblemPlusJSONResponse) VisitPushSyncResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PushSync413ApplicationProblemPlusJSONResponse Problem
+
+func (response PushSync413ApplicationProblemPlusJSONResponse) VisitPushSyncResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(413)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PushSync415ApplicationProblemPlusJSONResponse Problem
+
+func (response PushSync415ApplicationProblemPlusJSONResponse) VisitPushSyncResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(415)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PushSync426ApplicationProblemPlusJSONResponse Problem
+
+func (response PushSync426ApplicationProblemPlusJSONResponse) VisitPushSyncResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(426)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PushSync500ApplicationProblemPlusJSONResponse struct {
+	InternalErrorApplicationProblemPlusJSONResponse
+}
+
+func (response PushSync500ApplicationProblemPlusJSONResponse) VisitPushSyncResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PushSync503ApplicationProblemPlusJSONResponse struct {
+	DependencyUnavailableApplicationProblemPlusJSONResponse
+}
+
+func (response PushSync503ApplicationProblemPlusJSONResponse) VisitPushSyncResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
 	w.WriteHeader(503)
 	_, err := buf.WriteTo(w)
 	return err
@@ -22110,6 +22576,9 @@ type StrictServerInterface interface {
 	// GetSyncChanges 读取账号固定高水位的一页增量
 	// (GET /sync/changes)
 	GetSyncChanges(ctx context.Context, request GetSyncChangesRequestObject) (GetSyncChangesResponseObject, error)
+	// PushSync 按依赖顺序推送原生客户端操作
+	// (POST /sync/push)
+	PushSync(ctx context.Context, request PushSyncRequestObject) (PushSyncResponseObject, error)
 	// CreateSyncSnapshot 创建账号一致快照任务
 	// (POST /sync/snapshots)
 	CreateSyncSnapshot(ctx context.Context, request CreateSyncSnapshotRequestObject) (CreateSyncSnapshotResponseObject, error)
@@ -23567,6 +24036,39 @@ func (sh *strictHandler) GetSyncChanges(w http.ResponseWriter, r *http.Request, 
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetSyncChangesResponseObject); ok {
 		if err := validResponse.VisitGetSyncChangesResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// PushSync operation middleware
+func (sh *strictHandler) PushSync(w http.ResponseWriter, r *http.Request, params PushSyncParams) {
+	var request PushSyncRequestObject
+
+	request.Params = params
+
+	var body PushSyncJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.PushSync(ctx, request.(PushSyncRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "PushSync")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(PushSyncResponseObject); ok {
+		if err := validResponse.VisitPushSyncResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

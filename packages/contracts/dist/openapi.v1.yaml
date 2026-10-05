@@ -70,6 +70,63 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
+  /sync/push:
+    post:
+      tags:
+        - sync
+      operationId: pushSync
+      summary: 按依赖顺序推送原生客户端操作
+      description: 每项独立事务，重复提交返回原提交事实。当前仅旅行五项操作有执行器，其他已知类型逐项拒绝；完整能力验收前不生产装配。
+      parameters:
+        - name: X-Tripfolio-Sync-Version
+          in: header
+          required: false
+          description: 必须为2；缺失返回426。
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SyncPushInput'
+      responses:
+        '200':
+          description: 按输入顺序返回逐操作结果，不承诺整批成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncPushOutput'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '413':
+          description: 请求大于1 MiB、操作大于64 KiB或操作数量超限
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '415':
+          description: 不支持压缩正文
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '426':
+          description: 同步协议不支持
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/DependencyUnavailable'
   /sync/changes:
     get:
       tags:
@@ -8486,6 +8543,273 @@ components:
               type: integer
               enum:
                 - 100
+    SyncOperation:
+      type: object
+      additionalProperties: false
+      required:
+        - operation_id
+        - type
+        - entity_type
+        - entity_id
+        - trip_id
+        - base
+        - guards
+        - depends_on
+        - payload
+      properties:
+        operation_id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          enum:
+            - trip.create
+            - trip.update
+            - trip.set_archived
+            - trip.delete
+            - trip.restore
+            - expense_category.create
+            - expense_category.update
+            - expense_category.delete
+            - expense_category.reorder
+            - trip_member.replace
+            - itinerary_item.create
+            - itinerary_item.update
+            - itinerary_item.delete
+            - itinerary_item.reorder
+            - ledger_entry.create
+            - ledger_entry.update
+            - ledger_entry.delete
+            - packing_item.create
+            - packing_item.update
+            - packing_item.set_status
+            - packing_item.delete
+            - packing_item.reorder
+            - todo.create
+            - todo.update
+            - todo.set_completed
+            - todo.delete
+            - todo.reorder
+            - reservation.create
+            - reservation.update
+            - reservation.delete
+            - document.create
+            - document.update
+            - document.delete
+            - photo.create
+            - photo.update
+            - photo.delete
+            - photo.reorder
+            - asset.register
+        entity_type:
+          type: string
+          enum:
+            - trip
+            - expense_category
+            - trip_member
+            - itinerary_item
+            - ledger_entry
+            - packing_item
+            - todo
+            - reservation
+            - document
+            - photo
+            - asset
+        entity_id:
+          type: string
+          format: uuid
+          nullable: true
+        trip_id:
+          type: string
+          format: uuid
+          nullable: true
+        base:
+          type: object
+          nullable: true
+          additionalProperties: false
+          description: 创建与集合命令为null；其他只能提供version或operation_id其中之一。
+          properties:
+            version:
+              type: string
+              pattern: ^[1-9][0-9]*$
+              maxLength: 19
+            operation_id:
+              type: string
+              format: uuid
+        guards:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required:
+              - kind
+              - scope_id
+            properties:
+              kind:
+                type: string
+                enum:
+                  - categories
+                  - members
+                  - itinerary_day
+                  - packing_order
+                  - todo_order
+                  - photo_day
+              scope_id:
+                type: string
+              revision:
+                type: string
+                pattern: ^sha256:[0-9a-f]{64}$
+              operation_id:
+                type: string
+                format: uuid
+        depends_on:
+          type: array
+          maxItems: 100
+          uniqueItems: true
+          items:
+            type: string
+            format: uuid
+        payload:
+          type: object
+          additionalProperties: true
+          description: 由封闭操作类型决定字段白名单，派生字段及未知字段拒绝。
+    SyncPushInput:
+      type: object
+      additionalProperties: false
+      x-go-type: syncmodel.PushInput
+      x-go-type-import:
+        name: syncmodel
+        path: tripfolio/server/internal/modules/sync
+      required:
+        - sync_epoch
+        - client_id
+        - operations
+      properties:
+        sync_epoch:
+          type: string
+          format: uuid
+        client_id:
+          type: string
+          format: uuid
+        operations:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/SyncOperation'
+    SyncPushOutput:
+      type: object
+      additionalProperties: false
+      x-go-type: syncmodel.PushOutput
+      x-go-type-import:
+        name: syncmodel
+        path: tripfolio/server/internal/modules/sync
+      required:
+        - sync_epoch
+        - results
+      properties:
+        sync_epoch:
+          type: string
+          format: uuid
+        results:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required:
+              - operation_id
+              - status
+            properties:
+              operation_id:
+                type: string
+                format: uuid
+              status:
+                type: string
+                enum:
+                  - applied
+                  - replayed
+                  - conflict
+                  - rejected
+                  - dependency_failed
+                  - failed
+              result:
+                type: object
+                additionalProperties: false
+                required:
+                  - references
+                  - scope_revisions
+                  - commit_cursor
+                  - warnings
+                  - data
+                properties:
+                  references:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required:
+                        - type
+                        - id
+                        - version
+                      properties:
+                        type:
+                          type: string
+                        id:
+                          type: string
+                          format: uuid
+                        version:
+                          type: string
+                          pattern: ^[1-9][0-9]*$
+                          maxLength: 19
+                  scope_revisions:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required:
+                        - kind
+                        - scope_id
+                        - revision
+                      properties:
+                        kind:
+                          type: string
+                        scope_id:
+                          type: string
+                        revision:
+                          type: string
+                          pattern: ^sha256:[0-9a-f]{64}$
+                  commit_cursor:
+                    type: string
+                    nullable: true
+                    description: 原提交标识，不可用作拉取游标；no-op为null。
+                  warnings:
+                    type: array
+                    items:
+                      type: string
+                  data:
+                    type: object
+                    nullable: true
+                    additionalProperties: true
+              error:
+                type: object
+                additionalProperties: false
+                required:
+                  - code
+                  - http_status
+                  - retryable
+                  - detail
+                properties:
+                  code:
+                    type: string
+                  http_status:
+                    type: integer
+                  retryable:
+                    type: boolean
+                  detail:
+                    type: string
+                  conflict:
+                    type: object
+                    additionalProperties: true
     SyncSeq:
       type: string
       pattern: ^(0|[1-9][0-9]*)$

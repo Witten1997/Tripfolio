@@ -168,6 +168,7 @@ func NewRouter(d Deps) http.Handler {
 
 	api.Use(deletionRequests)
 	api.Use(contentRequests)
+	api.Use(syncRequests)
 	api.NotFound(notFound)
 	api.MethodNotAllowed(methodNotAllowed)
 	generated.HandlerWithOptions(strict, generated.ChiServerOptions{

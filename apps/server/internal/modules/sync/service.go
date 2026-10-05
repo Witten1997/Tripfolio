@@ -13,6 +13,7 @@ import (
 )
 
 type Service struct {
+	pushes    PushRepository
 	snapshots SnapshotRepository
 	reader    Reader
 	codec     paging.Codec

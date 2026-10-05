@@ -37,6 +37,28 @@ func newFixture(t *testing.T) *fixture {
 
 func str(s string) *string { return &s }
 
+func TestCreateWithStableSelfMember(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	self, op := uuid.New(), uuid.New()
+	cmd := trip.CreateCommand{ID: uuid.New(), Name: "stable member", StartDate: "2026-10-01", EndDate: "2026-10-03"}
+	r, err := f.svc.CreateWithSelf(ctx, f.actor, op, cmd, self)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, ref := range r.Affected {
+		if ref.Type == "trip_member" && ref.ID == self {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("stable self member missing")
+	}
+	_, err = f.svc.CreateWithSelf(ctx, f.actor, op, cmd, uuid.New())
+	expectCode(t, err, 409, "IDEMPOTENCY_CONFLICT")
+}
+
 func (f *fixture) create(t *testing.T, cmd trip.CreateCommand) trip.Resource {
 	t.Helper()
 	if cmd.ID == uuid.Nil {

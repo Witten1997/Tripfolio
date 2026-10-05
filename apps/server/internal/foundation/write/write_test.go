@@ -15,6 +15,25 @@ type fakeSource struct {
 	calls    int
 }
 
+func TestTripRelatedFieldsConflictBothDirections(t *testing.T) {
+	for _, pair := range [][2]string{{"start_date", "end_date"}, {"end_date", "timezone"}, {"currency_code", "budget_amount"}, {"budget_amount", "currency_locked_at"}} {
+		for _, reverse := range []bool{false, true} {
+			a, b := pair[0], pair[1]
+			if reverse {
+				a, b = b, a
+			}
+			d, err := write.ResolvePatch(context.Background(), &fakeSource{fields: []string{a}, complete: true}, uuid.New(), "trip", uuid.New(), 1, 2, []string{b})
+			if err != nil || d.Merge {
+				t.Fatalf("related fields merged: %s/%s %+v %v", a, b, d, err)
+			}
+		}
+	}
+	d, err := write.ResolvePatch(context.Background(), &fakeSource{fields: []string{"start_date"}, complete: true}, uuid.New(), "trip", uuid.New(), 1, 2, []string{"notes"})
+	if err != nil || !d.Merge {
+		t.Fatalf("independent notes rejected: %+v %v", d, err)
+	}
+}
+
 func (f *fakeSource) ChangedFieldsSince(context.Context, uuid.UUID, string, uuid.UUID, int64, int64) ([]string, bool, error) {
 	f.calls++
 	return f.fields, f.complete, nil

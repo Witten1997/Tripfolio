@@ -9,6 +9,17 @@ import (
 
 const changesScope = "sync:changes:v2"
 
+func (s *Service) commitCursor(owner, epoch, operation uuid.UUID, seq string) (string, error) {
+	if n, ok := decimal(seq); !ok || n == 0 {
+		return "", paging.ErrInvalidCursor
+	}
+	return s.codec.Encode(owner, "sync:commit:v2", struct {
+		Epoch     uuid.UUID `json:"epoch"`
+		Operation uuid.UUID `json:"operation_id"`
+		Seq       string    `json:"seq"`
+	}{epoch, operation, seq})
+}
+
 type cursor struct {
 	Protocol int       `json:"protocol"`
 	Epoch    uuid.UUID `json:"epoch"`

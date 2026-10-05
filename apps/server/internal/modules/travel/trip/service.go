@@ -330,6 +330,19 @@ type CreateCommand struct {
 
 // Create 新建旅行。
 func (s *Service) Create(ctx context.Context, a actor.Actor, operationID uuid.UUID, cmd CreateCommand) (write.Result, error) {
+	return s.create(ctx, a, operationID, cmd, uuid.Nil)
+}
+
+// CreateWithSelf is for an explicit stable member ID in a synchronized creation.
+// The normal REST path and its fingerprint remain unchanged.
+func (s *Service) CreateWithSelf(ctx context.Context, a actor.Actor, operationID uuid.UUID, cmd CreateCommand, selfMemberID uuid.UUID) (write.Result, error) {
+	if selfMemberID == uuid.Nil {
+		return write.Result{}, apperr.Validation(apperr.Field("self_member_id", "REQUIRED", "成员ID必填"))
+	}
+	return s.create(ctx, a, operationID, cmd, selfMemberID)
+}
+
+func (s *Service) create(ctx context.Context, a actor.Actor, operationID uuid.UUID, cmd CreateCommand, selfMemberID uuid.UUID) (write.Result, error) {
 	var fields []apperr.FieldError
 	addField := func(e *apperr.FieldError) {
 		if e != nil {
@@ -375,6 +388,12 @@ func (s *Service) Create(ctx context.Context, a actor.Actor, operationID uuid.UU
 		AccountID: a.AccountID, OperationID: operationID, OperationType: "trip.create",
 		Fingerprint: write.Fingerprint("trip.create", cmd.ID.String(), nil, cmd),
 	}
+	if selfMemberID != uuid.Nil {
+		req.Fingerprint = write.Fingerprint("trip.create", cmd.ID.String(), nil, struct {
+			CreateCommand
+			SelfMemberID uuid.UUID `json:"self_member_id"`
+		}{cmd, selfMemberID})
+	}
 	return s.uow.Run(ctx, req, func(ctx context.Context, scope write.Scope, repo Repo) error {
 		exists, err := repo.IDExists(ctx, cmd.ID)
 		if err != nil {
@@ -418,7 +437,11 @@ func (s *Service) Create(ctx context.Context, a actor.Actor, operationID uuid.UU
 		}
 		record(scope, created, write.ChangeUpsert, CreateFields, false)
 		scope.SetPrimary(ref(created))
-		self, err := repo.InsertMember(ctx, a.AccountID, member.NewSelf(uuid.New(), created.ID, now))
+		memberID := selfMemberID
+		if memberID == uuid.Nil {
+			memberID = uuid.New()
+		}
+		self, err := repo.InsertMember(ctx, a.AccountID, member.NewSelf(memberID, created.ID, now))
 		if err != nil {
 			return err
 		}

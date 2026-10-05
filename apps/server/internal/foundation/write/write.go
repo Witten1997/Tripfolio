@@ -90,6 +90,7 @@ func AffectedRefs(primary *EntityRef, changes []Change, extra []EntityRef) []Ent
 
 // Result 是写操作的统一响应（接口设计 1.4 WriteResult）。
 type Result struct {
+	Sync         *SyncFacts  `json:"sync,omitempty"`
 	OperationID  uuid.UUID   `json:"operation_id"`
 	Primary      *EntityRef  `json:"primary"`
 	Affected     []EntityRef `json:"affected"`
@@ -97,6 +98,20 @@ type Result struct {
 	Warnings     []string    `json:"warnings"`
 	Replayed     bool        `json:"replayed"`
 	Data         any         `json:"data"`
+}
+
+// SyncFacts contains immutable facts from the original transaction, never a resource body.
+type SyncFacts struct {
+	Epoch          uuid.UUID       `json:"epoch"`
+	References     []EntityRef     `json:"references"`
+	ScopeRevisions []ScopeRevision `json:"scope_revisions"`
+	CommitSeq      *string         `json:"commit_seq"`
+}
+
+type ScopeRevision struct {
+	Kind     string `json:"kind"`
+	ScopeID  string `json:"scope_id"`
+	Revision string `json:"revision"`
 }
 
 // Request 标识一次写操作：账号、操作编号、类型与规范化指纹。
@@ -161,6 +176,10 @@ func ResolvePatch(ctx context.Context, src MergeSource, accountID uuid.UUID, ent
 	if !complete {
 		return PatchDecision{Conflicting: nil}, nil
 	}
+	if entityType == "trip" {
+		changed = tripFieldGroups(changed)
+		submitted = tripFieldGroups(submitted)
+	}
 	set := make(map[string]struct{}, len(changed))
 	for _, f := range changed {
 		set[f] = struct{}{}
@@ -176,6 +195,30 @@ func ResolvePatch(ctx context.Context, src MergeSource, accountID uuid.UUID, ent
 		return PatchDecision{Conflicting: conflicting}, nil
 	}
 	return PatchDecision{Merge: true, Merged: true}, nil
+}
+
+func tripFieldGroups(fields []string) []string {
+	groups := [][]string{{"start_date", "end_date", "timezone"}, {"currency_code", "budget_amount", "currency_locked_at"}}
+	set := map[string]bool{}
+	for _, field := range fields {
+		set[field] = true
+	}
+	for _, group := range groups {
+		for _, field := range group {
+			if set[field] {
+				for _, related := range group {
+					set[related] = true
+				}
+				break
+			}
+		}
+	}
+	out := make([]string, 0, len(set))
+	for field := range set {
+		out = append(out, field)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // 警告代码清单（接口设计 1.4）。

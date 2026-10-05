@@ -329,3 +329,48 @@ snapshotItems:
         content:
           application/problem+json:
             schema: {$ref: ../openapi.yaml#/components/schemas/Problem}
+
+push:
+  post:
+    tags: [sync]
+    operationId: pushSync
+    summary: 按依赖顺序推送原生客户端操作
+    description: 每项独立事务，重复提交返回原提交事实。当前仅旅行五项操作有执行器，其他已知类型逐项拒绝；完整能力验收前不生产装配。
+    parameters:
+      - name: X-Tripfolio-Sync-Version
+        in: header
+        required: false
+        description: 必须为2；缺失返回426。
+        schema: {type: string}
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: {$ref: '../schemas/sync.yaml#/SyncPushInput'}
+    responses:
+      '200':
+        description: 按输入顺序返回逐操作结果，不承诺整批成功
+        content:
+          application/json:
+            schema: {$ref: '../schemas/sync.yaml#/SyncPushOutput'}
+      '400': {$ref: '../openapi.yaml#/components/responses/BadRequest'}
+      '401': {$ref: '../openapi.yaml#/components/responses/Unauthorized'}
+      '403': {$ref: '../openapi.yaml#/components/responses/Forbidden'}
+      '409': {$ref: '../openapi.yaml#/components/responses/Conflict'}
+      '413':
+        description: 请求大于1 MiB、操作大于64 KiB或操作数量超限
+        content:
+          application/problem+json:
+            schema: {$ref: '../openapi.yaml#/components/schemas/Problem'}
+      '415':
+        description: 不支持压缩正文
+        content:
+          application/problem+json:
+            schema: {$ref: '../openapi.yaml#/components/schemas/Problem'}
+      '426':
+        description: 同步协议不支持
+        content:
+          application/problem+json:
+            schema: {$ref: '../openapi.yaml#/components/schemas/Problem'}
+      '500': {$ref: '../openapi.yaml#/components/responses/InternalError'}
+      '503': {$ref: '../openapi.yaml#/components/responses/DependencyUnavailable'}

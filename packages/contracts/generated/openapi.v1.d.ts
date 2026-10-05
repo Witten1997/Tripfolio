@@ -743,6 +743,26 @@ export type paths = {
         patch?: never;
         trace?: never;
     };
+    "/sync/push": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 按依赖顺序推送原生客户端操作
+         * @description 每项独立事务，重复提交返回原提交事实。当前仅旅行五项操作有执行器，其他已知类型逐项拒绝；完整能力验收前不生产装配。
+         */
+        post: operations["pushSync"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/sync/snapshots": {
         parameters: {
             query?: never;
@@ -2950,6 +2970,82 @@ export type components = {
             /** Format: uuid */
             sync_epoch: string;
         };
+        SyncOperation: {
+            /** @description 创建与集合命令为null；其他只能提供version或operation_id其中之一。 */
+            base: {
+                /** Format: uuid */
+                operation_id?: string;
+                version?: string;
+            } | null;
+            depends_on: string[];
+            /** Format: uuid */
+            entity_id: string | null;
+            /** @enum {string} */
+            entity_type: "trip" | "expense_category" | "trip_member" | "itinerary_item" | "ledger_entry" | "packing_item" | "todo" | "reservation" | "document" | "photo" | "asset";
+            guards: {
+                /** @enum {string} */
+                kind: "categories" | "members" | "itinerary_day" | "packing_order" | "todo_order" | "photo_day";
+                /** Format: uuid */
+                operation_id?: string;
+                revision?: string;
+                scope_id: string;
+            }[];
+            /** Format: uuid */
+            operation_id: string;
+            /** @description 由封闭操作类型决定字段白名单，派生字段及未知字段拒绝。 */
+            payload: {
+                [key: string]: unknown;
+            };
+            /** Format: uuid */
+            trip_id: string | null;
+            /** @enum {string} */
+            type: "trip.create" | "trip.update" | "trip.set_archived" | "trip.delete" | "trip.restore" | "expense_category.create" | "expense_category.update" | "expense_category.delete" | "expense_category.reorder" | "trip_member.replace" | "itinerary_item.create" | "itinerary_item.update" | "itinerary_item.delete" | "itinerary_item.reorder" | "ledger_entry.create" | "ledger_entry.update" | "ledger_entry.delete" | "packing_item.create" | "packing_item.update" | "packing_item.set_status" | "packing_item.delete" | "packing_item.reorder" | "todo.create" | "todo.update" | "todo.set_completed" | "todo.delete" | "todo.reorder" | "reservation.create" | "reservation.update" | "reservation.delete" | "document.create" | "document.update" | "document.delete" | "photo.create" | "photo.update" | "photo.delete" | "photo.reorder" | "asset.register";
+        };
+        SyncPushInput: {
+            /** Format: uuid */
+            client_id: string;
+            operations: components["schemas"]["SyncOperation"][];
+            /** Format: uuid */
+            sync_epoch: string;
+        };
+        SyncPushOutput: {
+            results: {
+                error?: {
+                    code: string;
+                    conflict?: {
+                        [key: string]: unknown;
+                    };
+                    detail: string;
+                    http_status: number;
+                    retryable: boolean;
+                };
+                /** Format: uuid */
+                operation_id: string;
+                result?: {
+                    /** @description 原提交标识，不可用作拉取游标；no-op为null。 */
+                    commit_cursor: string | null;
+                    data: {
+                        [key: string]: unknown;
+                    } | null;
+                    references: {
+                        /** Format: uuid */
+                        id: string;
+                        type: string;
+                        version: string;
+                    }[];
+                    scope_revisions: {
+                        kind: string;
+                        revision: string;
+                        scope_id: string;
+                    }[];
+                    warnings: string[];
+                };
+                /** @enum {string} */
+                status: "applied" | "replayed" | "conflict" | "rejected" | "dependency_failed" | "failed";
+            }[];
+            /** Format: uuid */
+            sync_epoch: string;
+        };
         /** @description 精确的非负十进制整数，不超过 9223372036854775807；不得转浮点数。 */
         SyncSeq: string;
         SyncStatus: {
@@ -4787,6 +4883,66 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
+        };
+    };
+    pushSync: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description 必须为2；缺失返回426。 */
+                "X-Tripfolio-Sync-Version"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SyncPushInput"];
+            };
+        };
+        responses: {
+            /** @description 按输入顺序返回逐操作结果，不承诺整批成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncPushOutput"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            /** @description 请求大于1 MiB、操作大于64 KiB或操作数量超限 */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description 不支持压缩正文 */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description 同步协议不支持 */
+            426: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["DependencyUnavailable"];
         };
     };
     createSyncSnapshot: {
