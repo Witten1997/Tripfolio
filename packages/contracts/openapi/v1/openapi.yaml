@@ -23,6 +23,8 @@ servers:
   - url: /api/v1
     description: 业务接口统一前缀（同源部署时使用相对路径）
 tags:
+  - name: sync
+    description: 原生账号增量同步与协议发现
   - name: metadata
     description: 固定枚举、币种精度、上传上限与协议版本
   - name: auth
@@ -42,6 +44,10 @@ tags:
 security:
   - bearerAuth: []
 paths:
+  /sync/status:
+    $ref: ./paths/sync.yaml#/status
+  /sync/changes:
+    $ref: ./paths/sync.yaml#/changes
   /deletion-jobs/{job_id}:
     $ref: ./paths/deletion.yaml#/job
   /recycle-bin/trips/{trip_id}/deletion-job:

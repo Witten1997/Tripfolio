@@ -157,7 +157,7 @@ func (s *Service) restoreNext(parent context.Context, sweep bool) {
 }
 
 func restoreVersionCompatible(source, target int64) bool {
-	return source == target || (source >= 22 && source < target && target <= 25)
+	return source == target || (source >= 22 && source < target && target <= 26)
 }
 
 func (s *Service) restore(ctx context.Context, job RestoreJob, targetVersion int64, handoff func() error) error {
@@ -270,6 +270,17 @@ END $restore$;
 		}
 		afterSQL += "SET LOCAL search_path TO public;\n" + up + "\n"
 	}
+	if targetVersion >= 26 && job.Manifest.GooseVersion < 26 {
+		migration, e := db.Migrations.ReadFile("migrations/00026_sync_epoch.sql")
+		if e != nil {
+			return errors.New("RESTORE_VERSION_MISMATCH")
+		}
+		up, _, ok := strings.Cut(string(migration), "-- +goose Down")
+		if !ok {
+			return errors.New("RESTORE_VERSION_MISMATCH")
+		}
+		afterSQL += "SET LOCAL search_path TO public;\n" + up + "\n"
+	}
 	afterSQL += fmt.Sprintf(restoreAfter, job.ID.String(), job.ID.String(), job.ID.String())
 	if err = os.WriteFile(before, []byte(beforeSQL), 0600); err != nil {
 		return errors.New("RESTORE_SPACE_LIMIT")
@@ -366,6 +377,8 @@ DELETE FROM public.account_sessions;
 DELETE FROM public.admin_sessions;
 DELETE FROM public.auth_challenges;
 DELETE FROM public.trip_shares;
+UPDATE public.account_sync_state SET sync_epoch=gen_random_uuid(),updated_at=clock_timestamp();
+UPDATE public.data_snapshots SET status='invalidated';
 DO $restore$ DECLARE tables text; BEGIN
  SELECT string_agg('public.' || quote_ident(t),',') INTO tables
  FROM unnest(ARRAY['river_job','river_leader','river_client','river_client_queue','river_queue']) t

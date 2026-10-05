@@ -39,3 +39,13 @@ SELECT * FROM sync_changes
 WHERE account_id = $1 AND seq > $2 AND seq <= $3
 ORDER BY seq
 LIMIT $4;
+
+-- name: GetSyncReadState :one
+SELECT s.sync_epoch, s.last_seq, s.retained_after_seq, a.status,
+    EXISTS(SELECT 1 FROM account_sessions ss
+           WHERE ss.account_id = s.account_id AND ss.id = $2
+             AND ss.revoked_at IS NULL AND ss.expires_at > CURRENT_TIMESTAMP
+             AND ss.client_kind IN ('harmony', 'android')) AS session_active
+FROM account_sync_state s
+JOIN accounts a ON a.id = s.account_id
+WHERE s.account_id = $1;

@@ -19,6 +19,7 @@ import (
 	"tripfolio/server/internal/modules/deletion"
 	"tripfolio/server/internal/modules/finance"
 	"tripfolio/server/internal/modules/geo"
+	syncmodel "tripfolio/server/internal/modules/sync"
 	"tripfolio/server/internal/modules/travel/album"
 	"tripfolio/server/internal/modules/travel/dashboard"
 	"tripfolio/server/internal/modules/travel/document"
@@ -583,6 +584,90 @@ func (e StatisticsScopeSplitMode) Valid() bool {
 	case StatisticsScopeSplitModePersonal:
 		return true
 	case StatisticsScopeSplitModeRatio:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SyncChangeEntityType.
+const (
+	SyncChangeEntityTypeAsset           SyncChangeEntityType = "asset"
+	SyncChangeEntityTypeDocument        SyncChangeEntityType = "document"
+	SyncChangeEntityTypeExpenseCategory SyncChangeEntityType = "expense_category"
+	SyncChangeEntityTypeItineraryItem   SyncChangeEntityType = "itinerary_item"
+	SyncChangeEntityTypeLedgerEntry     SyncChangeEntityType = "ledger_entry"
+	SyncChangeEntityTypePackingItem     SyncChangeEntityType = "packing_item"
+	SyncChangeEntityTypePhoto           SyncChangeEntityType = "photo"
+	SyncChangeEntityTypeReservation     SyncChangeEntityType = "reservation"
+	SyncChangeEntityTypeTodo            SyncChangeEntityType = "todo"
+	SyncChangeEntityTypeTrip            SyncChangeEntityType = "trip"
+	SyncChangeEntityTypeTripMember      SyncChangeEntityType = "trip_member"
+)
+
+// Valid indicates whether the value is a known member of the SyncChangeEntityType enum.
+func (e SyncChangeEntityType) Valid() bool {
+	switch e {
+	case SyncChangeEntityTypeAsset:
+		return true
+	case SyncChangeEntityTypeDocument:
+		return true
+	case SyncChangeEntityTypeExpenseCategory:
+		return true
+	case SyncChangeEntityTypeItineraryItem:
+		return true
+	case SyncChangeEntityTypeLedgerEntry:
+		return true
+	case SyncChangeEntityTypePackingItem:
+		return true
+	case SyncChangeEntityTypePhoto:
+		return true
+	case SyncChangeEntityTypeReservation:
+		return true
+	case SyncChangeEntityTypeTodo:
+		return true
+	case SyncChangeEntityTypeTrip:
+		return true
+	case SyncChangeEntityTypeTripMember:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SyncChangeKind.
+const (
+	Delete   SyncChangeKind = "delete"
+	Purge    SyncChangeKind = "purge"
+	Redacted SyncChangeKind = "redacted"
+	Upsert   SyncChangeKind = "upsert"
+)
+
+// Valid indicates whether the value is a known member of the SyncChangeKind enum.
+func (e SyncChangeKind) Valid() bool {
+	switch e {
+	case Delete:
+		return true
+	case Purge:
+		return true
+	case Redacted:
+		return true
+	case Upsert:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SyncChangeSchemaVersion.
+const (
+	N2 SyncChangeSchemaVersion = 2
+)
+
+// Valid indicates whether the value is a known member of the SyncChangeSchemaVersion enum.
+func (e SyncChangeSchemaVersion) Valid() bool {
+	switch e {
+	case N2:
 		return true
 	default:
 		return false
@@ -2113,6 +2198,45 @@ type StatisticsTotals struct {
 	RefundAmount Money `json:"refund_amount"`
 }
 
+// SyncChange defines model for SyncChange.
+type SyncChange struct {
+	// BatchEndSeq 精确的非负十进制整数，不超过 9223372036854775807；不得转浮点数。
+	BatchEndSeq   SyncSeq                     `json:"batch_end_seq"`
+	BatchId       openapi_types.UUID          `json:"batch_id"`
+	ChangedFields nullable.Nullable[[]string] `json:"changed_fields"`
+
+	// Data 此版本的白名单业务资源；delete/purge/redacted 为 null，不含文件密钥或凭证。
+	Data             nullable.Nullable[map[string]interface{}] `json:"data"`
+	EntityId         openapi_types.UUID                        `json:"entity_id"`
+	EntityType       SyncChangeEntityType                      `json:"entity_type"`
+	Kind             SyncChangeKind                            `json:"kind"`
+	RequiresSnapshot bool                                      `json:"requires_snapshot"`
+	SchemaVersion    SyncChangeSchemaVersion                   `json:"schema_version"`
+
+	// Seq 精确的非负十进制整数，不超过 9223372036854775807；不得转浮点数。
+	Seq     SyncSeq                               `json:"seq"`
+	TripId  nullable.Nullable[openapi_types.UUID] `json:"trip_id"`
+	Version string                                `json:"version"`
+}
+
+// SyncChangeEntityType defines model for SyncChange.EntityType.
+type SyncChangeEntityType string
+
+// SyncChangeKind defines model for SyncChange.Kind.
+type SyncChangeKind string
+
+// SyncChangeSchemaVersion defines model for SyncChange.SchemaVersion.
+type SyncChangeSchemaVersion int
+
+// SyncChangesPage defines model for SyncChangesPage.
+type SyncChangesPage = syncmodel.Page
+
+// SyncSeq 精确的非负十进制整数，不超过 9223372036854775807；不得转浮点数。
+type SyncSeq = string
+
+// SyncStatus defines model for SyncStatus.
+type SyncStatus = syncmodel.Status
+
 // ThumbnailStatus 缩略图状态；缩略图失败不影响原图可用性，分别展示
 type ThumbnailStatus string
 
@@ -2570,6 +2694,16 @@ type RestoreTripParams struct {
 
 	// IfMatch 客户端所基于的资源版本，形如 "7"（带引号）
 	IfMatch *IfMatch `json:"If-Match,omitempty"`
+}
+
+// GetSyncChangesParams defines parameters for GetSyncChanges.
+type GetSyncChangesParams struct {
+	// Cursor 完整基线或上一页签发的账号专属游标
+	Cursor string `form:"cursor" json:"cursor"`
+	Limit  *int   `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// XTripfolioSyncVersion 必须为 2；省略或不支持时由服务返回 426 SYNC_PROTOCOL_UNSUPPORTED。
+	XTripfolioSyncVersion *string `json:"X-Tripfolio-Sync-Version,omitempty"`
 }
 
 // ListTripsParams defines parameters for ListTrips.
@@ -3418,6 +3552,12 @@ type ServerInterface interface {
 	// RestoreTrip 恢复整趟旅行；须在 purge_after_at 前且未请求永久清理，否则 409 RESTORE_UNAVAILABLE
 	// (POST /recycle-bin/trips/{trip_id}/restore)
 	RestoreTrip(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, params RestoreTripParams)
+	// GetSyncChanges 读取账号固定高水位的一页增量
+	// (GET /sync/changes)
+	GetSyncChanges(w http.ResponseWriter, r *http.Request, params GetSyncChangesParams)
+	// GetSyncStatus 查询原生账号同步协议能力
+	// (GET /sync/status)
+	GetSyncStatus(w http.ResponseWriter, r *http.Request)
 	// ListTrips 有效旅行列表；按阶段、归档、名称或目的地筛选，键集分页
 	// (GET /trips)
 	ListTrips(w http.ResponseWriter, r *http.Request, params ListTripsParams)
@@ -3853,6 +3993,18 @@ func (_ Unimplemented) PurgeTrip(w http.ResponseWriter, r *http.Request, tripId 
 // RestoreTrip 恢复整趟旅行；须在 purge_after_at 前且未请求永久清理，否则 409 RESTORE_UNAVAILABLE
 // (POST /recycle-bin/trips/{trip_id}/restore)
 func (_ Unimplemented) RestoreTrip(w http.ResponseWriter, r *http.Request, tripId openapi_types.UUID, params RestoreTripParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetSyncChanges 读取账号固定高水位的一页增量
+// (GET /sync/changes)
+func (_ Unimplemented) GetSyncChanges(w http.ResponseWriter, r *http.Request, params GetSyncChangesParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetSyncStatus 查询原生账号同步协议能力
+// (GET /sync/status)
+func (_ Unimplemented) GetSyncStatus(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -5801,6 +5953,87 @@ func (siw *ServerInterfaceWrapper) RestoreTrip(w http.ResponseWriter, r *http.Re
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.RestoreTrip(w, r, tripId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetSyncChanges operation middleware
+func (siw *ServerInterfaceWrapper) GetSyncChanges(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetSyncChangesParams
+
+	// ------------- Required query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "X-Tripfolio-Sync-Version" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Tripfolio-Sync-Version")]; found {
+		var XTripfolioSyncVersion string
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-Tripfolio-Sync-Version", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Tripfolio-Sync-Version", valueList[0], &XTripfolioSyncVersion, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-Tripfolio-Sync-Version", Err: err})
+			return
+		}
+
+		params.XTripfolioSyncVersion = &XTripfolioSyncVersion
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetSyncChanges(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetSyncStatus operation middleware
+func (siw *ServerInterfaceWrapper) GetSyncStatus(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetSyncStatus(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -9475,6 +9708,12 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		ErrorHandlerFunc:   options.ErrorHandlerFunc,
 	}
 
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/sync/status", wrapper.GetSyncStatus)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/sync/changes", wrapper.GetSyncChanges)
+	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/deletion-jobs/{job_id}", wrapper.GetDeletionJob)
 	})
@@ -13677,6 +13916,247 @@ func (response RestoreTrip428ApplicationProblemPlusJSONResponse) VisitRestoreTri
 	}
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(428)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSyncChangesRequestObject struct {
+	Params GetSyncChangesParams
+}
+
+type GetSyncChangesResponseObject interface {
+	VisitGetSyncChangesResponse(w http.ResponseWriter) error
+}
+
+type GetSyncChanges200JSONResponse SyncChangesPage
+
+func (response GetSyncChanges200JSONResponse) VisitGetSyncChangesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSyncChanges400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response GetSyncChanges400ApplicationProblemPlusJSONResponse) VisitGetSyncChangesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSyncChanges401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response GetSyncChanges401ApplicationProblemPlusJSONResponse) VisitGetSyncChangesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSyncChanges403ApplicationProblemPlusJSONResponse struct {
+	ForbiddenApplicationProblemPlusJSONResponse
+}
+
+func (response GetSyncChanges403ApplicationProblemPlusJSONResponse) VisitGetSyncChangesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSyncChanges409ApplicationProblemPlusJSONResponse Problem
+
+func (response GetSyncChanges409ApplicationProblemPlusJSONResponse) VisitGetSyncChangesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSyncChanges410ApplicationProblemPlusJSONResponse Problem
+
+func (response GetSyncChanges410ApplicationProblemPlusJSONResponse) VisitGetSyncChangesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(410)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSyncChanges422ApplicationProblemPlusJSONResponse struct {
+	ValidationFailedApplicationProblemPlusJSONResponse
+}
+
+func (response GetSyncChanges422ApplicationProblemPlusJSONResponse) VisitGetSyncChangesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSyncChanges426ApplicationProblemPlusJSONResponse Problem
+
+func (response GetSyncChanges426ApplicationProblemPlusJSONResponse) VisitGetSyncChangesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(426)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSyncChanges500ApplicationProblemPlusJSONResponse struct {
+	InternalErrorApplicationProblemPlusJSONResponse
+}
+
+func (response GetSyncChanges500ApplicationProblemPlusJSONResponse) VisitGetSyncChangesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSyncChanges503ApplicationProblemPlusJSONResponse Problem
+
+func (response GetSyncChanges503ApplicationProblemPlusJSONResponse) VisitGetSyncChangesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSyncStatusRequestObject struct {
+}
+
+type GetSyncStatusResponseObject interface {
+	VisitGetSyncStatusResponse(w http.ResponseWriter) error
+}
+
+type GetSyncStatus200JSONResponse SyncStatus
+
+func (response GetSyncStatus200JSONResponse) VisitGetSyncStatusResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSyncStatus401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response GetSyncStatus401ApplicationProblemPlusJSONResponse) VisitGetSyncStatusResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSyncStatus403ApplicationProblemPlusJSONResponse struct {
+	ForbiddenApplicationProblemPlusJSONResponse
+}
+
+func (response GetSyncStatus403ApplicationProblemPlusJSONResponse) VisitGetSyncStatusResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSyncStatus500ApplicationProblemPlusJSONResponse struct {
+	InternalErrorApplicationProblemPlusJSONResponse
+}
+
+func (response GetSyncStatus500ApplicationProblemPlusJSONResponse) VisitGetSyncStatusResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSyncStatus503ApplicationProblemPlusJSONResponse Problem
+
+func (response GetSyncStatus503ApplicationProblemPlusJSONResponse) VisitGetSyncStatusResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(503)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -20815,6 +21295,12 @@ type StrictServerInterface interface {
 	// RestoreTrip 恢复整趟旅行；须在 purge_after_at 前且未请求永久清理，否则 409 RESTORE_UNAVAILABLE
 	// (POST /recycle-bin/trips/{trip_id}/restore)
 	RestoreTrip(ctx context.Context, request RestoreTripRequestObject) (RestoreTripResponseObject, error)
+	// GetSyncChanges 读取账号固定高水位的一页增量
+	// (GET /sync/changes)
+	GetSyncChanges(ctx context.Context, request GetSyncChangesRequestObject) (GetSyncChangesResponseObject, error)
+	// GetSyncStatus 查询原生账号同步协议能力
+	// (GET /sync/status)
+	GetSyncStatus(ctx context.Context, request GetSyncStatusRequestObject) (GetSyncStatusResponseObject, error)
 	// ListTrips 有效旅行列表；按阶段、归档、名称或目的地筛选，键集分页
 	// (GET /trips)
 	ListTrips(ctx context.Context, request ListTripsRequestObject) (ListTripsResponseObject, error)
@@ -22234,6 +22720,56 @@ func (sh *strictHandler) RestoreTrip(w http.ResponseWriter, r *http.Request, tri
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(RestoreTripResponseObject); ok {
 		if err := validResponse.VisitRestoreTripResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetSyncChanges operation middleware
+func (sh *strictHandler) GetSyncChanges(w http.ResponseWriter, r *http.Request, params GetSyncChangesParams) {
+	var request GetSyncChangesRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetSyncChanges(ctx, request.(GetSyncChangesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetSyncChanges")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetSyncChangesResponseObject); ok {
+		if err := validResponse.VisitGetSyncChangesResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetSyncStatus operation middleware
+func (sh *strictHandler) GetSyncStatus(w http.ResponseWriter, r *http.Request) {
+	var request GetSyncStatusRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetSyncStatus(ctx, request.(GetSyncStatusRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetSyncStatus")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetSyncStatusResponseObject); ok {
+		if err := validResponse.VisitGetSyncStatusResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

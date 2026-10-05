@@ -18,6 +18,7 @@ import (
 	"tripfolio/server/internal/modules/finance"
 	"tripfolio/server/internal/modules/geo"
 	"tripfolio/server/internal/modules/metadata"
+	syncmodule "tripfolio/server/internal/modules/sync"
 	"tripfolio/server/internal/modules/travel/album"
 	"tripfolio/server/internal/modules/travel/dashboard"
 	"tripfolio/server/internal/modules/travel/document"
@@ -34,6 +35,7 @@ import (
 
 // Deps 是路由需要的全部依赖，由 bootstrap 显式装配。
 type Deps struct {
+	Sync          *syncmodule.Service
 	Deletions     *deletion.Service
 	Photos        *album.Service
 	Reservations  *reservation.Service
@@ -138,6 +140,7 @@ func NewRouter(d Deps) http.Handler {
 	}
 
 	handler := &Handler{
+		sync:      d.Sync,
 		deletions: d.Deletions,
 		photos:    d.Photos, reservations: d.Reservations, documents: d.Documents,
 		dashboard: d.Dashboard,

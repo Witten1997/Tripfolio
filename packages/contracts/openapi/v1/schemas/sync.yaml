@@ -1,0 +1,80 @@
+SyncSeq:
+  type: string
+  pattern: '^(0|[1-9][0-9]*)$'
+  maxLength: 19
+  description: 精确的非负十进制整数，不超过 9223372036854775807；不得转浮点数。
+
+SyncStatus:
+  type: object
+  additionalProperties: false
+  x-go-type: syncmodel.Status
+  x-go-type-import:
+    name: syncmodel
+    path: tripfolio/server/internal/modules/sync
+  required: [supported_protocol_versions, recommended_protocol_version, sync_epoch, server_time, retention_days, snapshot_ttl_seconds, limits]
+  properties:
+    supported_protocol_versions:
+      type: array
+      items: {type: integer, enum: [2]}
+    recommended_protocol_version: {type: integer, enum: [2]}
+    sync_epoch: {type: string, format: uuid}
+    server_time: {type: string, format: date-time}
+    retention_days: {type: integer, minimum: 90}
+    snapshot_ttl_seconds: {type: integer, enum: [86400]}
+    limits:
+      type: object
+      additionalProperties: false
+      required: [max_operations, max_operation_bytes, max_request_bytes, max_dependencies]
+      properties:
+        max_operations: {type: integer, enum: [100]}
+        max_operation_bytes: {type: integer, enum: [65536]}
+        max_request_bytes: {type: integer, enum: [1048576]}
+        max_dependencies: {type: integer, enum: [100]}
+
+SyncChange:
+  type: object
+  additionalProperties: false
+  required: [seq, batch_id, batch_end_seq, entity_type, entity_id, trip_id, version, kind, schema_version, requires_snapshot, changed_fields, data]
+  properties:
+    seq: {$ref: '#/SyncSeq'}
+    batch_id: {type: string, format: uuid}
+    batch_end_seq: {$ref: '#/SyncSeq'}
+    entity_type:
+      type: string
+      enum: [trip, trip_member, expense_category, itinerary_item, ledger_entry, packing_item, todo, reservation, document, photo, asset]
+    entity_id: {type: string, format: uuid}
+    trip_id: {type: string, format: uuid, nullable: true}
+    version:
+      type: string
+      pattern: '^[1-9][0-9]*$'
+      maxLength: 19
+    kind: {type: string, enum: [upsert, delete, purge, redacted]}
+    schema_version: {type: integer, enum: [2]}
+    requires_snapshot: {type: boolean}
+    changed_fields:
+      type: array
+      nullable: true
+      items: {type: string}
+    data:
+      type: object
+      nullable: true
+      additionalProperties: true
+      description: 此版本的白名单业务资源；delete/purge/redacted 为 null，不含文件密钥或凭证。
+
+SyncChangesPage:
+  type: object
+  additionalProperties: false
+  x-go-type: syncmodel.Page
+  x-go-type-import:
+    name: syncmodel
+    path: tripfolio/server/internal/modules/sync
+  required: [sync_epoch, changes, next_cursor, has_more]
+  properties:
+    sync_epoch: {type: string, format: uuid}
+    changes:
+      type: array
+      items: {$ref: '#/SyncChange'}
+    next_cursor:
+      type: string
+      description: 每页均返回，包括空终页；与整页 inbox 在同一客户端事务保存。
+    has_more: {type: boolean}

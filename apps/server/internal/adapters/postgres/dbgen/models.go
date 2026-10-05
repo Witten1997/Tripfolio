@@ -48,6 +48,7 @@ type AccountSyncState struct {
 	LastSeq          int64
 	RetainedAfterSeq int64
 	UpdatedAt        time.Time
+	SyncEpoch        uuid.UUID
 }
 
 type AdminAuditEvent struct {

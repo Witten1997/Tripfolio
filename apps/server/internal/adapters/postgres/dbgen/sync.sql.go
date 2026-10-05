@@ -101,6 +101,43 @@ func (q *Queries) GetMutationReceipt(ctx context.Context, arg GetMutationReceipt
 	return i, err
 }
 
+const getSyncReadState = `-- name: GetSyncReadState :one
+SELECT s.sync_epoch, s.last_seq, s.retained_after_seq, a.status,
+    EXISTS(SELECT 1 FROM account_sessions ss
+           WHERE ss.account_id = s.account_id AND ss.id = $2
+             AND ss.revoked_at IS NULL AND ss.expires_at > CURRENT_TIMESTAMP
+             AND ss.client_kind IN ('harmony', 'android')) AS session_active
+FROM account_sync_state s
+JOIN accounts a ON a.id = s.account_id
+WHERE s.account_id = $1
+`
+
+type GetSyncReadStateParams struct {
+	AccountID uuid.UUID
+	ID        uuid.UUID
+}
+
+type GetSyncReadStateRow struct {
+	SyncEpoch        uuid.UUID
+	LastSeq          int64
+	RetainedAfterSeq int64
+	Status           string
+	SessionActive    bool
+}
+
+func (q *Queries) GetSyncReadState(ctx context.Context, arg GetSyncReadStateParams) (GetSyncReadStateRow, error) {
+	row := q.db.QueryRow(ctx, getSyncReadState, arg.AccountID, arg.ID)
+	var i GetSyncReadStateRow
+	err := row.Scan(
+		&i.SyncEpoch,
+		&i.LastSeq,
+		&i.RetainedAfterSeq,
+		&i.Status,
+		&i.SessionActive,
+	)
+	return i, err
+}
+
 const insertMutationReceipt = `-- name: InsertMutationReceipt :exec
 INSERT INTO mutation_receipts (account_id, operation_id, operation_type, request_hash, result, created_at)
 VALUES ($1, $2, $3, $4, $5, $6)

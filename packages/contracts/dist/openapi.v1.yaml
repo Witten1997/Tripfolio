@@ -25,6 +25,8 @@ servers:
 security:
   - bearerAuth: []
 tags:
+  - name: sync
+    description: 原生账号增量同步与协议发现
   - name: metadata
     description: 固定枚举、币种精度、上传上限与协议版本
   - name: auth
@@ -42,6 +44,103 @@ tags:
   - name: public
     description: 访客凭分享令牌读取的只读接口
 paths:
+  /sync/status:
+    get:
+      tags:
+        - sync
+      operationId: getSyncStatus
+      summary: 查询原生账号同步协议能力
+      description: 未装配完整同步能力时返回 503。成功响应不包含拉取起点，必须先完成基线快照。
+      responses:
+        '200':
+          description: 协议与保留边界配置
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncStatus'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          description: 同步能力尚不可用
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+  /sync/changes:
+    get:
+      tags:
+        - sync
+      operationId: getSyncChanges
+      summary: 读取账号固定高水位的一页增量
+      description: 不按旅行过滤；允许一页截断批次。末页 next_cursor 是下轮 checkpoint，commit_cursor 和本地 apply_cursor 不能用于此接口。
+      parameters:
+        - name: X-Tripfolio-Sync-Version
+          in: header
+          required: false
+          description: 必须为 2；省略或不支持时由服务返回 426 SYNC_PROTOCOL_UNSUPPORTED。
+          schema:
+            type: string
+        - name: cursor
+          in: query
+          required: true
+          description: 完整基线或上一页签发的账号专属游标
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 8192
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 200
+      responses:
+        '200':
+          description: 有序事件和可持久化的扫描游标
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncChangesPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: SYNC_EPOCH_MISMATCH，需要新基线并隔离旧操作
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '410':
+          description: CURSOR_EXPIRED，历史不完整或超过保留边界
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '426':
+          description: SYNC_PROTOCOL_UNSUPPORTED
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          description: 同步能力或历史结构暂不可用，不得推进游标
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
   /deletion-jobs/{job_id}:
     get:
       tags:
@@ -8040,6 +8139,172 @@ components:
       properties:
         data:
           $ref: '#/components/schemas/PhotoWriteResult'
+    SyncStatus:
+      type: object
+      additionalProperties: false
+      x-go-type: syncmodel.Status
+      x-go-type-import:
+        name: syncmodel
+        path: tripfolio/server/internal/modules/sync
+      required:
+        - supported_protocol_versions
+        - recommended_protocol_version
+        - sync_epoch
+        - server_time
+        - retention_days
+        - snapshot_ttl_seconds
+        - limits
+      properties:
+        supported_protocol_versions:
+          type: array
+          items:
+            type: integer
+            enum:
+              - 2
+        recommended_protocol_version:
+          type: integer
+          enum:
+            - 2
+        sync_epoch:
+          type: string
+          format: uuid
+        server_time:
+          type: string
+          format: date-time
+        retention_days:
+          type: integer
+          minimum: 90
+        snapshot_ttl_seconds:
+          type: integer
+          enum:
+            - 86400
+        limits:
+          type: object
+          additionalProperties: false
+          required:
+            - max_operations
+            - max_operation_bytes
+            - max_request_bytes
+            - max_dependencies
+          properties:
+            max_operations:
+              type: integer
+              enum:
+                - 100
+            max_operation_bytes:
+              type: integer
+              enum:
+                - 65536
+            max_request_bytes:
+              type: integer
+              enum:
+                - 1048576
+            max_dependencies:
+              type: integer
+              enum:
+                - 100
+    SyncSeq:
+      type: string
+      pattern: ^(0|[1-9][0-9]*)$
+      maxLength: 19
+      description: 精确的非负十进制整数，不超过 9223372036854775807；不得转浮点数。
+    SyncChange:
+      type: object
+      additionalProperties: false
+      required:
+        - seq
+        - batch_id
+        - batch_end_seq
+        - entity_type
+        - entity_id
+        - trip_id
+        - version
+        - kind
+        - schema_version
+        - requires_snapshot
+        - changed_fields
+        - data
+      properties:
+        seq:
+          $ref: '#/components/schemas/SyncSeq'
+        batch_id:
+          type: string
+          format: uuid
+        batch_end_seq:
+          $ref: '#/components/schemas/SyncSeq'
+        entity_type:
+          type: string
+          enum:
+            - trip
+            - trip_member
+            - expense_category
+            - itinerary_item
+            - ledger_entry
+            - packing_item
+            - todo
+            - reservation
+            - document
+            - photo
+            - asset
+        entity_id:
+          type: string
+          format: uuid
+        trip_id:
+          type: string
+          format: uuid
+          nullable: true
+        version:
+          type: string
+          pattern: ^[1-9][0-9]*$
+          maxLength: 19
+        kind:
+          type: string
+          enum:
+            - upsert
+            - delete
+            - purge
+            - redacted
+        schema_version:
+          type: integer
+          enum:
+            - 2
+        requires_snapshot:
+          type: boolean
+        changed_fields:
+          type: array
+          nullable: true
+          items:
+            type: string
+        data:
+          type: object
+          nullable: true
+          additionalProperties: true
+          description: 此版本的白名单业务资源；delete/purge/redacted 为 null，不含文件密钥或凭证。
+    SyncChangesPage:
+      type: object
+      additionalProperties: false
+      x-go-type: syncmodel.Page
+      x-go-type-import:
+        name: syncmodel
+        path: tripfolio/server/internal/modules/sync
+      required:
+        - sync_epoch
+        - changes
+        - next_cursor
+        - has_more
+      properties:
+        sync_epoch:
+          type: string
+          format: uuid
+        changes:
+          type: array
+          items:
+            $ref: '#/components/schemas/SyncChange'
+        next_cursor:
+          type: string
+          description: 每页均返回，包括空终页；与整页 inbox 在同一客户端事务保存。
+        has_more:
+          type: boolean
     SplitMode:
       type: string
       description: 分摊模式；even 按参与人等分，ratio 按参与人的成员百分比归一化，personal 由「我」支付并承担全额，不计入成员结算

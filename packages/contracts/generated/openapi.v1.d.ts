@@ -723,6 +723,46 @@ export type paths = {
         patch?: never;
         trace?: never;
     };
+    "/sync/changes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 读取账号固定高水位的一页增量
+         * @description 不按旅行过滤；允许一页截断批次。末页 next_cursor 是下轮 checkpoint，commit_cursor 和本地 apply_cursor 不能用于此接口。
+         */
+        get: operations["getSyncChanges"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sync/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 查询原生账号同步协议能力
+         * @description 未装配完整同步能力时返回 503。成功响应不包含拉取起点，必须先完成基线快照。
+         */
+        get: operations["getSyncStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/trips": {
         parameters: {
             query?: never;
@@ -2774,6 +2814,61 @@ export type components = {
             net_amount: components["schemas"]["SignedMoney"];
             refund_amount: components["schemas"]["Money"];
         };
+        SyncChange: {
+            batch_end_seq: components["schemas"]["SyncSeq"];
+            /** Format: uuid */
+            batch_id: string;
+            changed_fields: string[] | null;
+            /** @description 此版本的白名单业务资源；delete/purge/redacted 为 null，不含文件密钥或凭证。 */
+            data: {
+                [key: string]: unknown;
+            } | null;
+            /** Format: uuid */
+            entity_id: string;
+            /** @enum {string} */
+            entity_type: "trip" | "trip_member" | "expense_category" | "itinerary_item" | "ledger_entry" | "packing_item" | "todo" | "reservation" | "document" | "photo" | "asset";
+            /** @enum {string} */
+            kind: "upsert" | "delete" | "purge" | "redacted";
+            requires_snapshot: boolean;
+            /** @enum {integer} */
+            schema_version: 2;
+            seq: components["schemas"]["SyncSeq"];
+            /** Format: uuid */
+            trip_id: string | null;
+            version: string;
+        };
+        SyncChangesPage: {
+            changes: components["schemas"]["SyncChange"][];
+            has_more: boolean;
+            /** @description 每页均返回，包括空终页；与整页 inbox 在同一客户端事务保存。 */
+            next_cursor: string;
+            /** Format: uuid */
+            sync_epoch: string;
+        };
+        /** @description 精确的非负十进制整数，不超过 9223372036854775807；不得转浮点数。 */
+        SyncSeq: string;
+        SyncStatus: {
+            limits: {
+                /** @enum {integer} */
+                max_dependencies: 100;
+                /** @enum {integer} */
+                max_operation_bytes: 65536;
+                /** @enum {integer} */
+                max_operations: 100;
+                /** @enum {integer} */
+                max_request_bytes: 1048576;
+            };
+            /** @enum {integer} */
+            recommended_protocol_version: 2;
+            retention_days: number;
+            /** Format: date-time */
+            server_time: string;
+            /** @enum {integer} */
+            snapshot_ttl_seconds: 86400;
+            supported_protocol_versions: 2[];
+            /** Format: uuid */
+            sync_epoch: string;
+        };
         /**
          * @description 缩略图状态；缩略图失败不影响原图可用性，分别展示
          * @enum {string}
@@ -4519,6 +4614,106 @@ export interface operations {
             409: components["responses"]["Conflict"];
             412: components["responses"]["PreconditionFailed"];
             428: components["responses"]["VersionRequired"];
+        };
+    };
+    getSyncChanges: {
+        parameters: {
+            query: {
+                /** @description 完整基线或上一页签发的账号专属游标 */
+                cursor: string;
+                limit?: number;
+            };
+            header?: {
+                /** @description 必须为 2；省略或不支持时由服务返回 426 SYNC_PROTOCOL_UNSUPPORTED。 */
+                "X-Tripfolio-Sync-Version"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 有序事件和可持久化的扫描游标 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncChangesPage"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description SYNC_EPOCH_MISMATCH，需要新基线并隔离旧操作 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description CURSOR_EXPIRED，历史不完整或超过保留边界 */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            422: components["responses"]["ValidationFailed"];
+            /** @description SYNC_PROTOCOL_UNSUPPORTED */
+            426: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            500: components["responses"]["InternalError"];
+            /** @description 同步能力或历史结构暂不可用，不得推进游标 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getSyncStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 协议与保留边界配置 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncStatus"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            500: components["responses"]["InternalError"];
+            /** @description 同步能力尚不可用 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
         };
     };
     listTrips: {

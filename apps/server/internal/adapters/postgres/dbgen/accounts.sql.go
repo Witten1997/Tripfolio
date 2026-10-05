@@ -134,7 +134,7 @@ func (q *Queries) GetAccountByID(ctx context.Context, id uuid.UUID) (Account, er
 }
 
 const getAccountSyncState = `-- name: GetAccountSyncState :one
-SELECT account_id, last_seq, retained_after_seq, updated_at FROM account_sync_state
+SELECT account_id, last_seq, retained_after_seq, updated_at, sync_epoch FROM account_sync_state
 WHERE account_id = $1
 `
 
@@ -146,6 +146,7 @@ func (q *Queries) GetAccountSyncState(ctx context.Context, accountID uuid.UUID) 
 		&i.LastSeq,
 		&i.RetainedAfterSeq,
 		&i.UpdatedAt,
+		&i.SyncEpoch,
 	)
 	return i, err
 }
