@@ -149,6 +149,11 @@ func NewItineraryUnitOfWork(writer *pgcore.Writer) write.UnitOfWork[itinerary.Re
 	})
 }
 
+// NewItineraryRepository binds business operations to an existing Writer transaction.
+func NewItineraryRepository(scope *pgcore.TxScope) itinerary.Repo {
+	return &itineraryRepo{scope: scope}
+}
+
 func (r *itineraryRepo) MergeSource() write.MergeSource { return r.scope }
 
 func (r *itineraryRepo) Trip(ctx context.Context, accountID, tripID uuid.UUID) (itinerary.TripInfo, bool, error) {

@@ -3,6 +3,8 @@ package itinerary
 import (
 	"context"
 	"fmt"
+	"math"
+	"reflect"
 	"time"
 
 	"github.com/google/uuid"
@@ -222,6 +224,9 @@ func (s *Service) Create(ctx context.Context, a actor.Actor, operationID, tripID
 		if max, found, err := repo.MaxSortOrder(ctx, a.AccountID, tripID, scheduledOn); err != nil {
 			return err
 		} else if found {
+			if max == math.MaxInt32 {
+				return apperr.Validation(apperr.Field("sort_order", "OVERFLOW", "当日排序已达上限"))
+			}
 			sortOrder = max + 1
 		}
 		now := s.clock.Now()
@@ -445,17 +450,48 @@ func (s *Service) Update(ctx context.Context, a actor.Actor, operationID, tripID
 		if err := validateMergedValues(v); err != nil {
 			return err
 		}
+		changed := itineraryChangedFields(current.Values(), v)
+		if len(changed) == 0 {
+			scope.SetPrimary(ref(current))
+			return nil
+		}
 		updated, err := repo.Update(ctx, a.AccountID, tripID, id, v, s.clock.Now())
 		if err != nil {
 			return err
 		}
-		record(scope, updated, write.ChangeUpsert, submitted)
+		record(scope, updated, write.ChangeUpsert, changed)
 		scope.SetPrimary(ref(updated))
 		if patch.LatitudeSet || patch.LongitudeSet {
 			return recalculateRoutes(ctx, scope, repo, a.AccountID, tripID, s.clock.Now(), false)
 		}
 		return nil
 	}, s.reload(a, tripID, id))
+}
+
+// Compare final business values after validation, including derived POI changes.
+func itineraryChangedFields(before, after Values) []string {
+	fields := []struct {
+		name          string
+		before, after any
+	}{
+		{"footprint_excluded", before.FootprintExcluded, after.FootprintExcluded},
+		{"poi_id", before.POIID, after.POIID}, {"title", before.Title, after.Title}, {"kind", before.Kind, after.Kind},
+		{"planned_start_local", before.PlannedStartLocal, after.PlannedStartLocal},
+		{"planned_end_local", before.PlannedEndLocal, after.PlannedEndLocal},
+		{"planned_duration_minutes", before.PlannedDurationMinutes, after.PlannedDurationMinutes},
+		{"place_name", before.PlaceName, after.PlaceName}, {"address", before.Address, after.Address},
+		{"latitude", before.Latitude, after.Latitude}, {"longitude", before.Longitude, after.Longitude},
+		{"estimated_amount", before.EstimatedAmount, after.EstimatedAmount}, {"notes", before.Notes, after.Notes},
+		{"status", before.Status, after.Status}, {"actual_start_local", before.ActualStartLocal, after.ActualStartLocal},
+		{"actual_end_local", before.ActualEndLocal, after.ActualEndLocal}, {"actual_notes", before.ActualNotes, after.ActualNotes},
+	}
+	var changed []string
+	for _, f := range fields {
+		if !reflect.DeepEqual(f.before, f.after) {
+			changed = append(changed, f.name)
+		}
+	}
+	return changed
 }
 
 // Delete 软删除行程项目，不影响其他记录；要求版本相等。

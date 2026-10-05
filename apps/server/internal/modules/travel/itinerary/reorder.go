@@ -113,6 +113,7 @@ func (s *Service) Reorder(ctx context.Context, a actor.Actor, operationID, tripI
 			for order, item := range day.Items {
 				row := current[item.ID]
 				if row.ScheduledOn == date && row.SortOrder == int32(order) {
+					scope.AddAffected(ref(row))
 					continue
 				}
 				moved, err := repo.Reposition(ctx, a.AccountID, tripID, item.ID, date, int32(order), now)

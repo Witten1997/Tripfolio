@@ -528,13 +528,13 @@ func TestReorderMovesItemsAcrossDays(t *testing.T) {
 	if res.Primary != nil || res.Data != nil {
 		t.Fatalf("reorder has no primary resource: %+v", res)
 	}
-	// 只有实际变化的三条进入 affected，D 未变
-	if len(res.Affected) != 3 {
+	// 原结果保留整个集合的版本引用；未变化的 D 不写日志或增版。
+	if len(res.Affected) != 4 {
 		t.Fatalf("affected = %+v", res.Affected)
 	}
 	for _, ref := range res.Affected {
-		if ref.ID == d.ID {
-			t.Fatal("unchanged item must not be rewritten")
+		if ref.ID == d.ID && (ref.Version == nil || *ref.Version != 1) {
+			t.Fatal("unchanged item must preserve its original version")
 		}
 	}
 	changes := f.uow.Changes()[before:]
@@ -660,5 +660,60 @@ func TestReorderIsIdempotentAndWarnsOutsideTripDates(t *testing.T) {
 	}
 	if got, _ := f.svc.Get(ctx, f.actor, f.tripID, a.ID); got.ScheduledOn != types.Date("2026-10-20") || got.Version != 2 {
 		t.Fatalf("replay must not rewrite: %+v", got)
+	}
+}
+
+func TestUpdateNoOpPreservesVersionAndReceipt(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	item := f.create(t, itinerary.CreateCommand{Title: "walk", Notes: str("original")})
+	before := len(f.uow.Changes())
+	id := uuid.New()
+	noop, err := f.svc.Update(ctx, f.actor, id, f.tripID, item.ID, 1, itinerary.Patch{Title: str(" walk "), Notes: str("original")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(f.uow.Changes()) != before || noop.Primary == nil || *noop.Primary.Version != 1 {
+		t.Fatalf("no-op wrote or omitted facts: %+v", noop)
+	}
+	_, err = f.svc.Update(ctx, f.actor, uuid.New(), f.tripID, item.ID, 1, itinerary.Patch{Notes: str("changed")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	replay, err := f.svc.Update(ctx, f.actor, id, f.tripID, item.ID, 1, itinerary.Patch{Title: str(" walk "), Notes: str("original")})
+	if err != nil || !replay.Replayed || *replay.Primary.Version != 1 || replay.Data.(itinerary.Resource).Version != 2 {
+		t.Fatalf("replay facts drift: %+v %v", replay, err)
+	}
+	_, err = f.svc.Update(ctx, f.actor, uuid.New(), f.tripID, item.ID, 1, itinerary.Patch{Notes: str("changed")})
+	expectCode(t, err, 412, "VERSION_CONFLICT")
+}
+
+func TestUpdateRecordsOnlyActualFields(t *testing.T) {
+	f := newFixture(t)
+	item := f.create(t, itinerary.CreateCommand{Title: "walk", POIID: str("place-1"), Latitude: f64(31), Longitude: f64(121)})
+	before := len(f.uow.Changes())
+	_, err := f.svc.Update(context.Background(), f.actor, uuid.New(), f.tripID, item.ID, 1, itinerary.Patch{Title: str("walk"), Notes: str("new"), LatitudeSet: true, LongitudeSet: true, Latitude: f64(31), Longitude: f64(121)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	changes := f.uow.Changes()[before:]
+	if len(changes) != 1 || strings.Join(changes[0].ChangedFields, ",") != "poi_id,notes" {
+		t.Fatalf("actual fields: %+v", changes)
+	}
+}
+
+func TestReorderNoOpRetainsAllReferences(t *testing.T) {
+	f := newFixture(t)
+	a := f.create(t, itinerary.CreateCommand{Title: "A"})
+	b := f.create(t, itinerary.CreateCommand{Title: "B"})
+	before := len(f.uow.Changes())
+	result, err := f.svc.Reorder(context.Background(), f.actor, uuid.New(), f.tripID, itinerary.ReorderCommand{Days: []itinerary.ReorderDay{{Date: "2026-10-02", Items: []itinerary.ReorderItem{{ID: a.ID, BaseVersion: 1}, {ID: b.ID, BaseVersion: 1}}}}})
+	if err != nil || len(result.Affected) != 2 || len(f.uow.Changes()) != before {
+		t.Fatalf("no-op reorder: %+v %v", result, err)
+	}
+	for _, ref := range result.Affected {
+		if ref.Version == nil || *ref.Version != 1 {
+			t.Fatal("original reference lost")
+		}
 	}
 }
