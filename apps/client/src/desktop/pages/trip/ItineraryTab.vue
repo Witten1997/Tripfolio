@@ -57,7 +57,21 @@ const board = useItineraryBoard(context.tripId, () => ({
   start: trip.value?.start_date ?? '',
   end: trip.value?.end_date ?? '',
 }))
-const { days, loading, error, reordering, actionFailure, feedback } = board
+const {
+  days,
+  loading,
+  error,
+  reordering,
+  actionFailure,
+  feedback,
+  canReorder,
+  hasPending,
+  uncertain,
+  loadingLatest,
+  latest,
+  latestError,
+  comparison,
+} = board
 const dialog = ref<InstanceType<typeof ItineraryItemDialog>>()
 const busy = ref<string | null>(null)
 const notice = ref<string[]>([])
@@ -106,7 +120,7 @@ const isToday = (date: string) => date === context.today.value
 /**
  * 拖动组件需要可变数组：每天维护一份镜像。VueDraggable 在挂载时读取 v-model，
  * 值不是数组会被当成选项而不初始化，所以镜像必须在首次渲染前就按天铺满（immediate + sync）。
- * 拖动结束后 board 重载，days 变化，镜像随之按服务端结果重建。
+ * board 的 days 包含待保存草稿；失败时镜像继续展示草稿，核对候选不会替换它。
  */
 const lists = ref<Record<string, ItineraryItem[]>>({})
 watch(
@@ -229,8 +243,8 @@ watch(
 const total = computed(() => board.items.value.length)
 
 async function reloadAll() {
-  await board.reload()
-  await loadRoutePlan()
+  if (hasPending.value || reordering.value || loadingLatest.value) return
+  if (await board.reload()) await loadRoutePlan()
 }
 
 function scheduleRoutePoll() {
@@ -389,24 +403,52 @@ function dayTitlePart(title: string, part: 'date' | 'weekday') {
 
 async function onDragEnd(event: DraggableEvent<ItineraryItem>) {
   dragging.value = false
-  const from = event.from.dataset.date
-  const to = event.to.dataset.date
+  const from = event.from?.dataset.date
+  const to = event.to?.dataset.date
   const id = event.data?.id
-  if (!from || !to || !id || event.newIndex === undefined) {
-    await reloadAll()
+  if (!canReorder.value || busy.value || !from || !to || !id || event.newIndex === undefined) {
+    lists.value = Object.fromEntries(days.value.map((day) => [day.date, [...day.items]]))
     return
   }
-  // moveItem 成功或失败都会重载 board，镜像由 days 的 watcher 重建
+  // 保存失败时 days 保留草稿；无效/不变操作才恢复原确认顺序。
   const moved = await board.moveItem(id, to, event.newIndex)
   if (!moved) lists.value = Object.fromEntries(days.value.map((day) => [day.date, [...day.items]]))
-  if (moved || actionFailure.value) await loadRoutePlan(false)
+  if (moved) await loadRoutePlan(false)
   if (moved && feedback.value.length) {
     noticeType.value = 'warning'
     notice.value = feedback.value
   }
 }
 
+async function retryOrder() {
+  if (await board.retryPending()) await loadRoutePlan(false)
+}
+
+async function adoptLatestOrder() {
+  const candidate = latest.value
+  if (!candidate || uncertain.value || loadingLatest.value || reordering.value) return
+  try {
+    await ElMessageBox.confirm(
+      '将放弃当前未保存的排序，采用已读取的最新安排。之后可以重新拖动排序。',
+      '采用最新安排？',
+      {
+        confirmButtonText: '放弃当前排序并采用',
+        cancelButtonText: '保留当前排序',
+        type: 'warning',
+      },
+    )
+  } catch {
+    return
+  }
+  if (latest.value === candidate && board.adoptLatest()) await loadRoutePlan(false)
+}
+
+function orderTitles(items: ItineraryItem[] | null) {
+  return items?.map((item) => item.title).join(' → ') || '无行程'
+}
+
 async function saved(outcome: WriteOutcome<ItineraryItem>) {
+  if (hasPending.value || reordering.value) return
   const warnings = writeWarnings(outcome.result)
   noticeType.value = warnings.length ? 'warning' : 'success'
   notice.value = ['行程已保存。', ...warnings]
@@ -415,7 +457,7 @@ async function saved(outcome: WriteOutcome<ItineraryItem>) {
 }
 
 async function remove(item: ItineraryItem) {
-  if (busy.value || reordering.value) return
+  if (busy.value || !canReorder.value) return
   try {
     await ElMessageBox.confirm(`删除“${item.title}”不影响其他记录。`, '删除这条行程？', {
       type: 'warning',
@@ -425,6 +467,7 @@ async function remove(item: ItineraryItem) {
   } catch {
     return
   }
+  if (busy.value || !canReorder.value) return
   busy.value = item.id
   actionFailure.value = null
   const intent = intents.get(item.id) ?? createWriteIntent()
@@ -580,8 +623,56 @@ onUnmounted(() => {
       @close="notice = []"
     />
     <ElAlert v-if="actionFailure" type="error" :title="actionFailure" :closable="false" show-icon />
+    <section v-if="hasPending" class="order-review tf-surface" aria-label="待处理的行程排序">
+      <p>
+        {{
+          uncertain
+            ? '排序结果尚未确认，请原样重试。'
+            : '当前显示的是待保存的排序，尚未替换为最新安排。'
+        }}
+      </p>
+      <div class="tf-actions">
+        <ElButton v-if="uncertain" :loading="reordering" @click="retryOrder">原样重试</ElButton>
+        <ElButton v-else :loading="loadingLatest" :disabled="reordering" @click="board.loadLatest"
+          >核对最新安排</ElButton
+        >
+        <ElButton
+          v-if="latest && !uncertain"
+          :disabled="loadingLatest || reordering"
+          @click="adoptLatestOrder"
+          >采用最新安排并重新排序</ElButton
+        >
+      </div>
+      <ElAlert v-if="latestError" :title="latestError" type="error" :closable="false" />
+      <div v-if="latest" class="order-comparison">
+        <table aria-label="行程排序核对">
+          <thead>
+            <tr>
+              <th>日期</th>
+              <th>原安排</th>
+              <th>当前排序</th>
+              <th>最新安排</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="day in comparison" :key="day.date">
+              <th scope="row">{{ day.date }}</th>
+              <td>{{ orderTitles(day.original) }}</td>
+              <td>{{ orderTitles(day.draft) }}</td>
+              <td>{{ orderTitles(day.latest) }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+    <div v-if="error && total">
+      <ElAlert :title="error" type="error" :closable="false" show-icon />
+      <ElButton class="retry-button" :disabled="hasPending || reordering" @click="reloadAll"
+        >重新加载</ElButton
+      >
+    </div>
     <ElSkeleton v-if="loading && !total" :rows="8" animated class="tab-skeleton" />
-    <ElCard v-else-if="error" shadow="never">
+    <ElCard v-else-if="error && !total" shadow="never">
       <ElAlert :title="error" type="error" :closable="false" show-icon />
       <ElButton class="retry-button" @click="reloadAll">重新加载</ElButton>
     </ElCard>
@@ -614,7 +705,7 @@ onUnmounted(() => {
             v-model="lists[day.date]"
             group="itinerary"
             :data-date="day.date"
-            :disabled="reordering || !!busy"
+            :disabled="!canReorder || !!busy"
             :animation="150"
             :force-fallback="true"
             handle=".drag-handle"
@@ -629,7 +720,7 @@ onUnmounted(() => {
                   type="button"
                   class="drag-handle"
                   :aria-label="`拖动 ${item.title}`"
-                  :disabled="reordering"
+                  :disabled="!canReorder || !!busy"
                 >
                   ⋮⋮
                 </button>
@@ -664,7 +755,7 @@ onUnmounted(() => {
                     :label="`编辑行程：${item.title}`"
                     appearance="ghost"
                     text
-                    :disabled="!!busy || reordering"
+                    :disabled="!!busy || !canReorder"
                     @click="dialog?.open(item)"
                   />
                   <IconAction
@@ -674,7 +765,7 @@ onUnmounted(() => {
                     text
                     type="danger"
                     :loading="busy === item.id"
-                    :disabled="(!!busy && busy !== item.id) || reordering"
+                    :disabled="(!!busy && busy !== item.id) || !canReorder"
                     @click="remove(item)"
                   />
                 </div>
@@ -718,7 +809,7 @@ onUnmounted(() => {
               :label="`为 ${day.title} 添加行程`"
               appearance="ghost"
               text
-              :disabled="reordering"
+              :disabled="!canReorder || !!busy"
               @click="dialog?.open(undefined, day.date)"
             />
           </footer>
@@ -803,6 +894,28 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+.order-review {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+}
+.order-review p {
+  margin: 0;
+}
+.order-comparison {
+  overflow-x: auto;
+}
+.order-comparison table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.order-comparison th,
+.order-comparison td {
+  padding: 8px;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+}
 .route-options {
   display: flex;
   justify-content: space-between;
