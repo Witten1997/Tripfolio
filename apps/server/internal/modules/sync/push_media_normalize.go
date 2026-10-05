@@ -144,9 +144,6 @@ func normalizeMediaPayload(op Operation) (json.RawMessage, error) {
 				m[k] = json.RawMessage("null")
 			}
 		}
-		if _, ok := m["sort_order"]; !ok {
-			m["sort_order"] = json.RawMessage("0")
-		}
 	}
 	if op.Type == "asset.register" {
 		if _, ok := m["client_sha256"]; !ok {

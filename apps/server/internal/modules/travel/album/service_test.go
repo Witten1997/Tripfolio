@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 	"maps"
+	"math"
 	"reflect"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 	"tripfolio/server/internal/foundation/actor"
+	"tripfolio/server/internal/foundation/apperr"
 	"tripfolio/server/internal/foundation/clock"
 	"tripfolio/server/internal/foundation/types"
 	"tripfolio/server/internal/foundation/write"
@@ -34,6 +36,14 @@ func (r *mediaTestRepo) Get(_ context.Context, _, _, id uuid.UUID) (Resource, bo
 	return v, ok, nil
 }
 func (r *mediaTestRepo) MergeSource() write.MergeSource { return r.merge }
+func (r *mediaTestRepo) IDExists(_ context.Context, id uuid.UUID) (bool, error) {
+	_, used := r.rows[id]
+	return used, nil
+}
+func (r *mediaTestRepo) Insert(_ context.Context, _ uuid.UUID, row Resource) (Resource, error) {
+	r.rows[row.ID] = row
+	return row, nil
+}
 func (r *mediaTestRepo) Update(_ context.Context, _ uuid.UUID, v Resource) (Resource, error) {
 	if v.ID == r.failID {
 		return Resource{}, errors.New("injected update failure")
@@ -146,5 +156,94 @@ func TestPhotoNoopAtStoredCoordinatePrecision(t *testing.T) {
 	result, err := svc.Update(context.Background(), a, uuid.New(), row.TripID, row.ID, 1, Patch{Latitude: &input, LatitudeSet: true})
 	if err != nil || result.Primary == nil || *result.Primary.Version != 1 || len(uow.Changes()) != 0 {
 		t.Fatalf("rounded no-op %+v %v", result, err)
+	}
+}
+
+func TestPhotoCreateAppendsWithinFinalDay(t *testing.T) {
+	zero := int32(0)
+	for _, tc := range []struct {
+		name                                  string
+		activeOrder                           int32
+		empty, deleted, otherDay, implicitDay bool
+		explicit                              *int32
+		want                                  int32
+		overflow                              bool
+	}{
+		{name: "empty", empty: true, want: 0},
+		{name: "existing sparse order", activeOrder: 7, want: 8},
+		{name: "all deleted", activeOrder: math.MaxInt32, deleted: true, want: 0},
+		{name: "other day ignored", activeOrder: math.MaxInt32, otherDay: true, want: 0},
+		{name: "implicit final day", activeOrder: 4, implicitDay: true, want: 5},
+		{name: "explicit zero retained", activeOrder: math.MaxInt32, explicit: &zero, want: 0},
+		{name: "overflow", activeOrder: math.MaxInt32, overflow: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			svc, repo, uow, a, seed := mediaServiceFixture()
+			seed.SortOrder = tc.activeOrder
+			if tc.deleted {
+				now := time.Now()
+				seed.DeletedAt = &now
+			}
+			if tc.otherDay || tc.implicitDay {
+				seed.RecordedOn = types.Date("2026-10-06")
+			}
+			repo.rows[seed.ID] = seed
+			if tc.empty {
+				delete(repo.rows, seed.ID)
+			}
+			// A deleted maximum never participates in the next active order.
+			removed := seed
+			removed.ID = uuid.New()
+			removed.SortOrder = math.MaxInt32
+			now := time.Now()
+			removed.DeletedAt = &now
+			repo.rows[removed.ID] = removed
+			day := types.Date("2026-10-05")
+			patch := Patch{AssetID: &seed.AssetID, RecordedOn: &day, SortOrder: tc.explicit}
+			if tc.implicitDay {
+				taken := types.LocalDateTime("2026-10-06T12:00:00")
+				patch.RecordedOn = nil
+				patch.TakenAtLocal = &taken
+				patch.TakenAtLocalSet = true
+			}
+			id := uuid.New()
+			_, err := svc.Create(context.Background(), a, uuid.New(), seed.TripID, CreateCommand{ID: id, Patch: patch})
+			if tc.overflow {
+				e, ok := apperr.As(err)
+				if !ok || e.Code != "SORT_ORDER_OVERFLOW" || len(uow.Changes()) != 0 {
+					t.Fatalf("overflow %v", err)
+				}
+				if _, exists := repo.rows[id]; exists {
+					t.Fatal("overflow inserted photo")
+				}
+				return
+			}
+			if err != nil || repo.rows[id].SortOrder != tc.want {
+				t.Fatalf("order=%d want=%d err=%v", repo.rows[id].SortOrder, tc.want, err)
+			}
+			if tc.implicitDay && repo.rows[id].RecordedOn != "2026-10-06" {
+				t.Fatal("order used unresolved date")
+			}
+		})
+	}
+}
+
+func TestPhotoCreateOmittedOrderReceiptDiffersFromExplicitZero(t *testing.T) {
+	svc, repo, uow, a, seed := mediaServiceFixture()
+	cmd := CreateCommand{ID: uuid.New(), Patch: Patch{AssetID: &seed.AssetID, RecordedOn: &seed.RecordedOn}}
+	op := uuid.New()
+	first, err := svc.Create(context.Background(), a, op, seed.TripID, cmd)
+	if err != nil || repo.rows[cmd.ID].SortOrder != 1 {
+		t.Fatalf("append %+v %v", first, err)
+	}
+	replay, err := svc.Create(context.Background(), a, op, seed.TripID, cmd)
+	if err != nil || !replay.Replayed || len(uow.Changes()) != 1 {
+		t.Fatal("append replay mutated collection")
+	}
+	zero := int32(0)
+	cmd.SortOrder = &zero
+	_, err = svc.Create(context.Background(), a, op, seed.TripID, cmd)
+	if e, ok := apperr.As(err); !ok || e.Code != "IDEMPOTENCY_CONFLICT" {
+		t.Fatalf("explicit zero conflated with missing: %v", err)
 	}
 }

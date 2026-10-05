@@ -15,10 +15,15 @@ func TestMediaPayloadNormalization(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	op.Payload = json.RawMessage(`{"asset_id":"` + asset.String() + `","recorded_on":"2026-10-05","sort_order":0,"caption":"","place_name":"","address":"","taken_at_local":null,"latitude":null,"longitude":null}`)
+	op.Payload = json.RawMessage(`{"asset_id":"` + asset.String() + `","recorded_on":"2026-10-05","caption":"","place_name":"","address":"","taken_at_local":null,"latitude":null,"longitude":null}`)
 	b, err := normalizeMediaPayload(op)
 	if err != nil || string(a) != string(b) {
 		t.Fatalf("defaults differ: %s %s %v", a, b, err)
+	}
+	op.Payload = json.RawMessage(`{"asset_id":"` + asset.String() + `","recorded_on":"2026-10-05","sort_order":0}`)
+	explicit, err := normalizeMediaPayload(op)
+	if err != nil || string(explicit) == string(a) || strings.Contains(string(a), "sort_order") {
+		t.Fatalf("missing order must remain distinct from explicit zero: %s %s %v", a, explicit, err)
 	}
 	op.Type = "asset.register"
 	op.Payload = json.RawMessage(`{"scope":"trip","trip_id":"` + trip.String() + `","original_name":" photo.png ","expected_size":7,"declared_media_type":"IMAGE/PNG; charset=x"}`)

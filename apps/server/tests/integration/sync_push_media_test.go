@@ -3,12 +3,16 @@ package integration
 import (
 	"context"
 	"encoding/json"
+	"math"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
 
 	"github.com/google/uuid"
 	syncmodule "tripfolio/server/internal/modules/sync"
+	"tripfolio/server/internal/transport/httpapi"
 )
 
 func mediaRegistration(trip uuid.UUID) syncmodule.Operation {
@@ -209,4 +213,62 @@ func TestSyncPushMediaReferencesConflictsAndTombstones(t *testing.T) {
 	reuse := photo
 	reuse.OperationID = uuid.New()
 	mediaError(t, f.push(reuse).Results[0], "ID_ALREADY_USED")
+}
+
+func TestSyncPushMediaDefaultAppendAndLegacyREST(t *testing.T) {
+	f := newPushFixture(t)
+	s := f.services
+	server := httptest.NewServer(httpapi.NewRouter(httpapi.Deps{Logger: quietLogger(), CORSOrigins: []string{f.origin}, Identity: s.Identity, Sessions: s.Sessions, Profile: s.Profile, Trips: s.Trips, Photos: s.Photos, Sync: f.svc}))
+	t.Cleanup(server.Close)
+	f.server = server
+	trip := f.newTrip("append")
+	reg := mediaRegistration(trip)
+	mediaApplied(t, f.push(reg).Results[0])
+	create := func(day string, explicit *int32) uuid.UUID {
+		t.Helper()
+		id := uuid.New()
+		body := map[string]any{"id": id, "asset_id": *reg.EntityID, "recorded_on": day}
+		if explicit != nil {
+			body["sort_order"] = *explicit
+		}
+		expectStatus(t, f.do(request{method: http.MethodPost, path: "/trips/" + trip.String() + "/photos", token: f.webToken, headers: f.authHeaders(nil), body: body}), 201, "")
+		return id
+	}
+	assertOrder := func(id uuid.UUID, want int32) {
+		t.Helper()
+		var got int32
+		if err := f.pool.QueryRow(context.Background(), `SELECT sort_order FROM photos WHERE id=$1`, id).Scan(&got); err != nil || got != want {
+			t.Fatalf("order got=%d want=%d err=%v", got, want, err)
+		}
+	}
+	first := create("2026-10-05", nil)
+	assertOrder(first, 0)
+	seven := int32(7)
+	explicit := create("2026-10-05", &seven)
+	assertOrder(explicit, 7)
+	last := create("2026-10-05", nil)
+	assertOrder(last, 8)
+	expectStatus(t, f.do(request{method: http.MethodDelete, path: "/trips/" + trip.String() + "/photos/" + last.String(), token: f.webToken, headers: f.authHeaders(map[string]string{"If-Match": `"1"`})}), 200, "")
+	afterDelete := create("2026-10-05", nil)
+	assertOrder(afterDelete, 8)
+	other := create("2026-10-06", nil)
+	assertOrder(other, 0)
+	defaultOp := itemOp("photo", "create", trip, uuid.New(), nil, map[string]any{"asset_id": *reg.EntityID, "recorded_on": "2026-10-06"})
+	mediaApplied(t, f.push(defaultOp).Results[0])
+	assertOrder(*defaultOp.EntityID, 1)
+	replay := f.push(defaultOp).Results[0]
+	if replay.Status != "replayed" {
+		t.Fatal("default append failed to replay")
+	}
+	defaultOp.Payload, _ = json.Marshal(map[string]any{"asset_id": *reg.EntityID, "recorded_on": "2026-10-06", "sort_order": 0})
+	mediaError(t, f.push(defaultOp).Results[0], "IDEMPOTENCY_CONFLICT")
+	f.sql(`UPDATE photos SET sort_order=$2 WHERE id=$1`, explicit, math.MaxInt32)
+	blocked := uuid.New()
+	expectStatus(t, f.do(request{method: http.MethodPost, path: "/trips/" + trip.String() + "/photos", token: f.webToken, headers: f.authHeaders(nil), body: map[string]any{"id": blocked, "asset_id": *reg.EntityID, "recorded_on": "2026-10-05"}}), 409, "SORT_ORDER_OVERFLOW")
+	var exists bool
+	if err := f.pool.QueryRow(context.Background(), `SELECT EXISTS(SELECT 1 FROM photos WHERE id=$1)`, blocked).Scan(&exists); err != nil || exists {
+		t.Fatalf("overflow inserted photo: %v", err)
+	}
+	zero := int32(0)
+	assertOrder(create("2026-10-05", &zero), 0)
 }

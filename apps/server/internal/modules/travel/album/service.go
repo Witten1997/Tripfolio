@@ -323,6 +323,22 @@ func (s *Service) Create(ctx context.Context, a actor.Actor, operationID, tripID
 			return err
 		}
 		cmd.Patch.apply(&v)
+		if cmd.SortOrder == nil {
+			rows, err := repo.ListForOrder(ctx, a.AccountID, tripID, v.RecordedOn)
+			if err != nil {
+				return err
+			}
+			var last int32 = -1
+			for _, row := range rows {
+				if row.SortOrder > last {
+					last = row.SortOrder
+				}
+			}
+			if last == math.MaxInt32 {
+				return apperr.Conflicted("SORT_ORDER_OVERFLOW", "照片顺序已达上限，请先重新排序")
+			}
+			v.SortOrder = last + 1
+		}
 		if err := validateResource(v); err != nil {
 			return err
 		}
