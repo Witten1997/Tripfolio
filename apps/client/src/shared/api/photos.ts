@@ -1,6 +1,7 @@
 import type { components, operations } from '@tripfolio/contracts/openapi/v1'
 import { ApiError } from '@/shared/api/auth'
 import { api } from '@/shared/api/client'
+import type { CollectionBaseline } from '@/shared/api/collectionGuards'
 import { versionHeaders, writeOutcome } from '@/shared/api/writes'
 
 export type Photo = components['schemas']['Photo']
@@ -38,11 +39,24 @@ export async function updatePhoto(
   version: string,
   body: PhotoPatch,
   operationId: string,
+  baseline?: CollectionBaseline,
 ) {
+  const sensitive = ['recorded_on', 'taken_at_local', 'sort_order'].some(
+    (field) => Reflect.get(body, field) !== undefined,
+  )
+  if (
+    baseline &&
+    (!sensitive ||
+      !baseline.guards.length ||
+      baseline.guards.some(
+        (guard) => guard.kind !== 'photo_day' || !guard.scope_id.startsWith(`${tripId}/`),
+      ))
+  )
+    throw new Error('照片日期基线与本次修改不匹配。')
   const { data, error } = await api.PATCH('/trips/{trip_id}/photos/{photo_id}', {
     params: {
       path: { trip_id: tripId, photo_id: id },
-      header: versionHeaders(operationId, version),
+      header: { ...versionHeaders(operationId, version), ...baseline?.headers },
     },
     body,
   })
