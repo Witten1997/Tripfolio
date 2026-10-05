@@ -78,9 +78,9 @@ func (q *Queries) GetTodoItemForUpdate(ctx context.Context, arg GetTodoItemForUp
 }
 
 const insertTodoItem = `-- name: InsertTodoItem :one
-INSERT INTO todo_items (id, account_id, trip_id, title, due_on, notes, completed_at, created_at, updated_at)
+INSERT INTO todo_items (id, account_id, trip_id, title, due_on, notes, completed_at, created_at, updated_at, sort_order)
 VALUES ($1, $2, $3, $4, $5, $6, $7,
-        $8, $8)
+        $8, $8, (SELECT (coalesce(max(sort_order)::bigint, -1)+1)::integer FROM todo_items WHERE account_id=$2 AND trip_id=$3 AND deleted_at IS NULL))
 RETURNING id, account_id, version, created_at, updated_at, deleted_at, trip_id, title, due_on, notes, completed_at, sort_order
 `
 
@@ -122,6 +122,48 @@ func (q *Queries) InsertTodoItem(ctx context.Context, arg InsertTodoItemParams) 
 		&i.SortOrder,
 	)
 	return i, err
+}
+
+const listTodoForOrder = `-- name: ListTodoForOrder :many
+SELECT id, account_id, version, created_at, updated_at, deleted_at, trip_id, title, due_on, notes, completed_at, sort_order FROM todo_items WHERE account_id=$1 AND trip_id=$2 AND deleted_at IS NULL ORDER BY id FOR UPDATE
+`
+
+type ListTodoForOrderParams struct {
+	AccountID uuid.UUID
+	TripID    uuid.UUID
+}
+
+func (q *Queries) ListTodoForOrder(ctx context.Context, arg ListTodoForOrderParams) ([]TodoItem, error) {
+	rows, err := q.db.Query(ctx, listTodoForOrder, arg.AccountID, arg.TripID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []TodoItem{}
+	for rows.Next() {
+		var i TodoItem
+		if err := rows.Scan(
+			&i.ID,
+			&i.AccountID,
+			&i.Version,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.DeletedAt,
+			&i.TripID,
+			&i.Title,
+			&i.DueOn,
+			&i.Notes,
+			&i.CompletedAt,
+			&i.SortOrder,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listTodoItems = `-- name: ListTodoItems :many
@@ -270,6 +312,44 @@ func (q *Queries) UpdateTodoItem(ctx context.Context, arg UpdateTodoItemParams) 
 		arg.DueOn,
 		arg.Notes,
 		arg.CompletedAt,
+		arg.UpdatedAt,
+		arg.AccountID,
+		arg.TripID,
+		arg.ID,
+	)
+	var i TodoItem
+	err := row.Scan(
+		&i.ID,
+		&i.AccountID,
+		&i.Version,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+		&i.TripID,
+		&i.Title,
+		&i.DueOn,
+		&i.Notes,
+		&i.CompletedAt,
+		&i.SortOrder,
+	)
+	return i, err
+}
+
+const updateTodoSortOrder = `-- name: UpdateTodoSortOrder :one
+UPDATE todo_items SET sort_order=$1, version=version+1, updated_at=$2 WHERE account_id=$3 AND trip_id=$4 AND id=$5 AND deleted_at IS NULL RETURNING id, account_id, version, created_at, updated_at, deleted_at, trip_id, title, due_on, notes, completed_at, sort_order
+`
+
+type UpdateTodoSortOrderParams struct {
+	SortOrder int32
+	UpdatedAt time.Time
+	AccountID uuid.UUID
+	TripID    uuid.UUID
+	ID        uuid.UUID
+}
+
+func (q *Queries) UpdateTodoSortOrder(ctx context.Context, arg UpdateTodoSortOrderParams) (TodoItem, error) {
+	row := q.db.QueryRow(ctx, updateTodoSortOrder,
+		arg.SortOrder,
 		arg.UpdatedAt,
 		arg.AccountID,
 		arg.TripID,

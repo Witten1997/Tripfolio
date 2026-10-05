@@ -176,9 +176,9 @@ func ResolvePatch(ctx context.Context, src MergeSource, accountID uuid.UUID, ent
 	if !complete {
 		return PatchDecision{Conflicting: nil}, nil
 	}
-	if entityType == "trip" {
-		changed = tripFieldGroups(changed)
-		submitted = tripFieldGroups(submitted)
+	if entityType == "trip" || entityType == "packing_item" || entityType == "todo" {
+		changed = entityFieldGroups(entityType, changed)
+		submitted = entityFieldGroups(entityType, submitted)
 	}
 	set := make(map[string]struct{}, len(changed))
 	for _, f := range changed {
@@ -197,8 +197,16 @@ func ResolvePatch(ctx context.Context, src MergeSource, accountID uuid.UUID, ent
 	return PatchDecision{Merge: true, Merged: true}, nil
 }
 
-func tripFieldGroups(fields []string) []string {
-	groups := [][]string{{"start_date", "end_date", "timezone"}, {"currency_code", "budget_amount", "currency_locked_at"}}
+func entityFieldGroups(entityType string, fields []string) []string {
+	groups := [][]string{}
+	switch entityType {
+	case "trip":
+		groups = [][]string{{"start_date", "end_date", "timezone"}, {"currency_code", "budget_amount", "currency_locked_at"}}
+	case "packing_item":
+		groups = [][]string{{"name", "category"}}
+	case "todo":
+		groups = [][]string{{"completed", "completed_at"}}
+	}
 	set := map[string]bool{}
 	for _, field := range fields {
 		set[field] = true

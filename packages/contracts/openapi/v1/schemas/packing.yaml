@@ -23,6 +23,7 @@ PackingItem:
       quantity,
       notes,
       status,
+      sort_order,
       version,
       created_at,
       updated_at,
@@ -51,6 +52,10 @@ PackingItem:
       maxLength: 2000
     status:
       $ref: '#/PackingStatus'
+    sort_order:
+      type: integer
+      format: int32
+      minimum: 0
     version:
       $ref: ./write.yaml#/Version
     created_at:

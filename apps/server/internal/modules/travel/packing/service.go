@@ -313,6 +313,12 @@ func (p Patch) submittedFields() []string {
 
 // Update 局部更新物品，按字段级合并规则处理基线版本（接口设计 1.2、3.4）。
 func (s *Service) Update(ctx context.Context, a actor.Actor, operationID, tripID, id uuid.UUID, baseVersion int64, patch Patch) (write.Result, error) {
+	return s.update(ctx, a, operationID, tripID, id, baseVersion, patch, false)
+}
+func (s *Service) SetStatus(ctx context.Context, a actor.Actor, operationID, tripID, id uuid.UUID, baseVersion int64, value Status) (write.Result, error) {
+	return s.update(ctx, a, operationID, tripID, id, baseVersion, Patch{Status: &value}, true)
+}
+func (s *Service) update(ctx context.Context, a actor.Actor, operationID, tripID, id uuid.UUID, baseVersion int64, patch Patch, exact bool) (write.Result, error) {
 	var fields []apperr.FieldError
 	if patch.Name != nil {
 		name, ferr := validateName(*patch.Name)
@@ -343,15 +349,17 @@ func (s *Service) Update(ctx context.Context, a actor.Actor, operationID, tripID
 		AccountID: a.AccountID, OperationID: operationID, OperationType: "packing.update",
 		Fingerprint: write.Fingerprint("packing.update", id.String(), &base, patch),
 	}
-	if result, handled, err := write.TryPatch[Resource](ctx, s.uow, req, write.PatchCommand{
-		EntityType: EntityType, TripID: tripID, EntityID: id, BaseVersion: baseVersion,
-		Values: patch, Fields: submitted,
-	}); handled || err != nil {
-		return result, err
+	if !exact {
+		if result, handled, err := write.TryPatch[Resource](ctx, s.uow, req, write.PatchCommand{
+			EntityType: EntityType, TripID: tripID, EntityID: id, BaseVersion: baseVersion,
+			Values: patch, Fields: submitted,
+		}); handled || err != nil {
+			return result, err
+		}
 	}
 	var saved *Resource
 	return s.uow.Run(ctx, req, func(ctx context.Context, scope write.Scope, repo Repo) error {
-		if len(submitted) == 1 && patch.Status != nil {
+		if !exact && len(submitted) == 1 && patch.Status != nil {
 			started := time.Now()
 			updated, matched, err := repo.UpdateStatusIfVersion(ctx, a.AccountID, tripID, id, baseVersion, *patch.Status, s.clock.Now())
 			write.RecordTiming(ctx, "status_update_fast", time.Since(started))
@@ -384,6 +392,9 @@ func (s *Service) Update(ctx context.Context, a actor.Actor, operationID, tripID
 			return resourceGone()
 		}
 		started = time.Now()
+		if exact && int64(current.Version) != baseVersion {
+			return apperr.VersionConflict(&apperr.Conflict{EntityType: EntityType, EntityID: id, ExpectedVersion: baseVersion, CurrentVersion: int64(current.Version), Current: current})
+		}
 		decision, err := write.ResolvePatch(ctx, repo.MergeSource(), a.AccountID, EntityType, id, baseVersion, int64(current.Version), submitted)
 		write.RecordTiming(ctx, "merge_check", time.Since(started))
 		if err != nil {
@@ -425,7 +436,28 @@ func (s *Service) Update(ctx context.Context, a actor.Actor, operationID, tripID
 				return apperr.Validation(apperr.Field("name", "DUPLICATE", "该分类下已存在同名物品"))
 			}
 		}
+		if v == current.Values() {
+			scope.SetPrimary(ref(current))
+			saved = &current
+			return nil
+		}
 		started = time.Now()
+		submitted = nil
+		if v.Name != current.Name {
+			submitted = append(submitted, "name")
+		}
+		if v.Category != current.Category {
+			submitted = append(submitted, "category")
+		}
+		if v.Quantity != current.Quantity {
+			submitted = append(submitted, "quantity")
+		}
+		if v.Notes != current.Notes {
+			submitted = append(submitted, "notes")
+		}
+		if v.Status != current.Status {
+			submitted = append(submitted, "status")
+		}
 		updated, err := repo.Update(ctx, a.AccountID, tripID, id, v, s.clock.Now())
 		write.RecordTiming(ctx, "item_update", time.Since(started))
 		if err != nil {
@@ -490,4 +522,48 @@ func (s *Service) reload(a actor.Actor, tripID, id uuid.UUID) func(ctx context.C
 		}
 		return r, nil
 	}
+}
+
+// Reorder applies a complete effective set. The sync adapter checks its guard
+// under the same account transaction before entering this shared use case.
+func (s *Service) Reorder(ctx context.Context, a actor.Actor, operationID, tripID uuid.UUID, ids []uuid.UUID) (write.Result, error) {
+	seen := map[uuid.UUID]bool{}
+	for _, id := range ids {
+		if id == uuid.Nil || seen[id] {
+			return write.Result{}, apperr.Validation(apperr.Field("ordered_ids", "INVALID", "排序ID必须有效且无重复"))
+		}
+		seen[id] = true
+	}
+	req := write.Request{AccountID: a.AccountID, OperationID: operationID, OperationType: "packing.reorder", Fingerprint: write.Fingerprint("packing.reorder", tripID.String(), nil, ids)}
+	return s.uow.Run(ctx, req, func(ctx context.Context, scope write.Scope, repo Repo) error {
+		if err := loadTrip(ctx, repo, a.AccountID, tripID); err != nil {
+			return err
+		}
+		rows, err := repo.ListForOrder(ctx, a.AccountID, tripID)
+		if err != nil {
+			return err
+		}
+		if len(rows) != len(ids) {
+			return apperr.Validation(apperr.Field("ordered_ids", "INCOMPLETE", "必须包含完整有效集合"))
+		}
+		byID := map[uuid.UUID]Resource{}
+		for _, r := range rows {
+			if !seen[r.ID] {
+				return apperr.Validation(apperr.Field("ordered_ids", "INCOMPLETE", "必须包含完整有效集合"))
+			}
+			byID[r.ID] = r
+		}
+		for i, id := range ids {
+			r := byID[id]
+			if r.SortOrder != int32(i) {
+				r, err = repo.UpdateSortOrder(ctx, a.AccountID, tripID, id, int32(i), s.clock.Now())
+				if err != nil {
+					return err
+				}
+				record(scope, r, write.ChangeUpsert, []string{"sort_order"})
+			}
+			scope.AddAffected(ref(r))
+		}
+		return nil
+	}, nil)
 }

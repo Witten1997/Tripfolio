@@ -18,6 +18,7 @@ Todo:
       notes,
       completed,
       completed_at,
+      sort_order,
       version,
       created_at,
       updated_at,
@@ -50,6 +51,10 @@ Todo:
       format: date-time
       nullable: true
       description: 完成时刻，由服务端生成；客户端只能写 completed
+    sort_order:
+      type: integer
+      format: int32
+      minimum: 0
     version:
       $ref: ./write.yaml#/Version
     created_at:

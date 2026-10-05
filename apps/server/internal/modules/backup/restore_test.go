@@ -66,7 +66,7 @@ func TestRestoreSyncEpochTransaction(t *testing.T) {
 	for _, scenario := range []struct {
 		version int64
 		fail    bool
-	}{{22, false}, {25, false}, {26, false}, {27, false}, {27, true}} {
+	}{{22, false}, {25, false}, {26, false}, {27, false}, {28, false}, {28, true}} {
 		t.Run(fmt.Sprintf("schema_%d_rollback_%t", scenario.version, scenario.fail), func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 			defer cancel()
@@ -235,7 +235,7 @@ CREATE TRIGGER h07_fail_epoch BEFORE UPDATE ON tripfolio_restore.control FOR EAC
 					t.Fatalf("restore packing/todo mismatch: order=%d/%d expected=%d/%d names=%s/%s deleted=%t/%t", packingOrder, todoOrder, wantPacking, wantTodo, packingName, todoTitle, packingDeleted, todoDeleted)
 				}
 			}
-			if version != 27 || len(afterEpochs) != len(accounts) {
+			if version != 28 || len(afterEpochs) != len(accounts) {
 				t.Fatalf("schema/accounts not preserved: %d %+v", version, afterEpochs)
 			}
 			if scenario.fail {
@@ -257,7 +257,11 @@ CREATE TRIGGER h07_fail_epoch BEFORE UPDATE ON tripfolio_restore.control FOR EAC
 					}
 				}
 			}
-			t.Logf("production dump/restore schema %d -> 27, rollback=%t: epoch/snapshot/session/control/audit assertions passed", scenario.version, scenario.fail)
+			var projected bool
+			if err := pool.QueryRow(ctx, `SELECT position('v_packing.sort_order' in pg_get_functiondef('tripfolio_private.patch_item(uuid,uuid,text,bytea,text,uuid,uuid,bigint,jsonb,text[])'::regprocedure)) > 0 AND position('v_todo.sort_order' in pg_get_functiondef('tripfolio_private.patch_item(uuid,uuid,text,bytea,text,uuid,uuid,bigint,jsonb,text[])'::regprocedure)) > 0`).Scan(&projected); err != nil || !projected {
+				t.Fatalf("restored order projection: %v %t", err, projected)
+			}
+			t.Logf("production dump/restore schema %d -> 28, rollback=%t: epoch/snapshot/session/control/audit assertions passed", scenario.version, scenario.fail)
 		})
 	}
 }

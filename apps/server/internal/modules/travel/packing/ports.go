@@ -30,6 +30,8 @@ func (r Resource) Values() Values {
 
 // Repo 是物品在写事务内的仓储；由 PostgreSQL 适配器绑定到当前事务。
 type Repo interface {
+	ListForOrder(ctx context.Context, accountID, tripID uuid.UUID) ([]Resource, error)
+	UpdateSortOrder(ctx context.Context, accountID, tripID, id uuid.UUID, order int32, now time.Time) (Resource, error)
 	// Trip 读取所属旅行的窄视图；不存在或非本人返回 found=false。
 	Trip(ctx context.Context, accountID, tripID uuid.UUID) (TripInfo, bool, error)
 	Get(ctx context.Context, accountID, tripID, id uuid.UUID) (Resource, bool, error)

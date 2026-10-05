@@ -52,6 +52,7 @@ func (s Status) Valid() bool {
 
 // Resource 是物品的规范资源，也是同步日志与快照中的表示（接口设计 3.4 PackingItem）。
 type Resource struct {
+	SortOrder int32         `json:"sort_order"`
 	ID        uuid.UUID     `json:"id"`
 	TripID    uuid.UUID     `json:"trip_id"`
 	Name      string        `json:"name"`
@@ -66,7 +67,7 @@ type Resource struct {
 }
 
 // Fields 是可局部更新的业务字段名，用于 changed_fields 与字段级合并。
-var Fields = []string{"name", "category", "quantity", "notes", "status"}
+var Fields = []string{"name", "category", "quantity", "notes", "status", "sort_order"}
 
 // Filters 是列表查询条件（接口设计 3.9 PackingFilters）；字符串由服务校验。
 type Filters struct {

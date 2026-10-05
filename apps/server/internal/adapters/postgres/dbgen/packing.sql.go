@@ -80,9 +80,9 @@ func (q *Queries) GetPackingItemForUpdate(ctx context.Context, arg GetPackingIte
 }
 
 const insertPackingItem = `-- name: InsertPackingItem :one
-INSERT INTO packing_items (id, account_id, trip_id, name, category, quantity, notes, status, created_at, updated_at)
+INSERT INTO packing_items (id, account_id, trip_id, name, category, quantity, notes, status, created_at, updated_at, sort_order)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8,
-        $9, $9)
+        $9, $9, (SELECT (coalesce(max(sort_order)::bigint, -1)+1)::integer FROM packing_items WHERE account_id=$2 AND trip_id=$3 AND deleted_at IS NULL))
 RETURNING id, account_id, version, created_at, updated_at, deleted_at, trip_id, name, category, quantity, notes, status, sort_order
 `
 
@@ -127,6 +127,49 @@ func (q *Queries) InsertPackingItem(ctx context.Context, arg InsertPackingItemPa
 		&i.SortOrder,
 	)
 	return i, err
+}
+
+const listPackingForOrder = `-- name: ListPackingForOrder :many
+SELECT id, account_id, version, created_at, updated_at, deleted_at, trip_id, name, category, quantity, notes, status, sort_order FROM packing_items WHERE account_id=$1 AND trip_id=$2 AND deleted_at IS NULL ORDER BY id FOR UPDATE
+`
+
+type ListPackingForOrderParams struct {
+	AccountID uuid.UUID
+	TripID    uuid.UUID
+}
+
+func (q *Queries) ListPackingForOrder(ctx context.Context, arg ListPackingForOrderParams) ([]PackingItem, error) {
+	rows, err := q.db.Query(ctx, listPackingForOrder, arg.AccountID, arg.TripID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []PackingItem{}
+	for rows.Next() {
+		var i PackingItem
+		if err := rows.Scan(
+			&i.ID,
+			&i.AccountID,
+			&i.Version,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.DeletedAt,
+			&i.TripID,
+			&i.Name,
+			&i.Category,
+			&i.Quantity,
+			&i.Notes,
+			&i.Status,
+			&i.SortOrder,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listPackingItems = `-- name: ListPackingItems :many
@@ -309,6 +352,45 @@ func (q *Queries) UpdatePackingItem(ctx context.Context, arg UpdatePackingItemPa
 		arg.Quantity,
 		arg.Notes,
 		arg.Status,
+		arg.UpdatedAt,
+		arg.AccountID,
+		arg.TripID,
+		arg.ID,
+	)
+	var i PackingItem
+	err := row.Scan(
+		&i.ID,
+		&i.AccountID,
+		&i.Version,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+		&i.TripID,
+		&i.Name,
+		&i.Category,
+		&i.Quantity,
+		&i.Notes,
+		&i.Status,
+		&i.SortOrder,
+	)
+	return i, err
+}
+
+const updatePackingSortOrder = `-- name: UpdatePackingSortOrder :one
+UPDATE packing_items SET sort_order=$1, version=version+1, updated_at=$2 WHERE account_id=$3 AND trip_id=$4 AND id=$5 AND deleted_at IS NULL RETURNING id, account_id, version, created_at, updated_at, deleted_at, trip_id, name, category, quantity, notes, status, sort_order
+`
+
+type UpdatePackingSortOrderParams struct {
+	SortOrder int32
+	UpdatedAt time.Time
+	AccountID uuid.UUID
+	TripID    uuid.UUID
+	ID        uuid.UUID
+}
+
+func (q *Queries) UpdatePackingSortOrder(ctx context.Context, arg UpdatePackingSortOrderParams) (PackingItem, error) {
+	row := q.db.QueryRow(ctx, updatePackingSortOrder,
+		arg.SortOrder,
 		arg.UpdatedAt,
 		arg.AccountID,
 		arg.TripID,

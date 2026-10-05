@@ -14,9 +14,9 @@ SELECT EXISTS (SELECT 1 FROM todo_items t WHERE t.id = sqlc.arg(id))
     OR EXISTS (SELECT 1 FROM entity_tombstones et WHERE et.account_id = sqlc.arg(account_id) AND et.entity_type = 'todo' AND et.entity_id = sqlc.arg(id)) AS exists;
 
 -- name: InsertTodoItem :one
-INSERT INTO todo_items (id, account_id, trip_id, title, due_on, notes, completed_at, created_at, updated_at)
+INSERT INTO todo_items (id, account_id, trip_id, title, due_on, notes, completed_at, created_at, updated_at, sort_order)
 VALUES (sqlc.arg(id), sqlc.arg(account_id), sqlc.arg(trip_id), sqlc.arg(title), sqlc.narg(due_on), sqlc.arg(notes), sqlc.narg(completed_at),
-        sqlc.arg(created_at), sqlc.arg(created_at))
+        sqlc.arg(created_at), sqlc.arg(created_at), (SELECT (coalesce(max(sort_order)::bigint, -1)+1)::integer FROM todo_items WHERE account_id=sqlc.arg(account_id) AND trip_id=sqlc.arg(trip_id) AND deleted_at IS NULL))
 RETURNING *;
 
 -- name: UpdateTodoItem :one
@@ -44,3 +44,9 @@ WHERE account_id = sqlc.arg(account_id) AND trip_id = sqlc.arg(trip_id) AND dele
        OR (COALESCE(due_on, DATE '9999-12-31'), id) > (sqlc.narg(cursor_due_key)::date, sqlc.narg(cursor_id)::uuid))
 ORDER BY COALESCE(due_on, DATE '9999-12-31'), id
 LIMIT sqlc.arg(row_limit);
+
+-- name: ListTodoForOrder :many
+SELECT * FROM todo_items WHERE account_id=sqlc.arg(account_id) AND trip_id=sqlc.arg(trip_id) AND deleted_at IS NULL ORDER BY id FOR UPDATE;
+
+-- name: UpdateTodoSortOrder :one
+UPDATE todo_items SET sort_order=sqlc.arg(sort_order), version=version+1, updated_at=sqlc.arg(updated_at) WHERE account_id=sqlc.arg(account_id) AND trip_id=sqlc.arg(trip_id) AND id=sqlc.arg(id) AND deleted_at IS NULL RETURNING *;

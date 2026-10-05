@@ -22,9 +22,9 @@ SELECT EXISTS (
 ) AS exists;
 
 -- name: InsertPackingItem :one
-INSERT INTO packing_items (id, account_id, trip_id, name, category, quantity, notes, status, created_at, updated_at)
+INSERT INTO packing_items (id, account_id, trip_id, name, category, quantity, notes, status, created_at, updated_at, sort_order)
 VALUES (sqlc.arg(id), sqlc.arg(account_id), sqlc.arg(trip_id), sqlc.arg(name), sqlc.arg(category), sqlc.arg(quantity), sqlc.arg(notes), sqlc.arg(status),
-        sqlc.arg(created_at), sqlc.arg(created_at))
+        sqlc.arg(created_at), sqlc.arg(created_at), (SELECT (coalesce(max(sort_order)::bigint, -1)+1)::integer FROM packing_items WHERE account_id=sqlc.arg(account_id) AND trip_id=sqlc.arg(trip_id) AND deleted_at IS NULL))
 RETURNING *;
 
 -- name: UpdatePackingItem :one
@@ -58,3 +58,9 @@ WHERE account_id = sqlc.arg(account_id) AND trip_id = sqlc.arg(trip_id) AND dele
        OR (category, created_at, id) > (sqlc.narg(cursor_category)::text, sqlc.narg(cursor_created_at)::timestamptz, sqlc.narg(cursor_id)::uuid))
 ORDER BY category, created_at, id
 LIMIT sqlc.arg(row_limit);
+
+-- name: ListPackingForOrder :many
+SELECT * FROM packing_items WHERE account_id=sqlc.arg(account_id) AND trip_id=sqlc.arg(trip_id) AND deleted_at IS NULL ORDER BY id FOR UPDATE;
+
+-- name: UpdatePackingSortOrder :one
+UPDATE packing_items SET sort_order=sqlc.arg(sort_order), version=version+1, updated_at=sqlc.arg(updated_at) WHERE account_id=sqlc.arg(account_id) AND trip_id=sqlc.arg(trip_id) AND id=sqlc.arg(id) AND deleted_at IS NULL RETURNING *;

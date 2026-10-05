@@ -167,6 +167,16 @@ func (m *MemoryStore) ProbeBatch(ctx context.Context, accountID, tripID uuid.UUI
 func (m *MemoryStore) Insert(_ context.Context, accountID uuid.UUID, r Resource) (Resource, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	var next int64
+	for id, item := range m.items {
+		if m.owners[id] == accountID && item.TripID == r.TripID && item.DeletedAt == nil && int64(item.SortOrder) >= next {
+			next = int64(item.SortOrder) + 1
+		}
+	}
+	if next > 2147483647 {
+		return Resource{}, memoryError("sort order overflow")
+	}
+	r.SortOrder = int32(next)
 	m.items[r.ID] = r
 	m.owners[r.ID] = accountID
 	return r, nil
@@ -287,4 +297,20 @@ func afterPosition(r Resource, after *Position) bool {
 		return r.CreatedAt.After(after.CreatedAt)
 	}
 	return compareIDs(r.ID, after.ID) > 0
+}
+
+func (m *MemoryStore) ListForOrder(_ context.Context, accountID, tripID uuid.UUID) ([]Resource, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := []Resource{}
+	for id, r := range m.items {
+		if m.owners[id] == accountID && r.TripID == tripID && r.DeletedAt == nil {
+			out = append(out, r)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return compareIDs(out[i].ID, out[j].ID) < 0 })
+	return out, nil
+}
+func (m *MemoryStore) UpdateSortOrder(_ context.Context, accountID, tripID, id uuid.UUID, order int32, now time.Time) (Resource, error) {
+	return m.mutate(accountID, tripID, id, func(r *Resource) { r.SortOrder = order; r.UpdatedAt = now })
 }

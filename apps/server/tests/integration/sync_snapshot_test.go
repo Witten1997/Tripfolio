@@ -462,8 +462,10 @@ func TestSyncSnapshotRetryAndSortMigration(t *testing.T) {
 	foreign := f.registerWeb(uniqueEmail(), "correct horse battery")
 	foreignOwner := uuid.MustParse(foreign.data()["account"].(map[string]any)["id"].(string))
 	foreignTrip := uuid.MustParse(f.createTrip(foreign.data()["access_token"].(string), map[string]any{"name": "foreign migration partition", "start_date": "2026-10-01", "end_date": "2026-10-04"})["id"].(string))
-	if err := bootstrap.RunMigrate(ctx, config.Config{DatabaseURL: f.rawURL}, quietLogger(), []string{"down"}); err != nil {
-		t.Fatal(err)
+	for range 2 {
+		if err := bootstrap.RunMigrate(ctx, config.Config{DatabaseURL: f.rawURL}, quietLogger(), []string{"down"}); err != nil {
+			t.Fatal(err)
+		}
 	}
 	defer func() {
 		_ = bootstrap.RunMigrate(context.Background(), config.Config{DatabaseURL: f.rawURL}, quietLogger(), []string{"up"})
@@ -508,8 +510,8 @@ func TestSyncSnapshotRetryAndSortMigration(t *testing.T) {
 		}
 		expectStatus(t, f.do(request{method: http.MethodPost, path: "/trips/" + otherTrip.String() + "/" + resource.path, token: f.webToken, headers: f.authHeaders(nil), body: body}), 201, "")
 		var order int
-		if err := f.pool.QueryRow(ctx, `SELECT sort_order FROM packing_items WHERE id=$1 UNION ALL SELECT sort_order FROM todo_items WHERE id=$1`, id).Scan(&order); err != nil || order != 0 {
-			t.Fatalf("legacy insert default: %d %v", order, err)
+		if err := f.pool.QueryRow(ctx, `SELECT sort_order FROM packing_items WHERE id=$1 UNION ALL SELECT sort_order FROM todo_items WHERE id=$1`, id).Scan(&order); err != nil || order != 3 {
+			t.Fatalf("legacy insert appended: %d %v", order, err)
 		}
 	}
 	for i, id := range ids {

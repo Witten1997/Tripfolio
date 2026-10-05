@@ -2458,6 +2458,8 @@ export type components = {
             notes: string;
             /** Format: int32 */
             quantity: number;
+            /** Format: int32 */
+            sort_order: number;
             status: components["schemas"]["PackingStatus"];
             /** Format: uuid */
             trip_id: string;
@@ -3092,6 +3094,8 @@ export type components = {
             /** Format: uuid */
             id: string;
             notes: string;
+            /** Format: int32 */
+            sort_order: number;
             title: string;
             /** Format: uuid */
             trip_id: string;

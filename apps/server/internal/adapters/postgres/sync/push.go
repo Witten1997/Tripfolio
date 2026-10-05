@@ -80,8 +80,18 @@ func (s *PushStore) Execute(ctx context.Context, a actor.Actor, epoch uuid.UUID,
 				}
 			}
 		}
+		kind := "members"
+		switch op.EntityType {
+		case "packing_item":
+			kind = "packing_order"
+		case "todo":
+			kind = "todo_order"
+		}
+		if (op.Type == "packing_item.reorder" || op.Type == "todo.reorder") && len(op.Guards) == 0 {
+			return apperr.New(428, "COLLECTION_BASE_REQUIRED", "排序需要集合版本")
+		}
 		for _, g := range op.Guards {
-			if g.Kind != "members" || g.ScopeID != op.TripID.String() {
+			if g.Kind != kind || g.ScopeID != op.TripID.String() {
 				return apperr.Unprocessable("INVALID_REFERENCE", "该集合不属于本次旅行操作")
 			}
 			var expected string
@@ -100,22 +110,34 @@ func (s *PushStore) Execute(ctx context.Context, a actor.Actor, epoch uuid.UUID,
 			if expected == "" {
 				return apperr.Unprocessable("INVALID_REFERENCE", "依赖没有记录目标集合版本")
 			}
-			revision, err := scope.MembersRevision(ctx, epoch, *op.TripID)
+			revision, err := scope.CollectionRevision(ctx, epoch, kind, *op.TripID)
 			if err != nil {
 				return err
 			}
 			if revision.Revision != expected {
-				return apperr.New(412, "COLLECTION_CONFLICT", "旅行成员集合已变化")
+				return apperr.New(412, "COLLECTION_CONFLICT", "集合已变化")
 			}
 		}
-		if err := executeTrip(ctx, scope, a, op.Operation, base); err != nil {
+		var err error
+		if op.EntityType == "trip" {
+			err = executeTrip(ctx, scope, a, op.Operation, base)
+		} else {
+			err = executeItem(ctx, scope, a, op.Operation, base)
+		}
+		if err != nil {
 			return err
+		}
+		if op.EntityType != "trip" {
+			return scope.RecordCollectionRevision(ctx, epoch, kind, *op.TripID)
 		}
 		if op.Type == "trip.create" || len(op.Guards) > 0 {
 			return scope.RecordMembersRevision(ctx, epoch, *op.TripID)
 		}
 		return nil
 	}, func(ctx context.Context, scope *pgcore.TxScope) (any, error) {
+		if op.EntityType != "trip" {
+			return reloadItem(ctx, scope, a, op.Operation)
+		}
 		r, found, err := travelpg.NewTripRepository(scope).Get(ctx, a.AccountID, *op.EntityID)
 		if err != nil {
 			return nil, err

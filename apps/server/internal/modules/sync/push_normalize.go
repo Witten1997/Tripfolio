@@ -314,12 +314,31 @@ func validGuard(g GuardReference) bool {
 
 func prepare(op Operation) (PreparedOperation, error) {
 	out := PreparedOperation{Operation: op}
-	if op.EntityType != "trip" {
+	if op.EntityType != "trip" && op.EntityType != "packing_item" && op.EntityType != "todo" {
 		return out, apperr.Unprocessable("OFFLINE_OPERATION_NOT_ALLOWED", "该操作尚未实现")
 	}
 	allowed := []string{}
 	required := []string{}
 	switch op.Type {
+	case "packing_item.create":
+		allowed = []string{"name", "category", "quantity", "notes", "status"}
+		required = []string{"name", "category"}
+	case "packing_item.update":
+		allowed = []string{"name", "category", "quantity", "notes"}
+	case "packing_item.set_status":
+		allowed = []string{"status"}
+		required = allowed
+	case "todo.create":
+		allowed = []string{"title", "due_on", "notes", "completed"}
+		required = []string{"title"}
+	case "todo.update":
+		allowed = []string{"title", "due_on", "notes"}
+	case "todo.set_completed":
+		allowed = []string{"completed"}
+		required = allowed
+	case "packing_item.reorder", "todo.reorder":
+		allowed = []string{"ordered_ids"}
+		required = allowed
 	case "trip.create":
 		allowed = []string{"name", "start_date", "end_date", "destination", "notes", "timezone", "currency_code", "budget_amount", "self_member_id"}
 		required = []string{"name", "start_date", "end_date", "timezone", "currency_code", "self_member_id"}
@@ -335,28 +354,41 @@ func prepare(op Operation) (PreparedOperation, error) {
 	}
 	for k, raw := range m {
 		if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
-			if k != "budget_amount" {
+			if k != "budget_amount" && k != "due_on" {
 				return out, apperr.Validation(apperr.Field(k, "NOT_NULL", "字段不可为空"))
 			}
 			continue
 		}
 		switch k {
-		case "archived":
+		case "archived", "completed":
 			var b bool
 			if json.Unmarshal(raw, &b) != nil {
 				return out, apperr.Validation(apperr.Field(k, "INVALID", "需要布尔值"))
 			}
-		case "route_short_distance_meters":
+		case "quantity", "route_short_distance_meters":
 			var n int32
 			if json.Unmarshal(raw, &n) != nil {
 				return out, apperr.Validation(apperr.Field(k, "INVALID", "需要整数"))
 			}
+		case "ordered_ids":
+			var ids []uuid.UUID
+			if json.Unmarshal(raw, &ids) != nil || ids == nil {
+				return out, apperr.Validation(apperr.Field(k, "INVALID", "需要ID数组"))
+			}
+			seen := map[uuid.UUID]bool{}
+			for _, id := range ids {
+				if id == uuid.Nil || seen[id] {
+					return out, apperr.Validation(apperr.Field(k, "INVALID", "ID必须有效且无重复"))
+				}
+				seen[id] = true
+			}
+			m[k], _ = json.Marshal(ids)
 		default:
 			var s string
 			if json.Unmarshal(raw, &s) != nil || strings.ContainsRune(s, '\x00') {
 				return out, apperr.Validation(apperr.Field(k, "INVALID", "需要有效文本"))
 			}
-			if k == "name" || k == "destination" {
+			if k == "name" || k == "destination" || k == "title" {
 				s = strings.TrimSpace(s)
 			}
 			if k == "budget_amount" {
@@ -383,6 +415,20 @@ func prepare(op Operation) (PreparedOperation, error) {
 		}
 		if _, ok := m["budget_amount"]; !ok {
 			m["budget_amount"] = json.RawMessage(`null`)
+		}
+	}
+	if op.Type == "packing_item.create" {
+		for k, v := range map[string]string{"quantity": "1", "notes": `""`, "status": `"pending"`} {
+			if _, ok := m[k]; !ok {
+				m[k] = json.RawMessage(v)
+			}
+		}
+	}
+	if op.Type == "todo.create" {
+		for k, v := range map[string]string{"due_on": "null", "notes": `""`, "completed": "false"} {
+			if _, ok := m[k]; !ok {
+				m[k] = json.RawMessage(v)
+			}
 		}
 	}
 	out.Payload, _ = json.Marshal(m)

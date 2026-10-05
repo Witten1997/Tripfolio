@@ -24,7 +24,7 @@ func toTodoResource(row dbgen.TodoItem) todo.Resource {
 	}
 	completedAt := pgcore.UTCPtr(row.CompletedAt)
 	return todo.Resource{
-		ID: row.ID, TripID: row.TripID, Title: row.Title, DueOn: due, Notes: row.Notes,
+		ID: row.ID, TripID: row.TripID, SortOrder: row.SortOrder, Title: row.Title, DueOn: due, Notes: row.Notes,
 		Completed: completedAt != nil, CompletedAt: completedAt, Version: types.Version(row.Version),
 		CreatedAt: pgcore.UTC(row.CreatedAt), UpdatedAt: pgcore.UTC(row.UpdatedAt), DeletedAt: pgcore.UTCPtr(row.DeletedAt),
 	}
@@ -172,4 +172,24 @@ func (r *TodoReader) List(ctx context.Context, accountID, tripID uuid.UUID, q to
 		out = append(out, toTodoResource(row))
 	}
 	return out, nil
+}
+
+func NewTodoRepository(scope *pgcore.TxScope) todo.Repo { return &todoRepo{scope: scope} }
+func (r *todoRepo) ListForOrder(ctx context.Context, accountID, tripID uuid.UUID) ([]todo.Resource, error) {
+	rows, err := r.scope.Queries.ListTodoForOrder(ctx, dbgen.ListTodoForOrderParams{AccountID: accountID, TripID: tripID})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]todo.Resource, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, toTodoResource(row))
+	}
+	return out, nil
+}
+func (r *todoRepo) UpdateSortOrder(ctx context.Context, accountID, tripID, id uuid.UUID, order int32, now time.Time) (todo.Resource, error) {
+	row, err := r.scope.Queries.UpdateTodoSortOrder(ctx, dbgen.UpdateTodoSortOrderParams{AccountID: accountID, TripID: tripID, ID: id, SortOrder: order, UpdatedAt: now})
+	if err != nil {
+		return todo.Resource{}, err
+	}
+	return toTodoResource(row), nil
 }

@@ -16,6 +16,7 @@ const EntityType = "todo"
 // Resource 是待办的规范资源，也是同步日志与快照中的表示（接口设计 3.4 Todo）。
 // Completed 与 CompletedAt 一致：客户端只写 Completed，服务端维护 CompletedAt。
 type Resource struct {
+	SortOrder   int32         `json:"sort_order"`
 	ID          uuid.UUID     `json:"id"`
 	TripID      uuid.UUID     `json:"trip_id"`
 	Title       string        `json:"title"`
@@ -68,7 +69,7 @@ func DueKey(r Resource) types.Date {
 
 // Fields 是可局部更新的业务字段名，用于 changed_fields 与字段级合并；
 // completed_at 随 completed 一起变化，不单独登记。
-var Fields = []string{"title", "due_on", "notes", "completed"}
+var Fields = []string{"title", "due_on", "notes", "completed", "completed_at", "sort_order"}
 
 // Filters 是列表查询条件（接口设计 3.9 TodoFilters）；状态为原始字符串，由服务校验。
 type Filters struct {

@@ -20,7 +20,7 @@ import (
 
 func toPackingResource(row dbgen.PackingItem) packing.Resource {
 	return packing.Resource{
-		ID: row.ID, TripID: row.TripID, Name: row.Name, Category: packing.Category(row.Category), Quantity: row.Quantity, Notes: row.Notes,
+		ID: row.ID, TripID: row.TripID, SortOrder: row.SortOrder, Name: row.Name, Category: packing.Category(row.Category), Quantity: row.Quantity, Notes: row.Notes,
 		Status: packing.Status(row.Status), Version: types.Version(row.Version),
 		CreatedAt: pgcore.UTC(row.CreatedAt), UpdatedAt: pgcore.UTC(row.UpdatedAt), DeletedAt: pgcore.UTCPtr(row.DeletedAt),
 	}
@@ -147,10 +147,13 @@ func (r *packingRepo) InsertBatch(ctx context.Context, accountID uuid.UUID, item
 		return nil, err
 	}
 	const query = `
-INSERT INTO packing_items (id, account_id, trip_id, name, category, quantity, notes, status, created_at, updated_at)
-SELECT input.id, $1, $2, input.name, input.category, input.quantity, input.notes, 'pending', $4, $4
-FROM jsonb_to_recordset($3::jsonb) AS input(id uuid, name text, category text, quantity integer, notes text)
-RETURNING id, account_id, version, created_at, updated_at, deleted_at, trip_id, name, category, quantity, notes, status`
+INSERT INTO packing_items (id, account_id, trip_id, name, category, quantity, notes, status, created_at, updated_at, sort_order)
+SELECT input.id, $1, $2, input.name, input.category, input.quantity, input.notes, 'pending', $4, $4,
+       ((SELECT coalesce(max(sort_order)::bigint,-1) FROM packing_items WHERE account_id=$1 AND trip_id=$2 AND deleted_at IS NULL)+e.ordinal)::integer
+FROM jsonb_array_elements($3::jsonb) WITH ORDINALITY AS e(value,ordinal)
+CROSS JOIN LATERAL jsonb_to_record(e.value) AS input(id uuid, name text, category text, quantity integer, notes text)
+ORDER BY e.ordinal
+RETURNING id, account_id, version, created_at, updated_at, deleted_at, trip_id, name, category, quantity, notes, status, sort_order`
 	rows, err := r.scope.Tx.Query(ctx, query, accountID, items[0].TripID, input, items[0].CreatedAt)
 	if err != nil {
 		return nil, err
@@ -160,7 +163,7 @@ RETURNING id, account_id, version, created_at, updated_at, deleted_at, trip_id, 
 	for rows.Next() {
 		var row dbgen.PackingItem
 		if err := rows.Scan(&row.ID, &row.AccountID, &row.Version, &row.CreatedAt, &row.UpdatedAt, &row.DeletedAt,
-			&row.TripID, &row.Name, &row.Category, &row.Quantity, &row.Notes, &row.Status); err != nil {
+			&row.TripID, &row.Name, &row.Category, &row.Quantity, &row.Notes, &row.Status, &row.SortOrder); err != nil {
 			return nil, err
 		}
 		byID[row.ID] = toPackingResource(row)
@@ -257,4 +260,24 @@ func (r *PackingReader) List(ctx context.Context, accountID, tripID uuid.UUID, q
 		out = append(out, toPackingResource(row))
 	}
 	return out, nil
+}
+
+func NewPackingRepository(scope *pgcore.TxScope) packing.Repo { return &packingRepo{scope: scope} }
+func (r *packingRepo) ListForOrder(ctx context.Context, accountID, tripID uuid.UUID) ([]packing.Resource, error) {
+	rows, err := r.scope.Queries.ListPackingForOrder(ctx, dbgen.ListPackingForOrderParams{AccountID: accountID, TripID: tripID})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]packing.Resource, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, toPackingResource(row))
+	}
+	return out, nil
+}
+func (r *packingRepo) UpdateSortOrder(ctx context.Context, accountID, tripID, id uuid.UUID, order int32, now time.Time) (packing.Resource, error) {
+	row, err := r.scope.Queries.UpdatePackingSortOrder(ctx, dbgen.UpdatePackingSortOrderParams{AccountID: accountID, TripID: tripID, ID: id, SortOrder: order, UpdatedAt: now})
+	if err != nil {
+		return packing.Resource{}, err
+	}
+	return toPackingResource(row), nil
 }

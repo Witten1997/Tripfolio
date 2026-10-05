@@ -142,6 +142,7 @@ type Querier interface {
 	ListLedgerSplits(ctx context.Context, arg ListLedgerSplitsParams) ([]ListLedgerSplitsRow, error)
 	// 关联到某原支出的全部有效退款并锁定，按创建时间、id 升序。
 	ListLinkedRefundsForUpdate(ctx context.Context, arg ListLinkedRefundsForUpdateParams) ([]LedgerEntry, error)
+	ListPackingForOrder(ctx context.Context, arg ListPackingForOrderParams) ([]PackingItem, error)
 	// 列表：接口设计 3.9 PackingFilters；游标走 (account_id, trip_id, category, created_at, id) 部分索引。
 	ListPackingItems(ctx context.Context, arg ListPackingItemsParams) ([]PackingItem, error)
 	ListPhotos(ctx context.Context, arg ListPhotosParams) ([]Photo, error)
@@ -149,6 +150,7 @@ type Querier interface {
 	ListRoutePlanLegs(ctx context.Context, arg ListRoutePlanLegsParams) ([]ItineraryRouteLeg, error)
 	ListRoutePlanPoints(ctx context.Context, arg ListRoutePlanPointsParams) ([]ListRoutePlanPointsRow, error)
 	ListSyncChanges(ctx context.Context, arg ListSyncChangesParams) ([]SyncChange, error)
+	ListTodoForOrder(ctx context.Context, arg ListTodoForOrderParams) ([]TodoItem, error)
 	// 列表：接口设计 3.9 TodoFilters；state 为 all/pending/completed/overdue，today 为旅行时区的今天。
 	ListTodoItems(ctx context.Context, arg ListTodoItemsParams) ([]TodoItem, error)
 	ListTrashedTrips(ctx context.Context, arg ListTrashedTripsParams) ([]Trip, error)
@@ -242,11 +244,13 @@ type Querier interface {
 	UpdateItineraryItem(ctx context.Context, arg UpdateItineraryItemParams) (ItineraryItem, error)
 	UpdateLedgerEntry(ctx context.Context, arg UpdateLedgerEntryParams) (LedgerEntry, error)
 	UpdatePackingItem(ctx context.Context, arg UpdatePackingItemParams) (PackingItem, error)
+	UpdatePackingSortOrder(ctx context.Context, arg UpdatePackingSortOrderParams) (PackingItem, error)
 	UpdatePackingStatusIfVersion(ctx context.Context, arg UpdatePackingStatusIfVersionParams) (PackingItem, error)
 	UpdatePhoto(ctx context.Context, arg UpdatePhotoParams) (Photo, error)
 	UpdateReservation(ctx context.Context, arg UpdateReservationParams) (Reservation, error)
 	UpdateRouteLegMode(ctx context.Context, arg UpdateRouteLegModeParams) (ItineraryRouteLeg, error)
 	UpdateTodoItem(ctx context.Context, arg UpdateTodoItemParams) (TodoItem, error)
+	UpdateTodoSortOrder(ctx context.Context, arg UpdateTodoSortOrderParams) (TodoItem, error)
 	UpdateTrip(ctx context.Context, arg UpdateTripParams) (Trip, error)
 	UpdateTripMember(ctx context.Context, arg UpdateTripMemberParams) (TripMember, error)
 }
