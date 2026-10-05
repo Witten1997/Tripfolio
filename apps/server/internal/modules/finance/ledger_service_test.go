@@ -2,9 +2,11 @@ package finance_test
 
 import (
 	"context"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
+	"tripfolio/server/internal/foundation/collectionguard"
 
 	"github.com/google/uuid"
 
@@ -781,5 +783,89 @@ func TestStatisticsCNYFormatting(t *testing.T) {
 	}
 	if s.Daily.Items[0].Date != types.Date("2026-09-13") || s.Daily.Items[0].NetAmount != "20.51" {
 		t.Fatalf("daily default date should be trip-local today: %+v", s.Daily.Items)
+	}
+}
+
+// The wrapper runs inside the real memory transaction and can reject before mutations.
+type ledgerGuardUOW struct {
+	inner    write.UnitOfWork[finance.LedgerRepo]
+	required []collectionguard.Scope
+	err      error
+	unknown  bool
+	calls    int
+}
+type ledgerGuardScope struct {
+	write.Scope
+	owner *ledgerGuardUOW
+}
+
+func (s ledgerGuardScope) RequireCollections(_ context.Context, required []collectionguard.Scope) error {
+	s.owner.calls++
+	s.owner.required = append([]collectionguard.Scope(nil), required...)
+	return s.owner.err
+}
+func (u *ledgerGuardUOW) Run(ctx context.Context, req write.Request, fn func(context.Context, write.Scope, finance.LedgerRepo) error, reload func(context.Context, finance.LedgerRepo) (any, error)) (write.Result, error) {
+	return u.inner.Run(ctx, req, func(ctx context.Context, scope write.Scope, repo finance.LedgerRepo) error {
+		if u.unknown {
+			return fn(ctx, struct{ write.Scope }{scope}, repo)
+		}
+		return fn(ctx, ledgerGuardScope{scope, u}, repo)
+	}, reload)
+}
+
+func TestLedgerGuardSubmissionAndNoMutation(t *testing.T) {
+	f := newLedgerFixture(t)
+	current := f.create(t, finance.CreateLedgerCommand{Amount: "1000"})
+	empty := []uuid.UUID{}
+	cases := []struct {
+		name     string
+		patch    finance.LedgerPatch
+		required bool
+	}{
+		{"amount", finance.LedgerPatch{Amount: str(current.Amount)}, true},
+		{"currency", finance.LedgerPatch{CurrencyCode: str(current.CurrencyCode)}, true},
+		{"payer", finance.LedgerPatch{PayerMemberID: uid(current.PayerMemberID)}, true},
+		{"mode", finance.LedgerPatch{SplitMode: str(string(current.SplitMode))}, true},
+		{"empty participants", finance.LedgerPatch{ParticipantMemberIDs: &empty}, true},
+		{"notes", finance.LedgerPatch{Notes: str(current.Notes)}, false},
+		{"category", finance.LedgerPatch{CategoryID: &current.CategoryID}, false},
+		{"date", finance.LedgerPatch{OccurredOn: str(string(current.OccurredOn))}, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			before := len(f.uow.Changes())
+			u := &ledgerGuardUOW{inner: f.uow, err: apperr.New(422, "INVALID_REFERENCE", "rejected")}
+			svc := finance.NewLedgerService(u, f.store, paging.InsecureCodec{}, f.clock)
+			_, err := svc.Update(context.Background(), f.actor, uuid.New(), f.tripID, current.ID, int64(current.Version), c.patch)
+			e, ok := apperr.As(err)
+			if !ok || e.Code != "INVALID_REFERENCE" {
+				t.Fatalf("guard not reached: %v", err)
+			}
+			var expected []collectionguard.Scope
+			if c.required {
+				expected = []collectionguard.Scope{{Kind: "members", ScopeID: f.tripID.String()}}
+			}
+			if u.calls != 1 || !reflect.DeepEqual(u.required, expected) {
+				t.Fatalf("wrong requirements: %+v", u)
+			}
+			after, err := f.svc.Get(context.Background(), f.actor, f.tripID, current.ID)
+			if err != nil || !reflect.DeepEqual(after, current) || len(f.uow.Changes()) != before {
+				t.Fatalf("mutation on rejection: %+v %v", after, err)
+			}
+		})
+	}
+	u := &ledgerGuardUOW{inner: f.uow, unknown: true}
+	svc := finance.NewLedgerService(u, f.store, paging.InsecureCodec{}, f.clock)
+	_, err := svc.Update(context.Background(), f.actor, uuid.New(), f.tripID, current.ID, int64(current.Version), finance.LedgerPatch{CurrencyCode: str(current.CurrencyCode)})
+	e, ok := apperr.As(err)
+	if !ok || e.Status != 503 {
+		t.Fatalf("unknown capability: %v", err)
+	}
+	u.unknown = false
+	u.err = apperr.New(428, "COLLECTION_BASE_REQUIRED", "required")
+	_, err = svc.Create(context.Background(), f.actor, uuid.New(), f.tripID, finance.CreateLedgerCommand{ID: uuid.New(), Kind: "expense", Amount: "20", CategoryID: f.food})
+	e, ok = apperr.As(err)
+	if !ok || e.Status != 428 || len(u.required) != 1 {
+		t.Fatalf("create: %v %+v", err, u)
 	}
 }

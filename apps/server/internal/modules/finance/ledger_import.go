@@ -12,6 +12,7 @@ import (
 
 	"tripfolio/server/internal/foundation/actor"
 	"tripfolio/server/internal/foundation/apperr"
+	"tripfolio/server/internal/foundation/collectionguard"
 	"tripfolio/server/internal/foundation/money"
 	"tripfolio/server/internal/foundation/types"
 	"tripfolio/server/internal/foundation/write"
@@ -45,14 +46,15 @@ type LedgerImportRow struct {
 }
 
 type LedgerImportPreview struct {
-	Rows         []LedgerImportRow   `json:"rows"`
-	Errors       []LedgerImportError `json:"errors"`
-	Warnings     []string            `json:"warnings"`
-	Count        int                 `json:"count"`
-	ValidCount   int                 `json:"valid_count"`
-	TotalAmount  string              `json:"total_amount"`
-	CurrencyCode string              `json:"currency_code"`
-	Digest       string              `json:"digest"`
+	ScopeRevisions []write.ScopeRevision `json:"scope_revisions,omitempty"`
+	Rows           []LedgerImportRow     `json:"rows"`
+	Errors         []LedgerImportError   `json:"errors"`
+	Warnings       []string              `json:"warnings"`
+	Count          int                   `json:"count"`
+	ValidCount     int                   `json:"valid_count"`
+	TotalAmount    string                `json:"total_amount"`
+	CurrencyCode   string                `json:"currency_code"`
+	Digest         string                `json:"digest"`
 }
 
 type importContextReader interface {
@@ -109,15 +111,21 @@ func (s *LedgerService) ImportTemplate(ctx context.Context, a actor.Actor, tripI
 }
 
 func (s *LedgerService) PreviewImport(ctx context.Context, a actor.Actor, tripID uuid.UUID, file []byte) (LedgerImportPreview, error) {
-	c, err := loadImportContext(ctx, s.reader, a.AccountID, tripID)
+	reader, ok := s.reader.(ImportSnapshotReader)
+	if !ok {
+		return LedgerImportPreview{}, apperr.New(503, "DEPENDENCY_UNAVAILABLE", "导入基线读取暂不可用")
+	}
+	snapshot, err := reader.ReadImportSnapshot(ctx, a.AccountID, tripID)
 	if err != nil {
 		return LedgerImportPreview{}, err
 	}
+	c := importContext{Trip: snapshot.Trip, Categories: snapshot.Categories, Members: snapshot.Members}
 	doc, err := parseLedgerWorkbook(file, a.AccountID, tripID)
 	if err != nil {
 		return LedgerImportPreview{}, err
 	}
 	preview, _, err := validateImport(doc, c)
+	preview.ScopeRevisions = snapshot.ScopeRevisions
 	return preview, err
 }
 
@@ -134,6 +142,9 @@ func (s *LedgerService) Import(ctx context.Context, a actor.Actor, operationID, 
 	return s.uow.Run(ctx, req, func(ctx context.Context, scope write.Scope, repo LedgerRepo) error {
 		c, err := loadImportContext(ctx, repo, a.AccountID, tripID)
 		if err != nil {
+			return err
+		}
+		if err := write.RequireCollections(ctx, scope, []collectionguard.Scope{{Kind: "members", ScopeID: tripID.String()}}); err != nil {
 			return err
 		}
 		preview, entries, err := validateImport(doc, c)

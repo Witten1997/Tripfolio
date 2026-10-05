@@ -11,6 +11,7 @@ import (
 	"tripfolio/server/internal/foundation/actor"
 	"tripfolio/server/internal/foundation/apperr"
 	"tripfolio/server/internal/foundation/clock"
+	"tripfolio/server/internal/foundation/collectionguard"
 	"tripfolio/server/internal/foundation/paging"
 	"tripfolio/server/internal/foundation/types"
 	"tripfolio/server/internal/foundation/write"
@@ -227,6 +228,9 @@ func (s *LedgerService) Create(ctx context.Context, a actor.Actor, operationID, 
 	return s.uow.Run(ctx, req, func(ctx context.Context, scope write.Scope, repo LedgerRepo) error {
 		info, err := loadLedgerTrip(ctx, repo, a.AccountID, tripID)
 		if err != nil {
+			return err
+		}
+		if err := write.RequireCollections(ctx, scope, []collectionguard.Scope{{Kind: "members", ScopeID: tripID.String()}}); err != nil {
 			return err
 		}
 		exists, err := repo.IDExists(ctx, cmd.ID)
@@ -457,9 +461,6 @@ func (s *LedgerService) Update(ctx context.Context, a actor.Actor, operationID, 
 	}
 	mode, ferr := validateSplitMode(patch.SplitMode)
 	addField(&fields, ferr)
-	if patch.ParticipantMemberIDs != nil {
-		addField(&fields, validateParticipants(*patch.ParticipantMemberIDs))
-	}
 	if len(fields) > 0 {
 		return write.Result{}, apperr.Validation(fields...)
 	}
@@ -486,6 +487,18 @@ func (s *LedgerService) Update(ctx context.Context, a actor.Actor, operationID, 
 		}
 		if current.DeletedAt != nil {
 			return ledgerGone()
+		}
+		var required []collectionguard.Scope
+		if patch.Amount != nil || patch.CurrencyCode != nil || patch.PayerMemberID != nil || patch.SplitMode != nil || patch.ParticipantMemberIDs != nil {
+			required = []collectionguard.Scope{{Kind: "members", ScopeID: tripID.String()}}
+		}
+		if err := write.RequireCollections(ctx, scope, required); err != nil {
+			return err
+		}
+		if patch.ParticipantMemberIDs != nil {
+			if ferr := validateParticipants(*patch.ParticipantMemberIDs); ferr != nil {
+				return apperr.Validation(*ferr)
+			}
 		}
 		decision, err := write.ResolvePatch(ctx, repo.MergeSource(), a.AccountID, EntityTypeLedger, id, baseVersion, int64(current.Version), submitted)
 		if err != nil {

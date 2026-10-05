@@ -3,6 +3,10 @@ package financepg
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"github.com/jackc/pgx/v5"
+	"tripfolio/server/internal/adapters/postgres/pgcore"
+	"tripfolio/server/internal/foundation/write"
 
 	"github.com/google/uuid"
 
@@ -67,4 +71,54 @@ func (r *ledgerRepo) InsertImported(ctx context.Context, accountID, tripID uuid.
 		FROM jsonb_array_elements($3::jsonb) AS e
 		CROSS JOIN LATERAL jsonb_array_elements(e->'splits') WITH ORDINALITY AS s(value, ordinality)`, accountID, tripID, data)
 	return err
+}
+
+func (r *LedgerReader) ReadImportSnapshot(ctx context.Context, accountID, tripID uuid.UUID) (finance.ImportSnapshot, error) {
+	var out finance.ImportSnapshot
+	if r.pool == nil {
+		return out, apperr.New(503, "DEPENDENCY_UNAVAILABLE", "集合基线读取暂不可用")
+	}
+	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
+	if err != nil {
+		return out, apperr.Internal(err)
+	}
+	defer tx.Rollback(ctx)
+	q := dbgen.New(tx)
+	info, found, err := ledgerTripInfo(ctx, q, accountID, tripID)
+	if err != nil {
+		return out, apperr.Internal(err)
+	}
+	if !found {
+		return out, apperr.NotFound()
+	}
+	if info.DeletedAt != nil {
+		return out, apperr.Gone("TRIP_DELETED", "旅行已在回收站中")
+	}
+	var epoch uuid.UUID
+	err = tx.QueryRow(ctx, `SELECT sync_epoch FROM account_sync_state WHERE account_id=$1`, accountID).Scan(&epoch)
+	if errors.Is(err, pgx.ErrNoRows) || (err == nil && epoch == uuid.Nil) {
+		return out, apperr.New(503, "DEPENDENCY_UNAVAILABLE", "集合基线暂不可用")
+	}
+	if err != nil {
+		return out, apperr.Internal(err)
+	}
+	out.Trip = info
+	out.Categories, err = importCategories(ctx, q, accountID)
+	if err != nil {
+		return out, apperr.Internal(err)
+	}
+	out.Members, err = travelpg.ListActiveMembers(ctx, q, accountID, tripID)
+	if err != nil {
+		return out, apperr.Internal(err)
+	}
+	scope := &pgcore.TxScope{Tx: tx, Queries: q, AccountID: accountID}
+	revision, err := scope.MembersRevision(ctx, epoch, tripID)
+	if err != nil {
+		return out, err
+	}
+	out.ScopeRevisions = []write.ScopeRevision{revision}
+	if err := tx.Commit(ctx); err != nil {
+		return finance.ImportSnapshot{}, apperr.Internal(err)
+	}
+	return out, nil
 }

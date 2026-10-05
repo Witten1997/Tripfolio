@@ -21,11 +21,11 @@ func (h *Handler) ListTripMembers(ctx context.Context, req generated.ListTripMem
 	if h.members == nil {
 		return nil, notWired()
 	}
-	rows, err := h.members.List(ctx, a, uuid.UUID(req.TripId))
+	rows, err := h.members.ListWithBaseline(ctx, a, uuid.UUID(req.TripId))
 	if err != nil {
 		return nil, err
 	}
-	return generated.ListTripMembers200JSONResponse{Data: rows}, nil
+	return generated.ListTripMembers200JSONResponse{Data: rows.Members, ScopeRevisions: &rows.ScopeRevisions}, nil
 }
 
 // SaveTripMembers 实现 PUT /trips/{trip_id}/members。

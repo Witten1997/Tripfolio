@@ -12,6 +12,7 @@ import (
 
 	"tripfolio/server/internal/adapters/postgres/dbgen"
 	"tripfolio/server/internal/adapters/postgres/pgcore"
+	"tripfolio/server/internal/foundation/apperr"
 	"tripfolio/server/internal/foundation/money"
 	"tripfolio/server/internal/foundation/types"
 	"tripfolio/server/internal/foundation/write"
@@ -133,12 +134,13 @@ func (r *memberRepo) ReferenceCount(ctx context.Context, accountID, tripID, memb
 
 // MemberReader 是事务外只读仓储。
 type MemberReader struct {
-	q *dbgen.Queries
+	pool *pgxpool.Pool
+	q    *dbgen.Queries
 }
 
 // NewMemberReader 创建只读仓储。
 func NewMemberReader(pool *pgxpool.Pool) *MemberReader {
-	return &MemberReader{q: dbgen.New(pool)}
+	return &MemberReader{pool: pool, q: dbgen.New(pool)}
 }
 
 var _ member.Reader = (*MemberReader)(nil)
@@ -204,4 +206,50 @@ func (r *memberRepo) PrepareNames(ctx context.Context, owner, tripID uuid.UUID, 
 		}
 	}
 	return nil
+}
+
+func (r *MemberReader) ListWithBaseline(ctx context.Context, accountID, tripID uuid.UUID) (member.ListBaseline, error) {
+	var out member.ListBaseline
+	if r.pool == nil {
+		return out, apperr.New(503, "DEPENDENCY_UNAVAILABLE", "集合基线读取暂不可用")
+	}
+	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
+	if err != nil {
+		return out, apperr.Internal(err)
+	}
+	defer tx.Rollback(ctx)
+	q := dbgen.New(tx)
+	info, found, err := memberTripInfo(ctx, q, accountID, tripID)
+	if err != nil {
+		return out, apperr.Internal(err)
+	}
+	if !found {
+		return out, apperr.NotFound()
+	}
+	if info.DeletedAt != nil {
+		return out, apperr.Gone("TRIP_DELETED", "旅行已在回收站中")
+	}
+	var epoch uuid.UUID
+	err = tx.QueryRow(ctx, `SELECT sync_epoch FROM account_sync_state WHERE account_id=$1`, accountID).Scan(&epoch)
+	if errors.Is(err, pgx.ErrNoRows) || (err == nil && epoch == uuid.Nil) {
+		return out, apperr.New(503, "DEPENDENCY_UNAVAILABLE", "集合基线暂不可用")
+	}
+	if err != nil {
+		return out, apperr.Internal(err)
+	}
+	members, err := ListActiveMembers(ctx, q, accountID, tripID)
+	if err != nil {
+		return out, apperr.Internal(err)
+	}
+	out.Members = members
+	scope := &pgcore.TxScope{Tx: tx, Queries: q, AccountID: accountID}
+	revision, err := scope.MembersRevision(ctx, epoch, tripID)
+	if err != nil {
+		return out, err
+	}
+	out.ScopeRevisions = []write.ScopeRevision{revision}
+	if err := tx.Commit(ctx); err != nil {
+		return member.ListBaseline{}, apperr.Internal(err)
+	}
+	return out, nil
 }

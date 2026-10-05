@@ -154,3 +154,13 @@ type LedgerReader interface {
 	// Settlement 返回每位有效成员的已付与应付原始聚合，按 sort_order、id 升序。
 	Settlement(ctx context.Context, accountID, tripID uuid.UUID) ([]MemberAggregate, error)
 }
+
+type ImportSnapshot struct {
+	Trip           LedgerTripInfo
+	Categories     []CategoryResource
+	Members        []member.Resource
+	ScopeRevisions []write.ScopeRevision
+}
+type ImportSnapshotReader interface {
+	ReadImportSnapshot(context.Context, uuid.UUID, uuid.UUID) (ImportSnapshot, error)
+}

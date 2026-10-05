@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"tripfolio/server/internal/foundation/write"
 )
 
 // TripInfo 是成员所属旅行的窄只读视图。
@@ -47,4 +48,13 @@ type Reader interface {
 	Trip(ctx context.Context, accountID, tripID uuid.UUID) (TripInfo, bool, error)
 	// List 返回本旅行全部有效成员，按 sort_order、id 升序。
 	List(ctx context.Context, accountID, tripID uuid.UUID) ([]Resource, error)
+}
+
+// ListBaseline binds the complete member list to its snapshot revision.
+type ListBaseline struct {
+	Members        []Resource
+	ScopeRevisions []write.ScopeRevision
+}
+type SnapshotReader interface {
+	ListWithBaseline(context.Context, uuid.UUID, uuid.UUID) (ListBaseline, error)
 }

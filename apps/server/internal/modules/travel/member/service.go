@@ -11,6 +11,7 @@ import (
 	"tripfolio/server/internal/foundation/actor"
 	"tripfolio/server/internal/foundation/apperr"
 	"tripfolio/server/internal/foundation/clock"
+	"tripfolio/server/internal/foundation/collectionguard"
 	"tripfolio/server/internal/foundation/money"
 	"tripfolio/server/internal/foundation/write"
 )
@@ -78,6 +79,21 @@ func (s *Service) List(ctx context.Context, a actor.Actor, tripID uuid.UUID) ([]
 		rows = []Resource{}
 	}
 	return rows, nil
+}
+
+func (s *Service) ListWithBaseline(ctx context.Context, a actor.Actor, tripID uuid.UUID) (ListBaseline, error) {
+	reader, ok := s.reader.(SnapshotReader)
+	if !ok {
+		return ListBaseline{}, apperr.New(503, "DEPENDENCY_UNAVAILABLE", "成员基线读取暂不可用")
+	}
+	result, err := reader.ListWithBaseline(ctx, a.AccountID, tripID)
+	if err != nil {
+		return ListBaseline{}, err
+	}
+	if result.Members == nil {
+		result.Members = []Resource{}
+	}
+	return result, nil
 }
 
 // Input 是整体保存中的一位成员（接口设计 3.5 TripMembersSave）。
@@ -155,6 +171,9 @@ func (s *Service) Save(ctx context.Context, a actor.Actor, operationID, tripID u
 	}
 	return s.uow.Run(ctx, req, func(ctx context.Context, scope write.Scope, repo Repo) error {
 		if err := loadTrip(ctx, repo, a.AccountID, tripID); err != nil {
+			return err
+		}
+		if err := write.RequireCollections(ctx, scope, []collectionguard.Scope{{Kind: "members", ScopeID: tripID.String()}}); err != nil {
 			return err
 		}
 		existing, err := repo.ListForUpdate(ctx, a.AccountID, tripID)

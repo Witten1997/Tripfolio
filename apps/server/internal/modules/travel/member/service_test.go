@@ -2,9 +2,11 @@ package member_test
 
 import (
 	"context"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
+	"tripfolio/server/internal/foundation/collectionguard"
 
 	"github.com/google/uuid"
 
@@ -221,4 +223,90 @@ func TestSaveReplaysWithSameOperation(t *testing.T) {
 	if !again.Replayed || first.Replayed {
 		t.Fatalf("expected replay flag, got first=%v again=%v", first.Replayed, again.Replayed)
 	}
+}
+
+// The wrapper runs inside the real memory transaction and can reject before mutations.
+type memberGuardUOW struct {
+	inner    write.UnitOfWork[member.Repo]
+	required []collectionguard.Scope
+	err      error
+	unknown  bool
+	calls    int
+}
+type memberGuardScope struct {
+	write.Scope
+	owner *memberGuardUOW
+}
+
+func (s memberGuardScope) RequireCollections(_ context.Context, required []collectionguard.Scope) error {
+	s.owner.calls++
+	s.owner.required = append([]collectionguard.Scope(nil), required...)
+	return s.owner.err
+}
+func (u *memberGuardUOW) Run(ctx context.Context, req write.Request, fn func(context.Context, write.Scope, member.Repo) error, reload func(context.Context, member.Repo) (any, error)) (write.Result, error) {
+	return u.inner.Run(ctx, req, func(ctx context.Context, scope write.Scope, repo member.Repo) error {
+		if u.unknown {
+			return fn(ctx, struct{ write.Scope }{scope}, repo)
+		}
+		return fn(ctx, memberGuardScope{scope, u}, repo)
+	}, reload)
+}
+
+func TestMemberSaveRequiresBaselineBeforeNoOp(t *testing.T) {
+	for _, unknown := range []bool{false, true} {
+		t.Run(fmtBool(unknown), func(t *testing.T) {
+			f := newFixture(t)
+			u := &memberGuardUOW{inner: f.uow, err: apperr.New(428, "COLLECTION_BASE_REQUIRED", "required"), unknown: unknown}
+			svc := member.NewService(u, f.store, clock.Real{})
+			_, err := svc.Save(context.Background(), f.actor, uuid.New(), f.tripID, member.SaveCommand{Members: []member.Input{{ID: f.self.ID, Name: f.self.Name, SharePercent: f.self.SharePercent}}})
+			if unknown {
+				expectCode(t, err, 503, "DEPENDENCY_UNAVAILABLE")
+			} else {
+				expectCode(t, err, 428, "COLLECTION_BASE_REQUIRED")
+				if u.calls != 1 || !reflect.DeepEqual(u.required, []collectionguard.Scope{{Kind: "members", ScopeID: f.tripID.String()}}) {
+					t.Fatalf("required: %+v", u)
+				}
+			}
+			if len(f.uow.Changes()) != 0 || !reflect.DeepEqual(f.list(t), []member.Resource{f.self}) {
+				t.Fatal("rejected write changed members")
+			}
+		})
+	}
+}
+func fmtBool(v bool) string {
+	if v {
+		return "unknown capability"
+	}
+	return "required baseline"
+}
+
+type memberSnapshotReader struct {
+	member.Reader
+	baseline member.ListBaseline
+	err      error
+}
+
+func (r memberSnapshotReader) ListWithBaseline(context.Context, uuid.UUID, uuid.UUID) (member.ListBaseline, error) {
+	return r.baseline, r.err
+}
+func TestMemberSnapshotCapability(t *testing.T) {
+	// An embedded nil legacy Reader panics if the new path falls back to Trip/List.
+	a := actor.Actor{AccountID: uuid.New()}
+	svc := member.NewService(nil, struct{ member.Reader }{}, nil)
+	_, err := svc.ListWithBaseline(context.Background(), a, uuid.New())
+	expectCode(t, err, 503, "DEPENDENCY_UNAVAILABLE")
+	expected := member.ListBaseline{Members: []member.Resource{{ID: uuid.New()}}, ScopeRevisions: []write.ScopeRevision{{Kind: "members", Revision: "snapshot"}}}
+	svc = member.NewService(nil, memberSnapshotReader{baseline: expected}, nil)
+	actual, err := svc.ListWithBaseline(context.Background(), a, uuid.New())
+	if err != nil || !reflect.DeepEqual(actual, expected) {
+		t.Fatalf("snapshot: %+v %v", actual, err)
+	}
+	svc = member.NewService(nil, memberSnapshotReader{}, nil)
+	actual, err = svc.ListWithBaseline(context.Background(), a, uuid.New())
+	if err != nil || actual.Members == nil {
+		t.Fatalf("empty list: %+v %v", actual, err)
+	}
+	svc = member.NewService(nil, memberSnapshotReader{err: apperr.Gone("TRIP_DELETED", "deleted")}, nil)
+	_, err = svc.ListWithBaseline(context.Background(), a, uuid.New())
+	expectCode(t, err, 410, "TRIP_DELETED")
 }
