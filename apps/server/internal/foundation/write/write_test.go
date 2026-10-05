@@ -2,6 +2,7 @@ package write_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -60,7 +61,7 @@ func TestResolvePatch(t *testing.T) {
 	t.Run("intersecting fields conflict and list them sorted", func(t *testing.T) {
 		src := &fakeSource{fields: []string{"notes", "amount"}, complete: true}
 		d, _ := write.ResolvePatch(ctx, src, acc, "ledger_entry", id, 2, 4, []string{"notes", "amount", "occurred_on"})
-		if d.Merge || len(d.Conflicting) != 2 || d.Conflicting[0] != "amount" || d.Conflicting[1] != "notes" {
+		if d.Merge || strings.Join(d.Conflicting, ",") != "amount,currency_code,notes,participant_member_ids,payer_member_id,personal_amount,split_count,split_mode,splits" {
 			t.Fatalf("decision = %+v", d)
 		}
 	})
@@ -109,6 +110,24 @@ func TestReservationFieldGroupsAreBidirectional(t *testing.T) {
 			if err != nil || d.Merge || len(d.Conflicting) == 0 {
 				t.Fatalf("pair %v reversed=%d decision=%+v %v", pair, i, d, err)
 			}
+		}
+	}
+}
+
+func TestLedgerFinancialFieldsConflictBothDirections(t *testing.T) {
+	fields := []string{"amount", "currency_code", "payer_member_id", "split_mode", "participant_member_ids", "splits", "personal_amount", "split_count"}
+	for _, a := range fields {
+		for _, b := range fields {
+			d, err := write.ResolvePatch(context.Background(), &fakeSource{fields: []string{a}, complete: true}, uuid.New(), "ledger_entry", uuid.New(), 1, 2, []string{b})
+			if err != nil || d.Merge {
+				t.Fatalf("merged %s/%s: %+v %v", a, b, d, err)
+			}
+		}
+	}
+	for _, pair := range [][2]string{{"kind", "refunded_entry_id"}, {"refunded_entry_id", "kind"}} {
+		d, err := write.ResolvePatch(context.Background(), &fakeSource{fields: []string{pair[0]}, complete: true}, uuid.New(), "ledger_entry", uuid.New(), 1, 2, []string{pair[1]})
+		if err != nil || d.Merge {
+			t.Fatalf("refund group %+v %v", d, err)
 		}
 	}
 }

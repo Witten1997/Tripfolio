@@ -112,7 +112,9 @@ func (r *categoryRepo) LedgerEntriesUsing(ctx context.Context, accountID, id uui
 }
 
 func (r *categoryRepo) IDExists(ctx context.Context, id uuid.UUID) (bool, error) {
-	return r.scope.Queries.ExpenseCategoryIDExists(ctx, id)
+	var exists bool
+	err := r.scope.Tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM expense_categories WHERE id=$1) OR EXISTS(SELECT 1 FROM entity_tombstones WHERE account_id=$2 AND entity_type='expense_category' AND entity_id=$1)`, id, r.scope.AccountID).Scan(&exists)
+	return exists, err
 }
 
 // CategoryReader 是事务外只读仓储。
@@ -170,4 +172,20 @@ func SeedPresets(ctx context.Context, q *dbgen.Queries, accountID, batchID uuid.
 		})
 	}
 	return pgcore.RecordChanges(ctx, q, accountID, batchID, lastSeq, changes, now)
+}
+
+func NewCategoryRepository(scope *pgcore.TxScope) finance.CategoryRepo {
+	return &categoryRepo{scope: scope}
+}
+
+func (r *categoryRepo) ListForOrder(ctx context.Context, owner uuid.UUID) ([]finance.CategoryResource, error) {
+	rows, err := r.scope.Queries.ListExpenseCategories(ctx, owner)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]finance.CategoryResource, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, toResource(row))
+	}
+	return out, nil
 }

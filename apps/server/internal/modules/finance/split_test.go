@@ -109,7 +109,7 @@ func TestSplitRecomputeOnUpdate(t *testing.T) {
 		t.Fatalf("after amount: %s", splitsOf(u))
 	}
 	last := f.uow.Changes()[len(f.uow.Changes())-1]
-	if strings.Join(last.ChangedFields, ",") != "amount,splits" {
+	if strings.Join(last.ChangedFields, ",") != "amount,splits,personal_amount" {
 		t.Fatalf("changed fields: %v", last.ChangedFields)
 	}
 	// 改参与人：只剩小王
@@ -122,7 +122,7 @@ func TestSplitRecomputeOnUpdate(t *testing.T) {
 		t.Fatalf("after participants: %+v", u)
 	}
 	last = f.uow.Changes()[len(f.uow.Changes())-1]
-	if strings.Join(last.ChangedFields, ",") != "splits" {
+	if strings.Join(last.ChangedFields, ",") != "splits,personal_amount,split_count" {
 		t.Fatalf("changed fields: %v", last.ChangedFields)
 	}
 	// 改付款人

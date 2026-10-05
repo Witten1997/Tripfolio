@@ -59,6 +59,11 @@ func (s *TxScope) CollectionRevision(ctx context.Context, epoch uuid.UUID, kind 
 	var out write.ScopeRevision
 	table := ""
 	switch kind {
+	case "categories":
+		if tripID != s.AccountID {
+			return out, apperr.Unprocessable("INVALID_REFERENCE", "分类集合不属于本账号")
+		}
+		table = "expense_categories"
 	case "members":
 		table = "trip_members"
 	case "packing_order":
@@ -68,7 +73,13 @@ func (s *TxScope) CollectionRevision(ctx context.Context, epoch uuid.UUID, kind 
 	default:
 		return out, apperr.Unprocessable("INVALID_REFERENCE", "不支持的集合")
 	}
-	rows, err := s.Tx.Query(ctx, `SELECT id,version FROM `+table+` WHERE account_id=$1 AND trip_id=$2 AND deleted_at IS NULL ORDER BY id`, s.AccountID, tripID)
+	query := `SELECT id,version FROM ` + table + ` WHERE account_id=$1 AND trip_id=$2 AND deleted_at IS NULL ORDER BY id`
+	args := []any{s.AccountID, tripID}
+	if kind == "categories" {
+		query = `SELECT id,version FROM expense_categories WHERE account_id=$1 AND deleted_at IS NULL ORDER BY id`
+		args = []any{s.AccountID}
+	}
+	rows, err := s.Tx.Query(ctx, query, args...)
 	if err != nil {
 		return out, err
 	}

@@ -176,7 +176,7 @@ func ResolvePatch(ctx context.Context, src MergeSource, accountID uuid.UUID, ent
 	if !complete {
 		return PatchDecision{Conflicting: nil}, nil
 	}
-	if entityType == "trip" || entityType == "packing_item" || entityType == "todo" || entityType == "reservation" {
+	if entityType == "trip" || entityType == "packing_item" || entityType == "todo" || entityType == "reservation" || entityType == "ledger_entry" {
 		changed = entityFieldGroups(entityType, changed)
 		submitted = entityFieldGroups(entityType, submitted)
 	}
@@ -202,6 +202,8 @@ func entityFieldGroups(entityType string, fields []string) []string {
 	switch entityType {
 	case "trip":
 		groups = [][]string{{"start_date", "end_date", "timezone"}, {"currency_code", "budget_amount", "currency_locked_at"}}
+	case "ledger_entry":
+		groups = [][]string{{"amount", "currency_code", "payer_member_id", "split_mode", "participant_member_ids", "splits", "personal_amount", "split_count"}, {"kind", "refunded_entry_id"}}
 	case "reservation":
 		groups = [][]string{{"kind", "transport_number", "origin", "destination"}, {"start_local", "end_local"}}
 	case "packing_item":

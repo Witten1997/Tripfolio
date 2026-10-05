@@ -80,6 +80,9 @@ func (s *PushStore) Execute(ctx context.Context, a actor.Actor, epoch uuid.UUID,
 				}
 			}
 		}
+		if isFinanceEntity(op.EntityType) {
+			return executeFinance(ctx, scope, a, epoch, op, base, deps)
+		}
 		if op.EntityType == "reservation" || op.EntityType == "document" {
 			if len(op.Guards) > 0 {
 				return apperr.Unprocessable("INVALID_REFERENCE", "该操作不接受无关集合条件")
@@ -141,6 +144,9 @@ func (s *PushStore) Execute(ctx context.Context, a actor.Actor, epoch uuid.UUID,
 		}
 		return nil
 	}, func(ctx context.Context, scope *pgcore.TxScope) (any, error) {
+		if isFinanceEntity(op.EntityType) {
+			return reloadFinance(ctx, scope, a, op.Operation)
+		}
 		if op.EntityType == "reservation" || op.EntityType == "document" {
 			return reloadContent(ctx, scope, a, op.Operation)
 		}

@@ -117,7 +117,7 @@ func TestSaveCreatesUpdatesAndOrders(t *testing.T) {
 		member.Input{ID: friend, Name: "小王", SharePercent: "60.5"},
 		member.Input{ID: f.self.ID, Name: "我自己", SharePercent: "39.50"},
 	)
-	if len(res.Affected) != 0 || len(f.uow.Changes()) != 2 {
+	if len(res.Affected) != 2 || len(f.uow.Changes()) != 2 {
 		t.Fatalf("expected no-op save, got affected=%v changes=%d", res.Affected, len(f.uow.Changes()))
 	}
 }

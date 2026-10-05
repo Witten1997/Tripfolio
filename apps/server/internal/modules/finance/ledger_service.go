@@ -3,6 +3,7 @@ package finance
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/google/uuid"
@@ -383,6 +384,9 @@ type LedgerPatch struct {
 
 func (p LedgerPatch) submittedFields() []string {
 	var f []string
+	if p.CurrencyCode != nil {
+		f = append(f, "currency_code")
+	}
 	if p.Amount != nil {
 		f = append(f, "amount")
 	}
@@ -507,7 +511,7 @@ func (s *LedgerService) Update(ctx context.Context, a actor.Actor, operationID, 
 			}
 			v.Amount = amount
 		}
-		changed := submitted
+
 		if patch.Amount != nil || patch.PayerMemberID != nil || patch.SplitMode != nil || patch.ParticipantMemberIDs != nil {
 			payer, splitMode, participants := current.PayerMemberID, current.SplitMode, splitMemberIDs(current.Splits)
 			if patch.PayerMemberID != nil {
@@ -536,9 +540,6 @@ func (s *LedgerService) Update(ctx context.Context, a actor.Actor, operationID, 
 				return err
 			}
 			v.PayerMemberID, v.SplitMode, v.Splits, v.PersonalAmount, v.SplitCount = plan.Payer, plan.Mode, splits, personal, int32(len(splits))
-			if patch.ParticipantMemberIDs == nil && (patch.Amount != nil || patch.SplitMode != nil) {
-				changed = append(append([]string(nil), submitted...), "splits")
-			}
 		}
 		if patch.CategoryID != nil {
 			v.CategoryID = *patch.CategoryID
@@ -558,14 +559,8 @@ func (s *LedgerService) Update(ctx context.Context, a actor.Actor, operationID, 
 		if patch.AttachmentAssetIDs != nil {
 			v.AttachmentAssetIDs = attachments
 		}
-		if patch.CategoryID != nil || patch.AttachmentAssetIDs != nil {
-			checkAttachments := attachments
-			if patch.AttachmentAssetIDs == nil {
-				checkAttachments = nil
-			}
-			if err := s.checkReferences(ctx, repo, a.AccountID, tripID, v.CategoryID, checkAttachments); err != nil {
-				return err
-			}
+		if err := s.checkReferences(ctx, repo, a.AccountID, tripID, v.CategoryID, v.AttachmentAssetIDs); err != nil {
+			return err
 		}
 		now := s.clock.Now()
 		switch current.Kind {
@@ -591,7 +586,7 @@ func (s *LedgerService) Update(ctx context.Context, a actor.Actor, operationID, 
 				}
 			}
 		case KindRefund:
-			if v.RefundedEntryID != nil && (!sameUUID(v.RefundedEntryID, current.RefundedEntryID) || v.Amount != current.Amount || v.CategoryID != current.CategoryID) {
+			if v.RefundedEntryID != nil {
 				original, err := loadRefundOriginal(ctx, repo, a.AccountID, tripID, *v.RefundedEntryID)
 				if err != nil {
 					return err
@@ -600,6 +595,11 @@ func (s *LedgerService) Update(ctx context.Context, a actor.Actor, operationID, 
 					return err
 				}
 			}
+		}
+		changed := ledgerChangedFields(current.Values(), v)
+		if len(changed) == 0 {
+			scope.SetPrimary(ledgerRef(current))
+			return nil
 		}
 		updated, err := repo.Update(ctx, a.AccountID, tripID, id, v, now)
 		if err != nil {
@@ -695,4 +695,42 @@ func (s *LedgerService) reload(a actor.Actor, tripID, id uuid.UUID) func(ctx con
 		}
 		return r, nil
 	}
+}
+
+func ledgerChangedFields(a, b LedgerValues) []string {
+	fields := []string{}
+	if a.Amount != b.Amount {
+		fields = append(fields, "amount")
+	}
+	if a.PayerMemberID != b.PayerMemberID {
+		fields = append(fields, "payer_member_id")
+	}
+	if a.SplitMode != b.SplitMode {
+		fields = append(fields, "split_mode")
+	}
+	if !slices.Equal(a.Splits, b.Splits) {
+		fields = append(fields, "splits")
+	}
+	if a.PersonalAmount != b.PersonalAmount {
+		fields = append(fields, "personal_amount")
+	}
+	if a.SplitCount != b.SplitCount {
+		fields = append(fields, "split_count")
+	}
+	if a.CategoryID != b.CategoryID {
+		fields = append(fields, "category_id")
+	}
+	if a.OccurredOn != b.OccurredOn {
+		fields = append(fields, "occurred_on")
+	}
+	if a.Notes != b.Notes {
+		fields = append(fields, "notes")
+	}
+	if !sameUUID(a.RefundedEntryID, b.RefundedEntryID) {
+		fields = append(fields, "refunded_entry_id")
+	}
+	if !slices.Equal(a.AttachmentAssetIDs, b.AttachmentAssetIDs) {
+		fields = append(fields, "attachment_asset_ids")
+	}
+	return fields
 }

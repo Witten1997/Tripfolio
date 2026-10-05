@@ -152,3 +152,56 @@ func (r *MemberReader) Trip(ctx context.Context, accountID, tripID uuid.UUID) (m
 func (r *MemberReader) List(ctx context.Context, accountID, tripID uuid.UUID) ([]member.Resource, error) {
 	return ListActiveMembers(ctx, r.q, accountID, tripID)
 }
+
+func NewMemberRepository(scope *pgcore.TxScope) member.Repo { return &memberRepo{scope: scope} }
+
+func (r *memberRepo) PrepareNames(ctx context.Context, owner, tripID uuid.UUID, final map[uuid.UUID]string) error {
+	current, err := r.ListForUpdate(ctx, owner, tripID)
+	if err != nil {
+		return err
+	}
+	names := make([]string, 0, len(final))
+	for _, name := range final {
+		names = append(names, name)
+	}
+	rows, err := r.scope.Tx.Query(ctx, `SELECT lower(btrim(name)) FROM trip_members WHERE account_id=$1 AND trip_id=$2 AND deleted_at IS NULL UNION SELECT lower(btrim(value)) FROM unnest($3::text[]) AS value`, owner, tripID, names)
+	if err != nil {
+		return err
+	}
+	reserved := map[string]bool{}
+	for rows.Next() {
+		var key string
+		if err = rows.Scan(&key); err != nil {
+			rows.Close()
+			return err
+		}
+		reserved[key] = true
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return err
+	}
+	counter := uint64(0)
+	for _, m := range current {
+		name, keep := final[m.ID]
+		if !keep || name == m.Name {
+			continue
+		}
+		var temporary string
+		for {
+			temporary = fmt.Sprintf("~sync%d", counter)
+			counter++
+			if !reserved[temporary] {
+				break
+			}
+		}
+		reserved[temporary] = true
+		// Temporary names are ASCII, <= 25 characters, and compared with the
+		// database's exact lower(btrim(name)) keys above, never random guesses.
+		if _, err = r.scope.Tx.Exec(ctx, `UPDATE trip_members SET name=$4 WHERE account_id=$1 AND trip_id=$2 AND id=$3 AND deleted_at IS NULL`, owner, tripID, m.ID, temporary); err != nil {
+			return err
+		}
+	}
+	return nil
+}

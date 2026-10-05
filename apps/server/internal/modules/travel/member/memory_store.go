@@ -2,7 +2,9 @@ package member
 
 import (
 	"context"
+	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -189,4 +191,36 @@ func (m *MemoryStore) ReferenceCount(_ context.Context, _, _ uuid.UUID, memberID
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.references[memberID], nil
+}
+
+func (m *MemoryStore) PrepareNames(_ context.Context, owner, tripID uuid.UUID, final map[uuid.UUID]string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	current := m.active(owner, tripID)
+	reserved := map[string]bool{}
+	for _, r := range current {
+		reserved[strings.ToLower(strings.Trim(r.Name, " "))] = true
+	}
+	for _, name := range final {
+		reserved[strings.ToLower(strings.Trim(name, " "))] = true
+	}
+	counter := uint64(0)
+	for _, r := range current {
+		name, keep := final[r.ID]
+		if !keep || name == r.Name {
+			continue
+		}
+		var temporary string
+		for {
+			temporary = fmt.Sprintf("~sync%d", counter)
+			counter++
+			if !reserved[temporary] {
+				break
+			}
+		}
+		reserved[temporary] = true
+		r.Name = temporary
+		m.items[r.ID] = r
+	}
+	return nil
 }

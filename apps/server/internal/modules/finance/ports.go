@@ -12,6 +12,7 @@ import (
 
 // CategoryRepo 是分类在写事务内的仓储；由 PostgreSQL 适配器绑定到当前事务。
 type CategoryRepo interface {
+	ListForOrder(ctx context.Context, accountID uuid.UUID) ([]CategoryResource, error)
 	Get(ctx context.Context, accountID, id uuid.UUID) (CategoryResource, bool, error)
 	GetForUpdate(ctx context.Context, accountID, id uuid.UUID) (CategoryResource, bool, error)
 	Insert(ctx context.Context, accountID uuid.UUID, c CategoryResource) (CategoryResource, error)

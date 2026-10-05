@@ -508,3 +508,5 @@ func (r *LedgerReader) Statistics(ctx context.Context, accountID, tripID uuid.UU
 	}
 	return data, true, tx.Commit(ctx)
 }
+
+func NewLedgerRepository(scope *pgcore.TxScope) finance.LedgerRepo { return &ledgerRepo{scope: scope} }

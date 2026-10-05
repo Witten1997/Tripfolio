@@ -368,12 +368,12 @@ func TestRefundRules(t *testing.T) {
 	_, err = f.svc.Update(context.Background(), f.actor, uuid.New(), f.tripID, hotel.ID, 1, finance.LedgerPatch{Amount: str("9999")})
 	expectCode(t, err, 422, "REFUND_AMOUNT_EXCEEDED")
 	res := f.update(t, hotel.ID, 1, finance.LedgerPatch{Amount: str("10000.0")})
-	if res.Data.(finance.LedgerResource).Version != 2 || res.Data.(finance.LedgerResource).Amount != "10000" {
-		t.Fatalf("no-op amount change should still bump version: %+v", res.Data)
+	if res.Data.(finance.LedgerResource).Version != 1 || res.Data.(finance.LedgerResource).Amount != "10000" {
+		t.Fatalf("no-op amount must preserve original version: %+v", res.Data)
 	}
 
 	// 修改原支出分类：关联退款同事务更新并进入 affected；独立退款不受影响
-	res = f.update(t, hotel.ID, 2, finance.LedgerPatch{CategoryID: uid(f.food)})
+	res = f.update(t, hotel.ID, 1, finance.LedgerPatch{CategoryID: uid(f.food)})
 	if !hasAffected(res, finance.EntityTypeLedger, r1.ID) || !hasAffected(res, finance.EntityTypeLedger, r2.ID) || hasAffected(res, finance.EntityTypeLedger, standalone.ID) {
 		t.Fatalf("linked refunds must be affected: %+v", res.Affected)
 	}
@@ -412,7 +412,7 @@ func TestRefundRules(t *testing.T) {
 	expectCode(t, err, 422, "REFUND_AMOUNT_EXCEEDED")
 	f.update(t, r2.ID, 4, finance.LedgerPatch{RefundedSet: true, RefundedEntryID: uid(other.ID), Amount: str("500")})
 	// 支出不能被设置关联
-	_, err = f.svc.Update(context.Background(), f.actor, uuid.New(), f.tripID, hotel.ID, 3, finance.LedgerPatch{RefundedSet: true, RefundedEntryID: uid(other.ID)})
+	_, err = f.svc.Update(context.Background(), f.actor, uuid.New(), f.tripID, hotel.ID, 2, finance.LedgerPatch{RefundedSet: true, RefundedEntryID: uid(other.ID)})
 	if e := expectCode(t, err, 422, "VALIDATION_FAILED"); fieldCodes(e) != "refunded_entry_id:NOT_ALLOWED" {
 		t.Fatalf("expense link: %s", fieldCodes(e))
 	}

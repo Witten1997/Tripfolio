@@ -106,3 +106,64 @@ func TestPushContentNullableAndCanonicalFields(t *testing.T) {
 		}
 	}
 }
+
+func TestPushFinanceStrictFields(t *testing.T) {
+	op := pushTestInput().Operations[0]
+	op.EntityType = "ledger_entry"
+	op.Type = "ledger_entry.create"
+	memberID, categoryID := uuid.New(), uuid.New()
+	payload := map[string]any{"kind": "expense", "amount": "100.00", "currency_code": "CNY", "category_id": categoryID, "occurred_on": "2026-10-01", "payer_member_id": memberID, "split_mode": "even", "participant_member_ids": []uuid.UUID{memberID}}
+	op.Payload, _ = json.Marshal(payload)
+	first, err := prepare(op)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload["amount"] = "100"
+	payload["refunded_entry_id"] = nil
+	payload["attachment_asset_ids"] = []uuid.UUID{}
+	payload["notes"] = ""
+	op.Payload, _ = json.Marshal(payload)
+	second, err := prepare(op)
+	if err != nil || first.Fingerprint != second.Fingerprint {
+		t.Fatal("ledger canonical defaults", err)
+	}
+	for _, key := range []string{"payer_member_id", "split_mode", "participant_member_ids", "occurred_on", "currency_code"} {
+		copy := map[string]any{}
+		for k, v := range payload {
+			if k != key {
+				copy[k] = v
+			}
+		}
+		op.Payload, _ = json.Marshal(copy)
+		if _, err = prepare(op); err == nil {
+			t.Fatal("accepted missing", key)
+		}
+	}
+	op.Type = "ledger_entry.update"
+	for _, bad := range []map[string]any{{"split_count": 2}, {"personal_amount": "1"}, {"splits": []any{}}, {"refunded_set": true}, {"amount": nil}, {"participant_member_ids": nil}, {"attachment_asset_ids": nil}, {"kind": "refund"}} {
+		op.Payload, _ = json.Marshal(bad)
+		if _, err = prepare(op); err == nil {
+			t.Fatal("accepted bad ledger", bad)
+		}
+	}
+	op.EntityType = "expense_category"
+	op.Type = "expense_category.update"
+	op.Payload = []byte(`{"icon":null}`)
+	if _, err = prepare(op); err != nil {
+		t.Fatal(err)
+	}
+	for _, raw := range []string{`{"sort_order":1}`, `{"icon_set":true}`, `{"name":null}`} {
+		op.Payload = []byte(raw)
+		if _, err = prepare(op); err == nil {
+			t.Fatal("category bypass", raw)
+		}
+	}
+	op.EntityType = "trip_member"
+	op.Type = "trip_member.replace"
+	for _, bad := range []map[string]any{{"members": nil}, {"members": []any{map[string]any{"id": memberID, "name": "A", "share_percent": "100", "is_self": true}}}, {"members": []any{map[string]any{"id": memberID, "name": nil, "share_percent": "100"}}}} {
+		op.Payload, _ = json.Marshal(bad)
+		if _, err = prepare(op); err == nil {
+			t.Fatal("member field accepted", bad)
+		}
+	}
+}

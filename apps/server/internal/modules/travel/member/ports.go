@@ -26,6 +26,9 @@ func (r Resource) Values() Values {
 
 // Repo 是成员在写事务内的仓储；由 PostgreSQL 适配器绑定到当前事务。
 type Repo interface {
+	// PrepareNames temporarily frees names of renamed members in this transaction;
+	// it preserves versions and timestamps, and reserves all current and final names.
+	PrepareNames(ctx context.Context, accountID, tripID uuid.UUID, final map[uuid.UUID]string) error
 	// Trip 读取所属旅行的窄视图；不存在或非本人返回 found=false。
 	Trip(ctx context.Context, accountID, tripID uuid.UUID) (TripInfo, bool, error)
 	// ListForUpdate 锁定并返回本旅行全部有效成员，按 sort_order、id 升序。

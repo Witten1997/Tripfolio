@@ -165,10 +165,52 @@ func (s *Service) Save(ctx context.Context, a actor.Actor, operationID, tripID u
 		for _, r := range existing {
 			current[r.ID] = r
 		}
+		// Validate the complete replacement before any staging or mutation.
+		finalNames := map[uuid.UUID]string{}
+		for _, in := range inputs {
+			finalNames[in.id] = in.name
+			if _, ok := current[in.id]; !ok {
+				exists, err := repo.IDExists(ctx, in.id)
+				if err != nil {
+					return err
+				}
+				if exists {
+					return apperr.Conflicted(codeIDAlreadyUsed, "该 ID 已被使用")
+				}
+			}
+		}
+		for _, r := range existing {
+			if _, keep := finalNames[r.ID]; keep {
+				continue
+			}
+			if r.IsSelf {
+				return apperr.Validation(apperr.Field("members", "SELF_REQUIRED", "「我」不能删除"))
+			}
+			refs, err := repo.ReferenceCount(ctx, a.AccountID, tripID, r.ID)
+			if err != nil {
+				return err
+			}
+			if refs > 0 {
+				return apperr.Conflicted(codeMemberInUse, fmt.Sprintf("成员「%s」仍被 %d 条账目引用，不能删除", r.Name, refs))
+			}
+		}
+		if err := repo.PrepareNames(ctx, a.AccountID, tripID, finalNames); err != nil {
+			return err
+		}
 		now := s.clock.Now()
-		kept := map[uuid.UUID]struct{}{}
+		deletedMembers := []Resource{}
+		for _, r := range existing {
+			if _, keep := finalNames[r.ID]; keep {
+				continue
+			}
+			deleted, err := repo.SoftDelete(ctx, a.AccountID, tripID, r.ID, now)
+			if err != nil {
+				return err
+			}
+			deletedMembers = append(deletedMembers, deleted)
+		}
+
 		for i, in := range inputs {
-			kept[in.id] = struct{}{}
 			values := Values{Name: in.name, SharePercent: in.percent, SortOrder: int32(i)}
 			if r, ok := current[in.id]; ok {
 				var changed []string
@@ -182,6 +224,7 @@ func (s *Service) Save(ctx context.Context, a actor.Actor, operationID, tripID u
 					changed = append(changed, "sort_order")
 				}
 				if len(changed) == 0 {
+					scope.AddAffected(write.Ref(EntityType, r.ID, int64(r.Version)))
 					continue
 				}
 				updated, err := repo.Update(ctx, a.AccountID, tripID, in.id, values, now)
@@ -207,24 +250,7 @@ func (s *Service) Save(ctx context.Context, a actor.Actor, operationID, tripID u
 			}
 			record(scope, created, write.ChangeUpsert, Fields)
 		}
-		for _, r := range existing {
-			if _, ok := kept[r.ID]; ok {
-				continue
-			}
-			if r.IsSelf {
-				return apperr.Validation(apperr.Field("members", "SELF_REQUIRED", "「我」不能删除"))
-			}
-			refs, err := repo.ReferenceCount(ctx, a.AccountID, tripID, r.ID)
-			if err != nil {
-				return err
-			}
-			if refs > 0 {
-				return apperr.Conflicted(codeMemberInUse, fmt.Sprintf("成员「%s」仍被 %d 条账目引用，不能删除", r.Name, refs))
-			}
-			deleted, err := repo.SoftDelete(ctx, a.AccountID, tripID, r.ID, now)
-			if err != nil {
-				return err
-			}
+		for _, deleted := range deletedMembers {
 			record(scope, deleted, write.ChangeDelete, nil)
 		}
 		return nil

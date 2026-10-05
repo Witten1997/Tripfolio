@@ -3,6 +3,7 @@ package finance
 import (
 	"context"
 	"errors"
+	"math"
 	"strings"
 	"unicode/utf8"
 
@@ -141,6 +142,9 @@ func (s *CategoryService) Create(ctx context.Context, a actor.Actor, operationID
 			if err != nil {
 				return err
 			}
+			if max == math.MaxInt32 {
+				return apperr.Conflicted("SORT_ORDER_EXHAUSTED", "分类排序空间不足")
+			}
 			sortOrder = max + 1
 		}
 		now := s.clock.Now()
@@ -240,6 +244,20 @@ func (s *CategoryService) Update(ctx context.Context, a actor.Actor, operationID
 		if patch.SortOrder != nil {
 			sortOrder = *patch.SortOrder
 		}
+		changed := []string{}
+		if name != current.Name {
+			changed = append(changed, "name")
+		}
+		if !sameCategoryIcon(icon, current.Icon) {
+			changed = append(changed, "icon")
+		}
+		if sortOrder != current.SortOrder {
+			changed = append(changed, "sort_order")
+		}
+		if len(changed) == 0 {
+			scope.SetPrimary(write.Ref(EntityTypeCategory, current.ID, int64(current.Version)))
+			return nil
+		}
 		updated, err := repo.Update(ctx, a.AccountID, id, name, icon, sortOrder, s.clock.Now())
 		if errors.Is(err, ErrDuplicateName) {
 			return apperr.Validation(apperr.Field("name", "DUPLICATE", "已存在同名分类"))
@@ -247,7 +265,7 @@ func (s *CategoryService) Update(ctx context.Context, a actor.Actor, operationID
 		if err != nil {
 			return err
 		}
-		recordCategory(scope, updated, write.ChangeUpsert, submitted)
+		recordCategory(scope, updated, write.ChangeUpsert, changed)
 		scope.SetPrimary(write.Ref(EntityTypeCategory, updated.ID, int64(updated.Version)))
 		return nil
 	}, reload)
@@ -300,4 +318,47 @@ func recordCategory(scope write.Scope, c CategoryResource, kind write.ChangeKind
 		change.ChangedFields = fields
 	}
 	scope.Record(change)
+}
+
+func sameCategoryIcon(a, b *string) bool {
+	return a == nil && b == nil || a != nil && b != nil && *a == *b
+}
+
+func (s *CategoryService) Reorder(ctx context.Context, a actor.Actor, operationID uuid.UUID, ids []uuid.UUID) (write.Result, error) {
+	seen := map[uuid.UUID]bool{}
+	for _, id := range ids {
+		if id == uuid.Nil || seen[id] {
+			return write.Result{}, apperr.Validation(apperr.Field("ordered_ids", "INVALID", "分类ID必须有效且无重复"))
+		}
+		seen[id] = true
+	}
+	req := write.Request{AccountID: a.AccountID, OperationID: operationID, OperationType: "expense_category.reorder", Fingerprint: write.Fingerprint("expense_category.reorder", a.AccountID.String(), nil, ids)}
+	return s.uow.Run(ctx, req, func(ctx context.Context, scope write.Scope, repo CategoryRepo) error {
+		rows, err := repo.ListForOrder(ctx, a.AccountID)
+		if err != nil {
+			return err
+		}
+		if len(rows) != len(ids) {
+			return apperr.Validation(apperr.Field("ordered_ids", "INCOMPLETE", "必须包含完整有效分类集合"))
+		}
+		byID := map[uuid.UUID]CategoryResource{}
+		for _, r := range rows {
+			if !seen[r.ID] {
+				return apperr.Validation(apperr.Field("ordered_ids", "INCOMPLETE", "必须包含完整有效分类集合"))
+			}
+			byID[r.ID] = r
+		}
+		for i, id := range ids {
+			r := byID[id]
+			if r.SortOrder != int32(i) {
+				r, err = repo.Update(ctx, a.AccountID, id, r.Name, r.Icon, int32(i), s.clock.Now())
+				if err != nil {
+					return err
+				}
+				recordCategory(scope, r, write.ChangeUpsert, []string{"sort_order"})
+			}
+			scope.AddAffected(write.Ref(EntityTypeCategory, r.ID, int64(r.Version)))
+		}
+		return nil
+	}, nil)
 }

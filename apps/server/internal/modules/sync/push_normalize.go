@@ -314,12 +314,25 @@ func validGuard(g GuardReference) bool {
 
 func prepare(op Operation) (PreparedOperation, error) {
 	out := PreparedOperation{Operation: op}
-	if op.EntityType != "trip" && op.EntityType != "packing_item" && op.EntityType != "todo" && op.EntityType != "reservation" && op.EntityType != "document" {
+	if op.EntityType != "trip" && op.EntityType != "packing_item" && op.EntityType != "todo" && op.EntityType != "reservation" && op.EntityType != "document" && op.EntityType != "expense_category" && op.EntityType != "trip_member" && op.EntityType != "ledger_entry" {
 		return out, apperr.Unprocessable("OFFLINE_OPERATION_NOT_ALLOWED", "该操作尚未实现")
 	}
 	allowed := []string{}
 	required := []string{}
 	switch op.Type {
+	case "expense_category.create", "expense_category.update":
+		allowed = []string{"name", "icon"}
+		if op.Type == "expense_category.create" {
+			required = []string{"name"}
+		}
+	case "trip_member.replace":
+		allowed = []string{"members"}
+		required = allowed
+	case "ledger_entry.create":
+		allowed = []string{"kind", "amount", "currency_code", "category_id", "occurred_on", "notes", "refunded_entry_id", "attachment_asset_ids", "payer_member_id", "split_mode", "participant_member_ids"}
+		required = []string{"kind", "amount", "currency_code", "category_id", "occurred_on", "payer_member_id", "split_mode", "participant_member_ids"}
+	case "ledger_entry.update":
+		allowed = []string{"amount", "currency_code", "category_id", "occurred_on", "notes", "refunded_entry_id", "attachment_asset_ids", "payer_member_id", "split_mode", "participant_member_ids"}
 	case "reservation.create", "reservation.update":
 		allowed = []string{"kind", "title", "booking_reference", "transport_number", "provider_name", "start_local", "end_local", "origin", "destination", "address", "contact_name", "contact_phone", "notes"}
 		if op.Type == "reservation.create" {
@@ -346,7 +359,7 @@ func prepare(op Operation) (PreparedOperation, error) {
 	case "todo.set_completed":
 		allowed = []string{"completed"}
 		required = allowed
-	case "packing_item.reorder", "todo.reorder":
+	case "packing_item.reorder", "todo.reorder", "expense_category.reorder":
 		allowed = []string{"ordered_ids"}
 		required = allowed
 	case "trip.create":
@@ -370,6 +383,36 @@ func prepare(op Operation) (PreparedOperation, error) {
 			continue
 		}
 		switch k {
+		case "members":
+			var members []json.RawMessage
+			if json.Unmarshal(raw, &members) != nil || members == nil {
+				return out, apperr.Validation(apperr.Field(k, "INVALID", "需要完整成员数组"))
+			}
+			normalized := make([]map[string]any, 0, len(members))
+			for _, rawMember := range members {
+				fields, e := object(rawMember, []string{"id", "name", "share_percent"}, []string{"id", "name", "share_percent"})
+				if e != nil {
+					return out, apperr.Validation(apperr.Field(k, "INVALID", e.Error()))
+				}
+				values := map[string]string{}
+				for key, value := range fields {
+					var str string
+					if bytes.Equal(bytes.TrimSpace(value), []byte("null")) || json.Unmarshal(value, &str) != nil || strings.ContainsRune(str, '\x00') {
+						return out, apperr.Validation(apperr.Field(k, "INVALID", "成员字段必须是文本"))
+					}
+					values[key] = str
+				}
+				id, e := uuid.Parse(values["id"])
+				if e != nil || id == uuid.Nil {
+					return out, apperr.Validation(apperr.Field(k, "INVALID", "成员ID无效"))
+				}
+				percent, e := money.Compact(strings.TrimSpace(values["share_percent"]))
+				if e != nil {
+					return out, apperr.Validation(apperr.Field(k, "INVALID", "成员比例无效"))
+				}
+				normalized = append(normalized, map[string]any{"id": id, "name": strings.TrimSpace(values["name"]), "share_percent": percent})
+			}
+			m[k], _ = json.Marshal(normalized)
 		case "archived", "completed":
 			var b bool
 			if json.Unmarshal(raw, &b) != nil {
@@ -380,7 +423,7 @@ func prepare(op Operation) (PreparedOperation, error) {
 			if json.Unmarshal(raw, &n) != nil {
 				return out, apperr.Validation(apperr.Field(k, "INVALID", "需要整数"))
 			}
-		case "ordered_ids":
+		case "ordered_ids", "participant_member_ids", "attachment_asset_ids":
 			var ids []uuid.UUID
 			if json.Unmarshal(raw, &ids) != nil || ids == nil {
 				return out, apperr.Validation(apperr.Field(k, "INVALID", "需要ID数组"))
@@ -401,13 +444,13 @@ func prepare(op Operation) (PreparedOperation, error) {
 			if op.EntityType != "reservation" && op.EntityType != "document" && (k == "name" || k == "destination" || k == "title") {
 				s = strings.TrimSpace(s)
 			}
-			if k == "budget_amount" {
+			if k == "budget_amount" || k == "amount" {
 				s, err = money.Compact(s)
 				if err != nil {
 					return out, apperr.Validation(apperr.Field(k, "INVALID", "金额格式错误"))
 				}
 			}
-			if k == "self_member_id" || k == "asset_id" || k == "reservation_id" {
+			if k == "self_member_id" || k == "asset_id" || k == "reservation_id" || k == "category_id" || k == "payer_member_id" || k == "refunded_entry_id" {
 				id, e := uuid.Parse(s)
 				if e != nil || id == uuid.Nil {
 					return out, apperr.Validation(apperr.Field(k, "INVALID", "资源ID无效"))
@@ -461,6 +504,19 @@ func prepare(op Operation) (PreparedOperation, error) {
 			m["reservation_id"] = json.RawMessage(`null`)
 		}
 	}
+	if op.Type == "expense_category.create" {
+		if _, ok := m["icon"]; !ok {
+			m["icon"] = json.RawMessage(`null`)
+		}
+	}
+	if op.Type == "ledger_entry.create" {
+		for k, v := range map[string]string{"notes": `""`, "refunded_entry_id": "null", "attachment_asset_ids": "[]"} {
+			if _, ok := m[k]; !ok {
+				m[k] = json.RawMessage(v)
+			}
+		}
+	}
+
 	out.Payload, _ = json.Marshal(m)
 	out.DependsOn = append([]uuid.UUID{}, op.DependsOn...)
 	sort.Slice(out.DependsOn, func(i, j int) bool { return out.DependsOn[i].String() < out.DependsOn[j].String() })
@@ -489,6 +545,12 @@ func prepare(op Operation) (PreparedOperation, error) {
 }
 
 func contentNullable(entity, field string) bool {
+	if entity == "expense_category" {
+		return field == "icon"
+	}
+	if entity == "ledger_entry" {
+		return field == "refunded_entry_id"
+	}
 	if entity == "document" {
 		return field == "reservation_id"
 	}
