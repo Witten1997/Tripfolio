@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"reflect"
 	"sync"
 	"testing"
 
@@ -99,7 +100,8 @@ func TestSyncPushItineraryGuardAndBoundary(t *testing.T) {
 	if x := f.push(missing).Results[0]; x.Error == nil || x.Error.Code != "COLLECTION_BASE_REQUIRED" {
 		t.Fatalf("missing guard %+v", x.Error)
 	}
-	applied(t, f.push(a).Results[0])
+	created := f.push(a).Results[0]
+	applied(t, created)
 	stale := a
 	stale.OperationID = uuid.New()
 	id := uuid.New()
@@ -121,16 +123,52 @@ func TestSyncPushItineraryGuardAndBoundary(t *testing.T) {
 			t.Fatal("forbidden patch field")
 		}
 	}
-	// A graveyard ID remains unavailable even after the physical row disappears.
+	// Model the entity stage of tripPurgeRun.removeBatch: persist the original
+	// row's tombstone and remove the row atomically. A bare DELETE is not a purge.
 	del := itemOp("itinerary_item", "delete", trip, *a.EntityID, versionBase("1"), map[string]any{})
 	del.Guards = []syncmodule.GuardReference{itineraryGuard(trip, "2026-10-02", itineraryRevision(t, f, trip, "2026-10-02"))}
-	applied(t, f.push(del).Results[0])
-	f.sql(`DELETE FROM itinerary_items WHERE id=$1`, *a.EntityID)
+	deleted := f.push(del).Results[0]
+	applied(t, deleted)
+	tag, err := f.pool.Exec(context.Background(), `WITH stones AS (
+		INSERT INTO entity_tombstones(account_id,entity_type,entity_id,trip_id,last_version,deleted_at,purged_at)
+		SELECT account_id,'itinerary_item',id,trip_id,version,deleted_at,now()
+		FROM itinerary_items WHERE account_id=$1 AND trip_id=$2 AND id=$3 AND deleted_at IS NOT NULL
+		RETURNING entity_id
+	) DELETE FROM itinerary_items i USING stones s WHERE i.account_id=$1 AND i.trip_id=$2 AND i.id=s.entity_id`, f.owner, trip, *a.EntityID)
+	if err != nil || tag.RowsAffected() != 1 {
+		t.Fatalf("purge fixture did not replace exactly one row with a tombstone: %v, rows=%d", err, tag.RowsAffected())
+	}
+	assertPurged := func() {
+		t.Helper()
+		var stone, row bool
+		err := f.pool.QueryRow(context.Background(), `SELECT
+			EXISTS(SELECT 1 FROM entity_tombstones WHERE account_id=$1 AND entity_type='itinerary_item' AND entity_id=$3 AND trip_id=$2 AND last_version=2 AND deleted_at IS NOT NULL AND purged_at IS NOT NULL),
+			EXISTS(SELECT 1 FROM itinerary_items WHERE id=$3)`, f.owner, trip, *a.EntityID).Scan(&stone, &row)
+		if err != nil || !stone || row {
+			t.Fatalf("invalid purge state: tombstone=%t physical_row=%t error=%v", stone, row, err)
+		}
+	}
+	assertPurged()
 	recreate := itineraryCreate(t, f, trip, "2026-10-02", "again")
 	recreate.EntityID = a.EntityID
 	if x := f.push(recreate).Results[0]; x.Error == nil || x.Error.Code != "ID_ALREADY_USED" {
 		t.Fatalf("tombstone reused: %+v", x.Error)
 	}
+	for _, original := range []struct {
+		op     syncmodule.Operation
+		result syncmodule.PushResult
+	}{{a, created}, {del, deleted}} {
+		replay := f.push(original.op).Results[0]
+		if replay.Status != "replayed" || replay.Result == nil || replay.Result.Data != nil {
+			t.Fatalf("purged original must replay with no current data: %+v", replay)
+		}
+		if !reflect.DeepEqual(replay.Result.References, original.result.Result.References) ||
+			!reflect.DeepEqual(replay.Result.ScopeRevisions, original.result.Result.ScopeRevisions) ||
+			!reflect.DeepEqual(replay.Result.CommitCursor, original.result.Result.CommitCursor) {
+			t.Fatalf("purged replay changed original facts: before=%+v after=%+v", original.result.Result, replay.Result)
+		}
+	}
+	assertPurged()
 }
 
 func TestSyncPushItineraryConcurrentAndRollback(t *testing.T) {
