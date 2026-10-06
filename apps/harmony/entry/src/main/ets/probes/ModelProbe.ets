@@ -44,6 +44,7 @@ export struct ModelProbe {
   private timer: number = -1;
   private decoder?: util.TextDecoder;
   private buffer: string = '';
+  private responseOutput: string = '';
   private bytes: number = 0;
   private done: boolean = false;
   private ended: boolean = false;
@@ -67,6 +68,7 @@ export struct ModelProbe {
     const request = this.request;
     this.request = undefined;
     this.busy = false;
+    this.responseOutput = '';
     try {
       request?.destroy();
       this.result = message;
@@ -122,11 +124,14 @@ export struct ModelProbe {
                   if (typeof content !== 'string') {
                     this.protocolError = true;
                   } else {
-                    if (this.output.length + content.length > 4096) {
+                    if (this.responseOutput.length + content.length > 4096) {
                       this.cancel('文本超出 4096 字符限制，已取消；结果不完整。');
                       return;
                     }
-                    this.output += content;
+                    this.responseOutput += content;
+                    if (this.code >= 200 && this.code < 300) {
+                      this.output = this.responseOutput;
+                    }
                   }
                 }
               }
@@ -209,6 +214,7 @@ export struct ModelProbe {
     const generation = ++this.generation;
     this.busy = true;
     this.output = '';
+    this.responseOutput = '';
     this.buffer = '';
     this.bytes = 0;
     this.done = false;
@@ -276,6 +282,7 @@ export struct ModelProbe {
         if (code < 200 || code >= 300) {
           this.cancel(`HTTP ${code}；请求未通过，不显示服务端错误正文。`);
         } else {
+          this.output = this.responseOutput;
           this.finish();
         }
       }
