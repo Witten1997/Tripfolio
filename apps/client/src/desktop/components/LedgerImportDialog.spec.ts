@@ -2,6 +2,7 @@ import { File as NodeFile } from 'node:buffer'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { ElPagination } from 'element-plus'
 import { defineComponent } from 'vue'
+import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const { fetcher } = vi.hoisted(() => ({ fetcher: vi.fn() }))
 vi.mock('@/shared/api/client', async () => ({
@@ -55,6 +56,7 @@ let previewFailure: boolean
 let requests: Request[]
 let views: VueWrapper[]
 let previewGate: ((request: Request) => Promise<void>) | null
+let commitGate: (() => Promise<void>) | null
 const receipt = { scope_revisions: [guard], affected: [], replayed: true, warnings: [], data: null }
 beforeEach(() => {
   vi.stubGlobal('File', NodeFile)
@@ -64,6 +66,7 @@ beforeEach(() => {
   requests = []
   views = []
   previewGate = null
+  commitGate = null
   fetcher.mockReset().mockImplementation(async (request: Request) => {
     requests.push(request.clone())
     if (request.url.endsWith('/ledger-import-preview')) {
@@ -72,6 +75,7 @@ beforeEach(() => {
       if (previewFailure) throw new TypeError('preview offline')
       return Response.json({ data: captured })
     }
+    if (commitGate) await commitGate()
     if (status === 'network') throw new TypeError('offline')
     if (status)
       return Response.json(
@@ -103,15 +107,16 @@ async function setup() {
   await flushPromises()
   return view
 }
-async function choose(view: VueWrapper, selected = file()) {
+type DialogView = Pick<VueWrapper, 'find' | 'findAll'>
+async function choose(view: DialogView, selected = file()) {
   const input = view.find('input[type=file]')
   Object.defineProperty(input.element, 'files', { configurable: true, value: [selected] })
   await input.trigger('change')
   await flushPromises()
 }
-const button = (view: VueWrapper, text: string) =>
+const button = (view: DialogView, text: string) =>
   view.findAll('button').find((b) => b.text() === text)!
-const submit = (view: VueWrapper) =>
+const submit = (view: DialogView) =>
   view.findAll('button').find((b) => /^(确认导入|重试确认)/.test(b.text()))!
 const imports = () => requests.filter((r) => new URL(r.url).pathname.endsWith('/ledger-import'))
 async function signature(request: Request) {
@@ -122,6 +127,112 @@ async function signature(request: Request) {
     key: request.headers.get('Idempotency-Key'),
   }
 }
+
+async function routedSetup() {
+  const page = defineComponent({
+    components: { LedgerImportDialog },
+    template: '<LedgerImportDialog />',
+  })
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      { path: '/trips/:tripId/ledger', component: page },
+      { path: '/trips/:tripId/itinerary', component: { template: '<p>行程页</p>' } },
+    ],
+  })
+  await router.push(`/trips/${trip}/itinerary`)
+  await router.push(`/trips/${trip}/ledger`)
+  const root = mount(RouterView, {
+    attachTo: document.body,
+    global: { plugins: [router], stubs: { ElDialog: Dialog, ElDrawer: Dialog } },
+  })
+  views.push(root)
+  const view = root.getComponent(LedgerImportDialog)
+  view.vm.open()
+  await flushPromises()
+  return { root, view, router }
+}
+
+describe('导入结果真实路由保护', () => {
+  it.each([390, 1440])('%ipx 提交中及未知状态保留原文件和请求，重放后允许离开', async (width) => {
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn(() => ({
+        matches: width < 768,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      })),
+    )
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    commitGate = () => gate
+    const { root, view, router } = await routedSetup()
+    await choose(view)
+    const initial = router.currentRoute.value.fullPath
+    await submit(view).trigger('click')
+    await flushPromises()
+    expect(imports()).toHaveLength(1)
+    const original = await signature(imports()[0]!)
+    const assertBlocked = async () => {
+      await router.push(`/trips/${trip}/itinerary`)
+      expect(router.currentRoute.value.fullPath).toBe(initial)
+      await router.push('/trips/another-trip/ledger')
+      expect(router.currentRoute.value.fullPath).toBe(initial)
+      await router.replace('/trips/another-trip/ledger')
+      expect(router.currentRoute.value.fullPath).toBe(initial)
+      router.back()
+      await flushPromises()
+      expect(router.currentRoute.value.fullPath).toBe(initial)
+      expect(view.find('[role="dialog"]').exists()).toBe(true)
+      expect(view.text()).toContain('账单.xlsx')
+    }
+    await assertBlocked()
+    expect(imports()).toHaveLength(1)
+    status = 'network'
+    release()
+    await flushPromises()
+    commitGate = null
+    expect(submit(view).text()).toBe('重试确认')
+    await assertBlocked()
+    await router.replace(`${initial}?view=compact#top`)
+    expect(router.currentRoute.value.query.view).toBe('compact')
+    await router.replace(initial)
+    expect(imports()).toHaveLength(1)
+    status = 412
+    await submit(view).trigger('click')
+    await flushPromises()
+    await assertBlocked()
+    expect(submit(view).text()).toBe('重试确认')
+    status = null
+    await submit(view).trigger('click')
+    await flushPromises()
+    expect(imports()).toHaveLength(3)
+    for (const request of imports()) expect(await signature(request)).toEqual(original)
+    expect(view.emitted('saved')).toEqual([[receipt, 1]])
+    await router.push(`/trips/${trip}/itinerary`)
+    expect(root.text()).toContain('行程页')
+  })
+
+  it.each(['empty', 'preview', 'conflict'])(
+    '%s 未提交或明确拒绝时不锁住正常导航',
+    async (state) => {
+      const { router } = await routedSetup()
+      const view = views[0]!.getComponent(LedgerImportDialog)
+      if (state !== 'empty') await choose(view)
+      if (state === 'conflict') {
+        status = 412
+        await submit(view).trigger('click')
+        await flushPromises()
+      }
+      await router.push('/trips/another-trip/ledger')
+      expect(router.currentRoute.value.params.tripId).toBe('another-trip')
+      await router.push('/trips/another-trip/itinerary')
+      expect(router.currentRoute.value.path).toBe('/trips/another-trip/itinerary')
+    },
+  )
+})
 
 describe('账单导入确认', () => {
   it('确认发送原文件/摘要/成员头，成功仅通知一次并清空旧批次', async () => {

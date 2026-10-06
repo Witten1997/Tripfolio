@@ -2,6 +2,7 @@
 import { Download, FileSpreadsheet, Upload } from '@lucide/vue'
 import { ElAlert, ElButton, ElPagination, ElTable, ElTableColumn } from 'element-plus'
 import { computed, onBeforeUnmount, ref, shallowRef } from 'vue'
+import { onBeforeRouteLeave, onBeforeRouteUpdate } from 'vue-router'
 
 import ResponsiveEditorShell from '@/desktop/components/ResponsiveEditorShell.vue'
 import { saveLedgerTemplate } from '@/platform/ledgerTemplate'
@@ -26,6 +27,17 @@ const saving = ref(false)
 const uncertain = ref(false)
 const needsPreview = ref(false)
 const failure = ref('')
+function allowNavigation() {
+  if (!saving.value && !uncertain.value) return true
+  failure.value = saving.value
+    ? '账单正在导入，请等待结果后再离开。'
+    : '暂未确认导入结果，请原样「重试确认」后再离开。'
+  return false
+}
+onBeforeRouteLeave(allowNavigation)
+onBeforeRouteUpdate((to, from) =>
+  to.params.tripId === from.params.tripId ? true : allowNavigation(),
+)
 const initialFile = shallowRef<File | null>(null)
 const prepared = shallowRef<PreparedLedgerImport | null>(null)
 const candidate = shallowRef<PreparedLedgerImport | null>(null)
