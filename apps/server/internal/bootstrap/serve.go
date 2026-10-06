@@ -169,6 +169,7 @@ func RunServe(ctx context.Context, cfg config.Config, logger *slog.Logger) error
 	}
 
 	router := httpapi.NewRouter(httpapi.Deps{Deletions: services.Deletions,
+		Sync:                services.Sync,
 		CollectionBaselines: services.CollectionBaselines,
 		AdminBasePath:       cfg.AdminAPIPath(),
 		Admin:               adminapi.NewHandler(adminapi.Options{BasePath: cfg.AdminAPIPath(), Service: services.Admin, Runtime: adminRuntime(pool, readiness, worker, cfg), Secure: cfg.CookieSecure, Logger: logger}),
@@ -244,7 +245,7 @@ func migrateBeforeServe(ctx context.Context, cfg config.Config, pool *pgxpool.Po
 
 func startWorker(ctx context.Context, pool *pgxpool.Pool, cfg config.Config, services Services, logger *slog.Logger) (*river.Client[pgx.Tx], error) {
 	workers := river.NewWorkers()
-	deps := riverjobs.Deps{Logger: logger, RouteRecalculator: services.RoutePlans, Backups: services.Backups}
+	deps := riverjobs.Deps{Sync: services.Sync, Logger: logger, RouteRecalculator: services.RoutePlans, Backups: services.Backups}
 	if services.TripPurger != nil {
 		deps.TripPurger = services.TripPurger
 		deps.Deletions = services.Deletions

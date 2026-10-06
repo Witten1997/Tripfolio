@@ -20,6 +20,7 @@ import (
 	deletionpg "tripfolio/server/internal/adapters/postgres/deletion"
 	financepg "tripfolio/server/internal/adapters/postgres/finance"
 	"tripfolio/server/internal/adapters/postgres/pgcore"
+	syncpg "tripfolio/server/internal/adapters/postgres/sync"
 	travelpg "tripfolio/server/internal/adapters/postgres/travel"
 	"tripfolio/server/internal/adapters/queue"
 	"tripfolio/server/internal/adapters/ratelimit"
@@ -35,6 +36,7 @@ import (
 	"tripfolio/server/internal/modules/finance"
 	geoservice "tripfolio/server/internal/modules/geo"
 	"tripfolio/server/internal/modules/metadata"
+	syncmodule "tripfolio/server/internal/modules/sync"
 	"tripfolio/server/internal/modules/travel/album"
 	"tripfolio/server/internal/modules/travel/dashboard"
 	"tripfolio/server/internal/modules/travel/document"
@@ -50,6 +52,7 @@ import (
 
 // Services 是 API 用到的全部业务服务；测试也用它在内存或真实数据库上组装。
 type Services struct {
+	Sync                *syncmodule.Service
 	CollectionBaselines *collectionbaseline.Service
 	Deletions           *deletion.Service
 	Photos              *album.Service
@@ -109,6 +112,9 @@ func BuildServices(pool *pgxpool.Pool, cfg config.Config, logger *slog.Logger, m
 	writer := pgcore.NewWriter(pool, insertOnly, clk, logger)
 	categories := finance.NewCategoryService(financepg.NewCategoryUnitOfWork(writer), financepg.NewCategoryReader(pool), clk)
 	cursors := security.NewCursorCodec(keyring)
+	syncService := syncmodule.NewService(syncpg.NewStore(pool), cursors, clk).
+		WithPush(syncpg.NewPushStore(writer)).
+		WithSnapshots(syncpg.NewSnapshotStore(pool, insertOnly))
 	collectionBaselines := collectionbaseline.NewService(baselinepg.NewStore(pool), cursors, clk)
 	trips := trip.NewService(travelpg.NewTripUnitOfWork(writer), travelpg.NewTripReader(pool), cursors, clk, policy.ReauthWindow)
 	itineraries := itinerary.NewService(travelpg.NewItineraryUnitOfWork(writer), travelpg.NewItineraryReader(pool), cursors, clk)
@@ -176,6 +182,7 @@ func BuildServices(pool *pgxpool.Pool, cfg config.Config, logger *slog.Logger, m
 	}
 	backups := backup.New(backupStore, backup.Options{Password: cfg.Backup.Password, Key: cfg.Backup.Key, DatabaseURL: backupURL, Directory: cfg.Backup.Directory, MaxBytes: cfg.Backup.MaxBytes, Timeout: cfg.Backup.Timeout}).WithRestores(backupStore, cfg.DatabaseURL)
 	return Services{
+		Sync:                syncService,
 		CollectionBaselines: collectionBaselines,
 		Photos:              photos, Reservations: reservations, Documents: documents,
 		Maintenance: pgcore.NewMaintenanceGate(cfg.DatabaseURL, pool),

@@ -36,6 +36,9 @@ func TestBuildProdServicesWithoutMailAndObjectStore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("生产环境未配置邮件和对象存储时应能完成装配: %v", err)
 	}
+	if services.Sync == nil {
+		t.Fatal("同步读取、推送与快照服务必须与其他服务一起装配")
+	}
 	if services.ObjectStore != nil || services.AssetVerifier != nil || services.Assets == nil {
 		t.Fatal("未配置对象存储时应保留资产服务并禁用存储和校验器")
 	}
