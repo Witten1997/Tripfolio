@@ -71,7 +71,7 @@ func TestSyncAdmissionPolicyAndNoWrites(t *testing.T) {
 				t.Fatal("denied push changed business, changes, receipts, sequence or jobs")
 			}
 			enablePushTestAccount(f)
-			op.DependsOn = nil
+			op.DependsOn = []uuid.UUID{}
 			financeApplied(t, f.push(op).Results[0])
 		})
 	}
