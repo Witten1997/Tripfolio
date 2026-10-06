@@ -98,6 +98,7 @@ func financeCheck(f *pushFixture, sql string, args ...any) {
 
 func TestSyncPushFinanceLifecycle(t *testing.T) {
 	f := newPushFixture(t)
+	enablePushTestAccount(f)
 	trip, self, cat := financeStart(t, f)
 	friend := uuid.New()
 	members := replaceMembers(f, trip, memberInput(self, "Me", "60"), memberInput(friend, "Friend", "40"))
@@ -159,6 +160,7 @@ func TestSyncPushFinanceLifecycle(t *testing.T) {
 
 func TestSyncPushFinanceMemberNamesAndRollback(t *testing.T) {
 	f := newPushFixture(t)
+	enablePushTestAccount(f)
 	trip, self, _ := financeStart(t, f)
 	a, b := uuid.New(), uuid.New()
 	first := replaceMembers(f, trip, memberInput(self, "~SYNC0", "50"), memberInput(a, "Alpha", "25"), memberInput(b, "Beta", "25"))
@@ -203,6 +205,7 @@ func TestSyncPushFinanceMemberNamesAndRollback(t *testing.T) {
 
 func TestSyncPushFinanceCategoryGuards(t *testing.T) {
 	f := newPushFixture(t)
+	enablePushTestAccount(f)
 	_, _, cat := financeStart(t, f)
 	getIDs := func() []uuid.UUID {
 		rows, err := f.pool.Query(context.Background(), `SELECT id FROM expense_categories WHERE account_id=$1 AND deleted_at IS NULL ORDER BY sort_order,id`, f.owner)
@@ -309,6 +312,7 @@ func TestSyncPushFinanceCategoryGuards(t *testing.T) {
 
 func TestSyncPushFinanceConflictsAndReferences(t *testing.T) {
 	f := newPushFixture(t)
+	enablePushTestAccount(f)
 	trip, self, cat := financeStart(t, f)
 	create := ledgerCreate(f, trip, cat, self, "100", self)
 	financeApplied(t, f.push(create).Results[0])
@@ -350,6 +354,7 @@ func TestSyncPushFinanceConflictsAndReferences(t *testing.T) {
 
 func TestSyncPushFinanceRefundsAndReceiptRollback(t *testing.T) {
 	f := newPushFixture(t)
+	enablePushTestAccount(f)
 	trip, self, cat := financeStart(t, f)
 	expense := ledgerCreate(f, trip, cat, self, "100", self)
 	financeApplied(t, f.push(expense).Results[0])
@@ -459,9 +464,19 @@ func TestSyncPushFinanceRefundsAndReceiptRollback(t *testing.T) {
 
 func TestSyncPushFinanceLegacyProjection(t *testing.T) {
 	f := newPushFixture(t)
-	trip, self, cat := financeStart(t, f)
+	trip := f.newTrip("legacy finance")
+	var self uuid.UUID
+	if err := f.pool.QueryRow(context.Background(), `SELECT id FROM trip_members WHERE trip_id=$1 AND is_self`, trip).Scan(&self); err != nil {
+		t.Fatal(err)
+	}
+	cat := categoryWebCreate(t, f, "custom")
 	expense := ledgerCreate(f, trip, cat, self, "10", self)
-	financeApplied(t, f.push(expense).Results[0])
+	var seed map[string]any
+	if err := json.Unmarshal(expense.Payload, &seed); err != nil {
+		t.Fatal(err)
+	}
+	seed["id"] = expense.EntityID
+	expectStatus(t, f.do(request{method: http.MethodPost, path: "/trips/" + trip.String() + "/ledger-entries", token: f.webToken, headers: f.authHeaders(nil), body: seed}), 201, "")
 	snapshot := f.snapshot("baseline", []uuid.UUID{trip})
 	f.build(snapshot.ID)
 	items, last := f.pages(snapshot.ID)
@@ -491,6 +506,7 @@ func TestSyncPushFinanceLegacyProjection(t *testing.T) {
 	// REST members remain usable before v2 enablement, and invalidate old guards.
 	stale := financeGuard(f, "members", trip)
 	expectStatus(t, f.do(request{method: http.MethodPut, path: "/trips/" + trip.String() + "/members", token: f.webToken, headers: f.authHeaders(nil), body: map[string]any{"members": []any{memberInput(self, "Web me", "100")}}}), 200, "")
+	enablePushTestAccount(f)
 	op := withFinanceGuard(financeOp("ledger_entry", "update", trip, *expense.EntityID, versionBase("2"), map[string]any{"amount": "10"}), stale)
 	financeCode(t, f.push(op).Results[0], "COLLECTION_CONFLICT")
 	// Memo updates still work without a member guard, preserving old split amounts.
@@ -507,6 +523,7 @@ func financeApplied(t *testing.T, r syncmodule.PushResult) {
 
 func TestSyncPushFinanceBoundaryFacts(t *testing.T) {
 	f := newPushFixture(t)
+	enablePushTestAccount(f)
 	trip, self, cat := financeStart(t, f)
 	// Same command ID applies exactly once, including the first currency lock.
 	create := ledgerCreate(f, trip, cat, self, "10", self)

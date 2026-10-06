@@ -57,6 +57,7 @@ func itineraryOrder(t *testing.T, f *pushFixture, trip uuid.UUID, dates []string
 
 func TestSyncPushItineraryLifecycle(t *testing.T) {
 	f := newItineraryPushFixture(t)
+	enablePushTestAccount(f)
 	trip := f.newTrip("itinerary")
 	a := itineraryCreate(t, f, trip, "2026-10-02", "A")
 	applied(t, f.push(a).Results[0])
@@ -92,6 +93,7 @@ func TestSyncPushItineraryLifecycle(t *testing.T) {
 
 func TestSyncPushItineraryGuardAndBoundary(t *testing.T) {
 	f := newItineraryPushFixture(t)
+	enablePushTestAccount(f)
 	trip := f.newTrip("guards")
 	a := itineraryCreate(t, f, trip, "2026-10-02", "A")
 	missing := a
@@ -173,6 +175,7 @@ func TestSyncPushItineraryGuardAndBoundary(t *testing.T) {
 
 func TestSyncPushItineraryConcurrentAndRollback(t *testing.T) {
 	f := newItineraryPushFixture(t)
+	enablePushTestAccount(f)
 	trip := f.newTrip("race")
 	a := itineraryCreate(t, f, trip, "2026-10-02", "A")
 	applied(t, f.push(a).Results[0])
@@ -233,6 +236,7 @@ func TestSyncPushItineraryConcurrentAndRollback(t *testing.T) {
 
 func TestSyncPushItineraryWebProjection(t *testing.T) {
 	f := newItineraryPushFixture(t)
+	enablePushTestAccount(f)
 	trip := f.newTrip("web")
 	a := itineraryCreate(t, f, trip, "2026-10-02", "A")
 	applied(t, f.push(a).Results[0])
@@ -284,6 +288,7 @@ func TestSyncPushItineraryWebProjection(t *testing.T) {
 
 func TestSyncPushItineraryMergeAndRetry(t *testing.T) {
 	f := newItineraryPushFixture(t)
+	enablePushTestAccount(f)
 	trip := f.newTrip("merge")
 	a := itineraryCreate(t, f, trip, "2026-10-02", "A")
 	a.Payload = json.RawMessage(`{"title":"A","kind":"other","scheduled_on":"2026-10-02","planned_start_local":"2026-10-02T09:00:00","planned_end_local":"2026-10-02T10:00:00"}`)

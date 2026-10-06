@@ -26,7 +26,7 @@ func TestSyncWebCollectionsNativeProofAndOriginalFacts(t *testing.T) {
 	if err := f.pool.QueryRow(ctx, `SELECT sync_epoch FROM account_sync_state WHERE account_id=$1`, owner).Scan(&epoch); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.pool.Exec(ctx, `INSERT INTO account_sync_capabilities(account_id,collection_guards_required) VALUES($1,true)`, owner); err != nil {
+	if _, err := f.pool.Exec(ctx, `INSERT INTO account_sync_capabilities(account_id,collection_guards_required,v2_enabled_epoch,enabled_at) VALUES($1,true,$2,now())`, owner, epoch); err != nil {
 		t.Fatal(err)
 	}
 	req := write.Request{AccountID: owner, OperationID: uuid.New(), OperationType: "native.collection.test", Fingerprint: sha256.Sum256([]byte("native"))}

@@ -143,6 +143,7 @@ func TestWebPhotoGuardsFinalDatesAndNoop(t *testing.T) {
 
 func TestWebPhotoGuardsNativeProofAndOriginalFacts(t *testing.T) {
 	f, trip, asset := photoWebFixture(t, true)
+	enablePushTestAccount(f)
 	create := mediaPhoto(trip, asset, "2026-10-05", 0)
 	mediaApplied(t, f.push(create).Results[0])
 	id := *create.EntityID

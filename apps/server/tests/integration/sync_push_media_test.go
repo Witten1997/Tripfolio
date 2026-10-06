@@ -48,6 +48,7 @@ func mediaError(t *testing.T, r syncmodule.PushResult, code string) {
 
 func TestSyncPushMediaLifecycleAndImmutableFacts(t *testing.T) {
 	f := newPushFixture(t)
+	enablePushTestAccount(f)
 	trip := f.newTrip("media")
 	reg := mediaRegistration(trip)
 	photo := mediaPhoto(trip, *reg.EntityID, "2026-10-05", 0, reg.OperationID)
@@ -98,6 +99,7 @@ func TestSyncPushMediaLifecycleAndImmutableFacts(t *testing.T) {
 
 func TestSyncPushMediaCompleteOrderAndConcurrency(t *testing.T) {
 	f := newPushFixture(t)
+	enablePushTestAccount(f)
 	trip := f.newTrip("order")
 	reg := mediaRegistration(trip)
 	mediaApplied(t, f.push(reg).Results[0])
@@ -148,6 +150,7 @@ func TestSyncPushMediaCompleteOrderAndConcurrency(t *testing.T) {
 
 func TestSyncPushMediaReceiptRollback(t *testing.T) {
 	f := newPushFixture(t)
+	enablePushTestAccount(f)
 	trip := f.newTrip("rollback")
 	reg := mediaRegistration(trip)
 	mediaApplied(t, f.push(reg).Results[0])
@@ -182,6 +185,7 @@ func TestSyncPushMediaReceiptRollback(t *testing.T) {
 
 func TestSyncPushMediaReferencesConflictsAndTombstones(t *testing.T) {
 	f := newPushFixture(t)
+	enablePushTestAccount(f)
 	trip := f.newTrip("refs")
 	other := f.newTrip("other")
 	reg := mediaRegistration(trip)
@@ -217,6 +221,7 @@ func TestSyncPushMediaReferencesConflictsAndTombstones(t *testing.T) {
 
 func TestSyncPushMediaDefaultAppendAndLegacyREST(t *testing.T) {
 	f := newPushFixture(t)
+	enablePushTestAccount(f)
 	s := f.services
 	server := httptest.NewServer(httpapi.NewRouter(httpapi.Deps{Logger: quietLogger(), CORSOrigins: []string{f.origin}, Identity: s.Identity, Sessions: s.Sessions, Profile: s.Profile, Trips: s.Trips, Photos: s.Photos, Sync: f.svc}))
 	t.Cleanup(server.Close)

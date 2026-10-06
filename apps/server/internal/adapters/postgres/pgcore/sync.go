@@ -11,9 +11,17 @@ import (
 	"tripfolio/server/internal/foundation/write"
 )
 
-// SyncWriteOptions opts into epoch validation and immutable receipt facts.
+// SyncWriteOptions opts into epoch validation, admission and immutable receipt facts.
 // Ordinary REST writes continue to use Run without these options.
 type SyncWriteOptions struct{ Epoch uuid.UUID }
+
+// admitNew runs only after successful receipt replay has been ruled out.
+func (o SyncWriteOptions) admitNew(policy WebPolicy) error {
+	if !policy.V2Enabled() || policy.Epoch != o.Epoch {
+		return apperr.Conflicted("SYNC_NOT_READY", "账号尚未启用同步写入，请重新建立基线并完成启用")
+	}
+	return nil
+}
 
 func (o SyncWriteOptions) authorize(ctx context.Context, scope *TxScope) error {
 	a, ok := actor.FromContext(ctx)

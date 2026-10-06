@@ -63,9 +63,9 @@ func mfResult(t *testing.T, r apiResponse) write.Result {
 }
 func TestWebMemberFinanceGuards(t *testing.T) {
 	f := newPushFixture(t)
+	enablePushTestAccount(f)
 	trip, self, cat := financeStart(t, f)
 	base := mfBaseline(t, f, trip)
-	f.sql(`INSERT INTO account_sync_capabilities(account_id,collection_guards_required) VALUES($1,true)`, f.owner)
 	path := "/trips/" + trip.String()
 	saveBody := map[string]any{"members": []any{memberInput(self, "Me", "100")}}
 	save := func(headers map[string]string) apiResponse {
@@ -185,6 +185,7 @@ func mfUpload(t *testing.T, f *pushFixture, path string, data []byte, headers ma
 }
 func TestWebMemberFinanceImport(t *testing.T) {
 	f := newPushFixture(t)
+	enablePushTestAccount(f)
 	trip, self, _ := financeStart(t, f)
 	path := "/trips/" + trip.String()
 	template, err := f.services.Ledger.ImportTemplate(context.Background(), f.a, trip)
@@ -192,7 +193,6 @@ func TestWebMemberFinanceImport(t *testing.T) {
 		t.Fatal(err)
 	}
 	file := mfWorkbook(t, template, "custom")
-	f.sql(`INSERT INTO account_sync_capabilities(account_id,collection_guards_required) VALUES($1,true)`, f.owner)
 	preview := func() finance.LedgerImportPreview {
 		r := mfUpload(t, f, path+"/ledger-import-preview", file, nil)
 		expectStatus(t, r, 200, "")
@@ -269,6 +269,7 @@ func TestWebMemberFinanceRepeatableRead(t *testing.T) {
 	for _, kind := range []string{"members", "import"} {
 		t.Run(kind, func(t *testing.T) {
 			f := newPushFixture(t)
+			enablePushTestAccount(f)
 			trip, _, _ := financeStart(t, f)
 			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 			defer cancel()
@@ -350,6 +351,7 @@ func TestWebMemberFinanceRepeatableRead(t *testing.T) {
 
 func TestWebMemberFinanceReadBoundaries(t *testing.T) {
 	f := newPushFixture(t)
+	enablePushTestAccount(f)
 	trip, _, _ := financeStart(t, f)
 	ctx := context.Background()
 	mr := travelpg.NewMemberReader(f.pool)

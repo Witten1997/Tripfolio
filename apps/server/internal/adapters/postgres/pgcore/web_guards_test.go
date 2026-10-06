@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"tripfolio/server/internal/foundation/apperr"
 	"tripfolio/server/internal/foundation/collectionguard"
 
 	"github.com/google/uuid"
@@ -26,6 +27,37 @@ func TestWebPolicyAdmission(t *testing.T) {
 		if test.p.V2Enabled() != test.want {
 			t.Fatal(test)
 		}
+	}
+}
+
+func TestSyncAdmissionPolicy(t *testing.T) {
+	epoch, old := uuid.New(), uuid.New()
+	for _, test := range []struct {
+		name   string
+		policy WebPolicy
+		allow  bool
+	}{
+		{"absent", WebPolicy{}, false},
+		{"false", WebPolicy{false, epoch, &epoch}, false},
+		{"null", WebPolicy{true, epoch, nil}, false},
+		{"old activation", WebPolicy{true, epoch, &old}, false},
+		{"old policy", WebPolicy{true, old, &old}, false},
+		{"zero epoch", WebPolicy{true, uuid.Nil, &uuid.Nil}, false},
+		{"enabled", WebPolicy{true, epoch, &epoch}, true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			err := (SyncWriteOptions{Epoch: epoch}).admitNew(test.policy)
+			if test.allow {
+				if err != nil {
+					t.Fatal(err)
+				}
+				return
+			}
+			e, ok := apperr.As(err)
+			if !ok || e.Code != "SYNC_NOT_READY" || e.Status != 409 {
+				t.Fatalf("admission: %v", err)
+			}
+		})
 	}
 }
 

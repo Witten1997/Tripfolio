@@ -294,9 +294,15 @@ func (w *Writer) run(ctx context.Context, req write.Request, syncOptions *SyncWr
 	}
 
 	started = time.Now()
-	// Individual services supply final scopes; this check only validates policy storage.
-	if _, err := scope.WebPolicy(ctx); err != nil {
+	// Read admission under the account lock, after replay and before new business work.
+	policy, err := scope.WebPolicy(ctx)
+	if err != nil {
 		return write.Result{}, err
+	}
+	if syncOptions != nil {
+		if err := syncOptions.admitNew(policy); err != nil {
+			return write.Result{}, err
+		}
 	}
 	fnErr := fn(ctx, scope)
 	write.RecordTiming(ctx, "business", time.Since(started))

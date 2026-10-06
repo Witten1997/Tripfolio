@@ -77,7 +77,7 @@ func (s *Service) Push(ctx context.Context, a actor.Actor, protocol string, in P
 				e = apperr.Internal(err)
 			}
 			switch e.Code {
-			case "SESSION_EXPIRED", "ACCOUNT_BANNED", "ACCOUNT_DELETING", "ACCOUNT_DISABLED", "SYNC_EPOCH_MISMATCH":
+			case "SESSION_EXPIRED", "ACCOUNT_BANNED", "ACCOUNT_DELETING", "ACCOUNT_DISABLED", "SYNC_EPOCH_MISMATCH", "SYNC_NOT_READY":
 				return PushOutput{}, e
 			}
 			item.Status = "rejected"

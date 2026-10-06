@@ -87,7 +87,7 @@ func itineraryWebFixture(t *testing.T) (*pushFixture, uuid.UUID) {
 	f := newItineraryPushFixture(t)
 	trip := f.newTrip("web order")
 	for _, title := range []string{"A", "B"} {
-		applied(t, f.push(itineraryCreate(t, f, trip, "2026-10-02", title)).Results[0])
+		expectStatus(t, f.do(request{method: "POST", path: "/trips/" + trip.String() + "/itinerary-items", token: f.webToken, headers: f.authHeaders(nil), body: map[string]any{"id": uuid.NewString(), "title": title, "kind": "other", "scheduled_on": "2026-10-02"}}), 201, "")
 	}
 	return f, trip
 }
@@ -167,6 +167,7 @@ func TestItineraryWebGuardsStaleSourceAndDestination(t *testing.T) {
 		t.Run(mutation, func(t *testing.T) {
 			f, trip := itineraryWebFixture(t)
 			itineraryWebPolicy(f)
+			enablePushTestAccount(f)
 			cmd, guards := itineraryWebBaseline(t, f, trip, "2026-10-02", "2026-10-20")
 			id := cmd.Days[0].Items[0].ID
 			cmd.Days[1].Items = append(cmd.Days[1].Items, cmd.Days[0].Items[0])
@@ -265,6 +266,7 @@ func TestItineraryWebGuardsOriginalFactsAndLegacyReplay(t *testing.T) {
 		t.Fatal("empty-day facts missing")
 	}
 	// A later write must not replace the original successful move's facts either.
+	enablePushTestAccount(f)
 	applied(t, f.push(itineraryCreate(t, f, trip, "2026-10-20", "later arrival")).Results[0])
 	moveReplay := itineraryWebResult(t, itineraryWebOrder(f, trip, moveKey, move, moveGuards))
 	if !moveReplay.Replayed || !reflect.DeepEqual(moveReplay.ScopeRevisions, moved.ScopeRevisions) || !reflect.DeepEqual(moveReplay.Affected, moved.Affected) || !reflect.DeepEqual(moveReplay.CommitCursor, moved.CommitCursor) {
@@ -301,6 +303,7 @@ func TestItineraryWebGuardsConcurrentReorders(t *testing.T) {
 
 func TestItineraryWebGuardsNativeProofWithProtection(t *testing.T) {
 	f := newItineraryPushFixture(t)
+	enablePushTestAccount(f)
 	trip := f.newTrip("protected native itinerary")
 	itineraryWebPolicy(f)
 	create := itineraryCreate(t, f, trip, "2026-10-02", "native")

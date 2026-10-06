@@ -66,6 +66,7 @@ func TestSyncPushItemsLifecycle(t *testing.T) {
 	for _, kind := range []string{"packing_item", "todo"} {
 		t.Run(kind, func(t *testing.T) {
 			f := newPushFixture(t)
+			enablePushTestAccount(f)
 			trip := f.newTrip(kind)
 			a, b := itemCreate(kind, trip, "first"), itemCreate(kind, trip, "second")
 			out := f.push(a, b)
@@ -140,6 +141,7 @@ func TestSyncPushItemsConcurrentGuards(t *testing.T) {
 	for _, kind := range []string{"packing_item", "todo"} {
 		t.Run(kind, func(t *testing.T) {
 			f := newPushFixture(t)
+			enablePushTestAccount(f)
 			trip := f.newTrip("concurrency")
 			a, b := itemCreate(kind, trip, "first"), itemCreate(kind, trip, "second")
 			out := f.push(a, b)
@@ -278,6 +280,7 @@ func TestSyncPushItemsWebProjection(t *testing.T) {
 				t.Fatal("missing snapshot item")
 			}
 			f.sql(`UPDATE `+table+` SET sort_order=2147483647 WHERE id=$1`, ids[1])
+			enablePushTestAccount(f)
 			overflow := itemCreate(kind, trip, "overflow")
 			if x := f.push(overflow).Results[0]; x.Status == "applied" {
 				t.Fatal("sort overflow accepted")
@@ -292,6 +295,7 @@ func TestSyncPushItemsWebProjection(t *testing.T) {
 }
 func TestSyncPushItemsIsolationAndMerge(t *testing.T) {
 	f := newPushFixture(t)
+	enablePushTestAccount(f)
 	trip := f.newTrip("merge")
 	a := itemCreate("packing_item", trip, "first")
 	applied(t, f.push(a).Results[0])
@@ -334,6 +338,7 @@ func TestSyncPushItemsBoundaryFacts(t *testing.T) {
 	for _, kind := range []string{"packing_item", "todo"} {
 		t.Run(kind, func(t *testing.T) {
 			f := newPushFixture(t)
+			enablePushTestAccount(f)
 			trip := f.newTrip("boundary")
 			empty := orderOp(kind, trip, []uuid.UUID{}, itemRevisionFromDB(t, f, kind, trip))
 			x := f.push(empty).Results[0]

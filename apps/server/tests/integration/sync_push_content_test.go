@@ -16,6 +16,7 @@ import (
 
 func newContentFixture(t *testing.T) *pushFixture {
 	f := newPushFixture(t)
+	enablePushTestAccount(f)
 	s := f.services
 	server := httptest.NewServer(httpapi.NewRouter(httpapi.Deps{Logger: quietLogger(), CORSOrigins: []string{f.origin}, Identity: s.Identity, Sessions: s.Sessions, Profile: s.Profile, Trips: s.Trips, Reservations: s.Reservations, Documents: s.Documents, Sync: f.svc}))
 	t.Cleanup(server.Close)

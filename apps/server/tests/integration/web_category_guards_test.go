@@ -174,6 +174,7 @@ func TestWebCategoryGuardsCRUDInvalidatesBaseline(t *testing.T) {
 func TestWebCategoryGuardsNativeProofAndDependencyReplay(t *testing.T) {
 	f := newPushFixture(t)
 	f.sql(`INSERT INTO account_sync_capabilities(account_id,collection_guards_required) VALUES($1,true)`, f.owner)
+	enablePushTestAccount(f)
 	items, before := categoryWebBaseline(t, f)
 	slices.SortFunc(items, func(a, b finance.CategoryResource) int { return int(a.SortOrder - b.SortOrder) })
 	ids := make([]uuid.UUID, len(items))
@@ -281,6 +282,8 @@ func TestWebCategoryGuardsIsolationEpochAndEmpty(t *testing.T) {
 		t.Fatal("nonempty collection")
 	}
 	op := withFinanceGuard(financeOp("expense_category", "reorder", uuid.Nil, uuid.Nil, nil, map[string]any{"ordered_ids": []uuid.UUID{}}), financeGuard(f, "categories", f.owner))
+	expectStatus(t, f.do(request{method: "POST", path: "/sync/push", token: f.token, headers: map[string]string{"X-Tripfolio-Sync-Version": "2"}, body: f.input(op)}), 409, "SYNC_NOT_READY")
+	enablePushTestAccount(f)
 	r := f.push(op).Results[0]
 	financeApplied(t, r)
 	if r.Result.CommitCursor != nil || !reflect.DeepEqual(r.Result.ScopeRevisions, base) {

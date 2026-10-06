@@ -33,6 +33,15 @@ func newPushFixture(t *testing.T) *pushFixture {
 	f.svc.WithPush(syncpg.NewPushStore(pgcore.NewWriter(f.pool, nil, clock.Real{}, quietLogger())))
 	return &pushFixture{f, uuid.New()}
 }
+
+// enablePushTestAccount is explicit test preparation, not production activation.
+// newPushFixture deliberately leaves new accounts disabled.
+func enablePushTestAccount(f *pushFixture) {
+	f.t.Helper()
+	f.sql(`INSERT INTO account_sync_capabilities(account_id,collection_guards_required,v2_enabled_epoch,enabled_at)
+SELECT account_id,true,sync_epoch,now() FROM account_sync_state WHERE account_id=$1
+ON CONFLICT(account_id) DO UPDATE SET collection_guards_required=true,v2_enabled_epoch=EXCLUDED.v2_enabled_epoch,enabled_at=EXCLUDED.enabled_at`, f.owner)
+}
 func pushOp(kind string, id uuid.UUID, base *syncmodule.BaseReference, payload any, deps ...uuid.UUID) syncmodule.Operation {
 	raw, _ := json.Marshal(payload)
 	return syncmodule.Operation{OperationID: uuid.New(), Type: kind, EntityType: "trip", EntityID: &id, TripID: &id, Base: base, Guards: []syncmodule.GuardReference{}, DependsOn: append([]uuid.UUID{}, deps...), Payload: raw}
@@ -74,6 +83,7 @@ func resultVersion(t *testing.T, r syncmodule.PushResult, id uuid.UUID) string {
 
 func TestHTTPSyncPushTransactions(t *testing.T) {
 	f := newPushFixture(t)
+	enablePushTestAccount(f)
 	ctx := context.Background()
 	create, self := createPush("first")
 	update := pushOp("trip.update", *create.EntityID, refBase(create.OperationID), map[string]any{"name": "second"}, create.OperationID)
@@ -145,6 +155,7 @@ func TestHTTPSyncPushTransactions(t *testing.T) {
 
 func TestHTTPSyncPushFailureIsolationAndLimits(t *testing.T) {
 	f := newPushFixture(t)
+	enablePushTestAccount(f)
 	ctx := context.Background()
 	bad, _ := createPush("")
 	dep := pushOp("trip.update", *bad.EntityID, refBase(bad.OperationID), map[string]any{"notes": "blocked"}, bad.OperationID)
@@ -239,6 +250,7 @@ func TestHTTPSyncPushFailureIsolationAndLimits(t *testing.T) {
 
 func TestSyncPushConcurrentRetryAndRollback(t *testing.T) {
 	f := newPushFixture(t)
+	enablePushTestAccount(f)
 	ctx := context.Background()
 	op, _ := createPush("concurrent")
 	var wg sync.WaitGroup
@@ -341,6 +353,7 @@ func TestSyncPushMidBatchAuthorizationAndMerge(t *testing.T) {
 	for _, scenario := range []string{"session", "epoch"} {
 		t.Run(scenario, func(t *testing.T) {
 			f := newPushFixture(t)
+			enablePushTestAccount(f)
 			first, _ := createPush("first committed")
 			second, _ := createPush("must not execute")
 			repo := syncpg.NewPushStore(pgcore.NewWriter(f.pool, nil, clock.Real{}, quietLogger()))
@@ -368,6 +381,7 @@ func TestSyncPushMidBatchAuthorizationAndMerge(t *testing.T) {
 	}
 	t.Run("field groups and history", func(t *testing.T) {
 		f := newPushFixture(t)
+		enablePushTestAccount(f)
 		create, _ := createPush("merge")
 		f.push(create)
 		date := pushOp("trip.update", *create.EntityID, versionBase("1"), map[string]any{"end_date": "2026-10-05"})
