@@ -23,6 +23,9 @@ import AssetPicker from '@/desktop/components/AssetPicker.vue'
 import CategoryCreateDrawer from '@/desktop/components/CategoryCreateDrawer.vue'
 import ResponsiveEditorShell from '@/desktop/components/ResponsiveEditorShell.vue'
 import SlidingSegmented from '@/desktop/components/SlidingSegmented.vue'
+import { ApiError } from '@/shared/api/auth'
+import type { CollectionBaseline } from '@/shared/api/collectionGuards'
+import { DraftError } from '@/shared/travel/tripDraft'
 import type { ExpenseCategory } from '@/shared/api/categories'
 import {
   createLedgerEntry,
@@ -30,10 +33,13 @@ import {
   ledgerKindLabels,
   listAllLedgerEntries,
   updateLedgerEntry,
+  requiresLedgerMembers,
+  type LedgerPatch,
+  type LedgerWriteContext,
   type LedgerEntry,
   type LedgerKind,
 } from '@/shared/api/ledger'
-import { listTripMembers, memberName, type TripMember } from '@/shared/api/members'
+import { listTripMembersWithBaseline, memberName, type TripMember } from '@/shared/api/members'
 import { type WriteOutcome } from '@/shared/api/writes'
 import {
   changedLedgerFields,
@@ -60,10 +66,15 @@ const emit = defineEmits<{
 }>()
 const categoryCreator = ref<InstanceType<typeof CategoryCreateDrawer>>()
 const categoryCreatorMounted = ref(false)
+let categoryGeneration = -1
 async function openCategoryCreator() {
+  if (editingLocked.value || categoryLocked.value) return
+  const token = generation
+  categoryGeneration = token
   categoryCreatorMounted.value = true
   await nextTick()
-  await categoryCreator.value?.open()
+  if (token === generation && opened.value && !editingLocked.value)
+    await categoryCreator.value?.open()
 }
 const availableCategories = shallowRef(props.categories)
 watch(
@@ -73,6 +84,7 @@ watch(
   },
 )
 function categoriesCreated(categories: ExpenseCategory[], selectedId: string | undefined) {
+  if (!opened.value || editingLocked.value || categoryGeneration !== generation) return
   availableCategories.value = categories
   if (selectedId && !categoryLocked.value) draft.category_id = selectedId
   emit('update:categories', categories)
@@ -95,26 +107,68 @@ onMounted(() => {
   mobileMediaQuery.addEventListener('change', syncMobile)
 })
 onUnmounted(() => mobileMediaQuery?.removeEventListener('change', syncMobile))
-/** 旅行成员：打开表单时拉取一次；成员管理保存后由页面调用 refreshMembers。 */
 const members = ref<TripMember[]>([])
+const membersBaseline = shallowRef<CollectionBaseline | null>(null)
 const loadingMembers = ref(false)
 const membersError = ref<string | null>(null)
-async function refreshMembers() {
+const initializing = ref(false)
+const uncertainWrite = ref(false)
+const needsReview = ref(false)
+const reviewing = ref(false)
+const reviewError = ref<string | null>(null)
+type MembersSnapshot = Awaited<ReturnType<typeof listTripMembersWithBaseline>>
+const candidate = shallowRef<{
+  entity: LedgerEntry | null
+  snapshot: MembersSnapshot
+  generation: number
+} | null>(null)
+let generation = 0
+let disposed = false
+const current = (token: number) => token === generation && !disposed && opened.value
+function installMembers(snapshot: MembersSnapshot) {
+  members.value = snapshot.members
+  membersBaseline.value = snapshot.baseline
+  membersError.value = null
+}
+// 页面通知只标记需要核对；不能把新条件套在仍在编辑的旧草稿上。
+function refreshMembers() {
+  if (!opened.value || uncertain.value) return
+  needsReview.value = true
+  candidate.value = null
+}
+async function readInitialMembers(token: number): Promise<MembersSnapshot | null> {
   loadingMembers.value = true
   membersError.value = null
   try {
-    members.value = await listTripMembers(context.tripId)
+    const snapshot = await listTripMembersWithBaseline(context.tripId)
+    if (!current(token)) return null
+    installMembers(snapshot)
+    return snapshot
   } catch {
-    membersError.value = '无法加载旅行成员，付款人与参与人暂不可选'
+    if (current(token))
+      membersError.value = '无法加载完整成员资料；可继续修改已有账目的备注等非财务内容。'
+    return null
   } finally {
-    loadingMembers.value = false
+    if (current(token)) loadingMembers.value = false
   }
 }
+async function retryMembers() {
+  if (editingLocked.value) return
+  if (membersBaseline.value || dirty.value) return readCandidate()
+  const snapshot = await readInitialMembers(generation)
+  if (snapshot && !isEditing.value) Object.assign(draft, defaultMemberDraft(snapshot.members))
+}
+onUnmounted(() => {
+  disposed = true
+  generation++
+  candidate.value = null
+})
 const splitModeOptions = (Object.keys(splitModeLabels) as SplitMode[]).map((value) => ({
   value,
   label: splitModeLabels[value],
 }))
 function setSplitMode(value: string) {
+  if (editingLocked.value) return
   if (value !== 'even' && value !== 'ratio' && value !== 'personal') return
   if (value === draft.split_mode) return
   if (value === 'personal') {
@@ -147,6 +201,7 @@ const ratioUnavailable = computed(
     participants.value.every((m) => Number(m.share_percent) === 0),
 )
 function toggleAllParticipants() {
+  if (editingLocked.value) return
   draft.participant_member_ids =
     draft.participant_member_ids.length === members.value.length
       ? []
@@ -157,22 +212,37 @@ const editor = useItemEditor<
   LedgerEntry,
   LedgerDraft,
   ReturnType<typeof validateLedgerDraft>,
-  object
+  LedgerPatch,
+  LedgerWriteContext
 >({
   emptyDraft: () => emptyLedgerDraft(),
   draftFrom: ledgerDraftFrom,
   validate: (draft) =>
-    validateLedgerDraft(
-      draft.split_mode === 'personal'
-        ? { ...draft, payer_member_id: members.value.find((m) => m.is_self)?.id ?? '' }
-        : draft,
-      { currency: currency.value, minorUnits: context.minorUnits.value },
-    ),
+    validateLedgerDraft(draft, { currency: currency.value, minorUnits: context.minorUnits.value }),
   diff: changedLedgerFields,
   get: (id) => getLedgerEntry(context.tripId, id),
-  create: (body, operationId) => createLedgerEntry(context.tripId, body, operationId),
-  update: (id, version, patch, operationId) =>
-    updateLedgerEntry(context.tripId, id, version, patch, operationId),
+  captureIntentContext: (submission) => {
+    if (needsReview.value || candidate.value || conflict.value || reviewing.value)
+      throw new Error('请先核对并确认最新账目和成员资料。')
+    if (submission.kind === 'update' && !requiresLedgerMembers(submission.patch))
+      return { guards: [] }
+    if (!membersBaseline.value) throw new Error('请先读取并核对完整成员资料。')
+    const available = new Set(members.value.map((m) => m.id))
+    const fields: Record<string, string> = {}
+    if (!available.has(draft.payer_member_id)) fields.payer_member_id = '付款人已移除，请重新选择'
+    const ids =
+      draft.split_mode === 'personal' ? [draft.payer_member_id] : draft.participant_member_ids
+    if (ids.some((id) => !available.has(id)))
+      fields.participant_member_ids = '参与人已移除，请重新选择'
+    if (Object.keys(fields).length) throw new DraftError(fields)
+    return { guards: membersBaseline.value.guards.map((guard) => ({ ...guard })) }
+  },
+  create: (body, operationId, writeContext) =>
+    trackWrite(() => createLedgerEntry(context.tripId, body, operationId, writeContext)),
+  update: (id, version, patch, operationId, writeContext) =>
+    trackWrite(() =>
+      updateLedgerEntry(context.tripId, id, version, patch, operationId, writeContext),
+    ),
 })
 const {
   opened,
@@ -191,11 +261,51 @@ const {
   isEditing,
 } = editor
 
+const uncertain = computed(() => uncertainWrite.value || uncertainCreate.value)
+const editingLocked = computed(
+  () =>
+    saving.value ||
+    uncertain.value ||
+    initializing.value ||
+    loading.value ||
+    loadingMembers.value ||
+    reviewing.value,
+)
+async function trackWrite(write: () => Promise<WriteOutcome<LedgerEntry>>) {
+  try {
+    const outcome = await write()
+    uncertainWrite.value = false
+    return outcome
+  } catch (cause) {
+    uncertainWrite.value ||= !(cause instanceof ApiError) || (cause.problem?.status ?? 500) >= 500
+    if (
+      !uncertainWrite.value &&
+      cause instanceof ApiError &&
+      (cause.problem?.status === 412 || cause.problem?.status === 428)
+    )
+      needsReview.value = true
+    throw cause
+  }
+}
+function setParticipants(value: (string | number)[]) {
+  if (value.every((id): id is string => typeof id === 'string'))
+    setField('participant_member_ids', value)
+}
+function setField<K extends keyof LedgerDraft>(field: K, value: LedgerDraft[K]) {
+  if (!editingLocked.value && !(field === 'category_id' && categoryLocked.value))
+    draft[field] = value
+}
+
 watch(
   opened,
   (value) => {
     notesFocused.value = false
-    if (!value) splitSettingsOpened.value = false
+    if (!value) {
+      generation++
+      splitSettingsOpened.value = false
+      candidate.value = null
+      initializing.value = loadingMembers.value = reviewing.value = false
+    }
     emit('update:opened', value)
   },
   { flush: 'sync' },
@@ -207,13 +317,17 @@ const categoryName = (id: string) =>
 const categoryLocked = computed(() => draft.kind === 'refund' && !!draft.refunded_entry_id)
 const submitDisabled = computed(
   () =>
-    loading.value ||
+    saving.value ||
     preparingAttachments.value ||
-    (isEditing.value && (!baseline.value || !dirty.value)) ||
-    (conflict.value && (!latest.value || loadingLatest.value)),
+    (!uncertain.value &&
+      (editingLocked.value ||
+        needsReview.value ||
+        !!candidate.value ||
+        conflict.value ||
+        (isEditing.value && (!baseline.value || !dirty.value)))),
 )
 const submitLabel = computed(() =>
-  uncertainCreate.value ? '重试保存' : conflict.value ? '确认保存' : '保存',
+  uncertain.value ? '重试确认' : isEditing.value ? '保存修改' : '保存',
 )
 const amountDisplay = computed(
   () =>
@@ -236,10 +350,11 @@ const categoryOptions = computed(() => {
 })
 
 const conflictRows = computed(() => {
-  if (!baseline.value || !latest.value) return []
+  const comparison = candidate.value?.entity ?? latest.value
+  if (!baseline.value || !comparison) return []
   const mine = draft
   const original = ledgerDraftFrom(baseline.value)
-  const theirs = ledgerDraftFrom(latest.value)
+  const theirs = ledgerDraftFrom(comparison)
   const display = (field: keyof LedgerDraft, value: string) => {
     if (field === 'kind') return ledgerKindLabels[value as LedgerKind] ?? value
     if (field === 'category_id') return value ? categoryName(value) : '（空）'
@@ -260,7 +375,7 @@ const conflictRows = computed(() => {
     return value || '（空）'
   }
   return (Object.keys(original) as Array<keyof LedgerDraft>)
-    .filter((field) => mine[field] !== original[field])
+    .filter((field) => JSON.stringify(mine[field]) !== JSON.stringify(original[field]))
     .map((field) => ({
       field,
       label: ledgerFieldLabels[field] ?? field,
@@ -270,50 +385,87 @@ const conflictRows = computed(() => {
 })
 
 function setText(field: 'occurred_on', value: unknown) {
-  draft[field] = typeof value === 'string' ? value : ''
+  setField(field, typeof value === 'string' ? value : '')
+}
+
+async function beforeClose(done?: () => void) {
+  await requestClose(done)
 }
 
 async function requestClose(done?: () => void) {
-  if (saving.value) return
-  if (dirty.value || uncertainCreate.value) {
+  if (saving.value || uncertain.value) return false
+  const token = generation
+  if (dirty.value) {
     try {
-      await ElMessageBox.confirm(
-        uncertainCreate.value
-          ? '创建结果尚未确认，这笔账目可能已经保存。关闭后请刷新账单核对，避免重复记账。'
-          : '尚有未保存的输入，关闭后将放弃这些输入。',
-        '关闭记账',
-        {
-          confirmButtonText: uncertainCreate.value ? '关闭并核对' : '放弃输入并关闭',
-          cancelButtonText: uncertainCreate.value ? '返回重试' : '继续编辑',
-          type: 'warning',
-        },
-      )
+      await ElMessageBox.confirm('尚有未保存的输入，关闭后将放弃这些输入。', '关闭记账', {
+        confirmButtonText: '放弃输入并关闭',
+        cancelButtonText: '继续编辑',
+        type: 'warning',
+      })
     } catch {
-      return
+      return false
     }
   }
-  editor.close(true)
+  if (token !== generation || saving.value || uncertain.value) return false
+  generation++
+  editor.close()
+  initializing.value = loadingMembers.value = reviewing.value = false
+  candidate.value = null
   done?.()
+  return true
 }
 
-async function adoptLatest() {
+async function readCandidate() {
+  if (editingLocked.value || preparingAttachments.value || loadingLatest.value) return
+  const token = generation
+  reviewing.value = true
+  candidate.value = null
+  reviewError.value = null
   try {
-    await ElMessageBox.confirm('本次输入将被最新保存的内容替换。', '载入最新版本', {
-      confirmButtonText: '放弃输入并载入',
-      cancelButtonText: '保留输入',
-      type: 'warning',
-    })
-    editor.adoptLatest()
+    const [entity, snapshot] = await Promise.all([
+      baseline.value ? getLedgerEntry(context.tripId, baseline.value.id) : Promise.resolve(null),
+      listTripMembersWithBaseline(context.tripId),
+    ])
+    if (current(token) && !uncertain.value)
+      candidate.value = { entity, snapshot, generation: token }
   } catch {
-    /* 用户保留草稿 */
+    if (current(token)) reviewError.value = '无法读取最新账目和完整成员资料，原输入已保留。'
+  } finally {
+    if (current(token)) reviewing.value = false
   }
 }
 
-async function save(againstLatest = false) {
-  if (preparingAttachments.value) return
-  if (isMobile.value && !uncertainCreate.value && draft.amount.endsWith('.'))
-    draft.amount = draft.amount.slice(0, -1)
-  const outcome = await editor.save(againstLatest)
+function adoptCandidate(keepChanges: boolean) {
+  const next = candidate.value
+  if (!next || !current(next.generation) || editingLocked.value || loadingLatest.value) return
+  const changes: Partial<LedgerDraft> = {}
+  if (keepChanges && baseline.value) {
+    const original = ledgerDraftFrom(baseline.value)
+    for (const key of Object.keys(original) as (keyof LedgerDraft)[]) {
+      if (JSON.stringify(draft[key]) !== JSON.stringify(original[key]))
+        Object.assign(changes, { [key]: Array.isArray(draft[key]) ? [...draft[key]] : draft[key] })
+    }
+  }
+  if (next.entity) {
+    editor.latest.value = next.entity
+    editor.adoptLatest()
+    if (keepChanges) Object.assign(draft, changes)
+  }
+  // 创建没有远端实体，两种确认都保留整份草稿，不能自动补删成员或重算退款。
+  installMembers(next.snapshot)
+  needsReview.value = false
+  candidate.value = null
+  reviewError.value = null
+  error.value = null
+}
+
+async function save() {
+  if (saving.value || preparingAttachments.value) return
+  if (!uncertain.value) {
+    if (editingLocked.value || needsReview.value || candidate.value || conflict.value) return
+    if (isMobile.value && draft.amount.endsWith('.')) draft.amount = draft.amount.slice(0, -1)
+  }
+  const outcome = await editor.save()
   if (outcome) emit('saved', outcome)
   else if (
     errors.value.participant_member_ids ||
@@ -323,56 +475,73 @@ async function save(againstLatest = false) {
     splitSettingsOpened.value = true
 }
 
-/** 地点入口可以预填日期与备注；编辑既有账目时不覆盖原值。新建时付款人默认「我」、参与人默认全员。 */
+async function beginOpen(): Promise<number | null> {
+  if (disposed || saving.value || uncertain.value) return null
+  if (opened.value && !(await requestClose())) return null
+  const token = ++generation
+  initializing.value = true
+  members.value = []
+  membersBaseline.value = null
+  membersError.value = null
+  needsReview.value = false
+  candidate.value = null
+  reviewError.value = null
+  refundOrigin.value = null
+  splitSettingsOpened.value = false
+  return token
+}
+
 async function open(
   entry?: LedgerEntry,
   kind?: LedgerKind,
   presets: Partial<Pick<LedgerDraft, 'occurred_on' | 'notes'>> = {},
 ) {
   if (!entry && kind === 'refund') return
-  refundOrigin.value = null
-  splitSettingsOpened.value = false
-  if (!members.value.length) await refreshMembers()
-  await editor.open(
+  const token = await beginOpen()
+  if (token === null || token !== generation || disposed) return
+  const opening = editor.open(
     entry,
-    entry
-      ? {}
-      : {
-          occurred_on: context.today.value,
-          kind: kind ?? 'expense',
-          ...defaultMemberDraft(members.value),
-          ...presets,
-        },
+    entry ? {} : { occurred_on: context.today.value, kind: kind ?? 'expense', ...presets },
   )
+  const snapshot = await readInitialMembers(token)
+  await opening
+  if (!current(token)) return
+  if (snapshot && !entry) Object.assign(draft, defaultMemberDraft(snapshot.members))
+  initializing.value = false
 }
 
 async function openRefund(origin: LedgerEntry) {
-  if (saving.value || uncertainCreate.value || origin.kind !== 'expense') return
+  if (origin.kind !== 'expense') return
+  const token = await beginOpen()
+  if (token === null || token !== generation || disposed) return
   try {
-    const [current, refunds] = await Promise.all([
+    const [entity, refunds] = await Promise.all([
       getLedgerEntry(context.tripId, origin.id),
       listAllLedgerEntries(context.tripId, { kind: 'refund', refunded_entry_id: origin.id }),
     ])
-    const remaining = sumMoney([current.amount, ...refunds.map((r) => `-${r.amount}`)])
+    if (token !== generation || disposed) return
+    const remaining = sumMoney([entity.amount, ...refunds.map((r) => `-${r.amount}`)])
     if (!/[1-9]/.test(remaining) || remaining.startsWith('-')) {
       ElMessage.info('这笔账单已全额退款')
       return
     }
-    if (!members.value.length) await refreshMembers()
-    refundOrigin.value = current
-    splitSettingsOpened.value = false
+    refundOrigin.value = entity
     await editor.open(undefined, {
       kind: 'refund',
       amount: remaining,
-      category_id: current.category_id,
+      category_id: entity.category_id,
       occurred_on: context.today.value,
-      refunded_entry_id: current.id,
-      payer_member_id: current.payer_member_id,
-      split_mode: current.split_mode,
-      participant_member_ids: current.splits.map((s) => s.member_id),
+      refunded_entry_id: entity.id,
+      payer_member_id: entity.payer_member_id,
+      split_mode: entity.split_mode,
+      participant_member_ids: entity.splits.map((s) => s.member_id),
     })
+    if (!current(token)) return
+    await readInitialMembers(token)
   } catch {
-    ElMessage.error('无法加载原账单及退款记录，请重试')
+    if (token === generation && !disposed) ElMessage.error('无法加载原账单及退款记录，请重试')
+  } finally {
+    if (token === generation && !disposed) initializing.value = false
   }
 }
 
@@ -394,34 +563,29 @@ defineExpose({ open, openRefund, refreshMembers })
     "
     desktop-width="min(560px, calc(100vw - 32px))"
     :close-on-click-modal="false"
-    :close-on-press-escape="!saving"
-    :before-close="requestClose"
+    :close-on-press-escape="!saving && !uncertain"
+    :before-close="beforeClose"
   >
     <ElSkeleton v-if="loading" :rows="6" animated />
     <template v-else>
       <ElAlert
         v-if="error"
         :title="error"
-        :type="uncertainCreate ? 'warning' : 'error'"
+        :type="uncertain ? 'warning' : 'error'"
         :closable="false"
         show-icon
         class="editor-alert"
       />
       <ElButton v-if="isEditing && !baseline" @click="editor.load">重新加载账目</ElButton>
-      <ElForm
-        v-else
-        label-position="top"
-        :disabled="saving || uncertainCreate"
-        @submit.prevent="save()"
-      >
+      <ElForm v-else label-position="top" :disabled="editingLocked" @submit.prevent="save()">
         <div v-if="isMobile" class="ledger-categories" role="group" aria-label="账单分类">
           <button
             v-for="category in categoryOptions"
             :key="category.id"
             type="button"
             :aria-pressed="draft.category_id === category.id"
-            :disabled="saving || uncertainCreate || category.disabled || categoryLocked"
-            @click="draft.category_id = category.id"
+            :disabled="editingLocked || category.disabled || categoryLocked"
+            @click="setField('category_id', category.id)"
           >
             <span class="ledger-category-icon"
               ><component :is="categoryIconComponent(category.icon)" aria-hidden="true"
@@ -430,7 +594,7 @@ defineExpose({ open, openRefund, refreshMembers })
           </button>
           <button
             type="button"
-            :disabled="saving || uncertainCreate || categoryLocked"
+            :disabled="editingLocked || categoryLocked"
             @click="openCategoryCreator"
           >
             <span class="ledger-category-icon"><Plus aria-hidden="true" /></span>
@@ -453,7 +617,8 @@ defineExpose({ open, openRefund, refreshMembers })
         >
           <ElFormItem label="金额" required :error="errors.amount">
             <ElInput
-              v-model="draft.amount"
+              :model-value="draft.amount"
+              @update:model-value="setField('amount', $event)"
               class="amount-input"
               inputmode="decimal"
               placeholder="0.00"
@@ -477,7 +642,8 @@ defineExpose({ open, openRefund, refreshMembers })
             :error="errors.payer_member_id"
           >
             <ElSelect
-              v-model="draft.payer_member_id"
+              :model-value="draft.payer_member_id"
+              @update:model-value="setField('payer_member_id', $event)"
               :loading="loadingMembers"
               :placeholder="draft.kind === 'refund' ? '谁收到退款' : '谁付的钱'"
               :aria-label="draft.kind === 'refund' ? '收款人' : '付款人'"
@@ -494,7 +660,13 @@ defineExpose({ open, openRefund, refreshMembers })
           show-icon
           class="editor-alert"
         >
-          <ElButton size="small" :loading="loadingMembers" @click="refreshMembers">重试</ElButton>
+          <ElButton
+            size="small"
+            :loading="loadingMembers"
+            :disabled="editingLocked"
+            @click="retryMembers"
+            >重试</ElButton
+          >
         </ElAlert>
         <component
           :is="isMobile ? ElDrawer : 'div'"
@@ -525,7 +697,7 @@ defineExpose({ open, openRefund, refreshMembers })
             <SlidingSegmented
               :model-value="draft.split_mode"
               :options="splitModeOptions"
-              :disabled="saving || uncertainCreate"
+              :disabled="editingLocked"
               label="分摊模式"
               @update:model-value="setSplitMode"
             />
@@ -544,7 +716,8 @@ defineExpose({ open, openRefund, refreshMembers })
             :error="errors.payer_member_id"
           >
             <ElSelect
-              v-model="draft.payer_member_id"
+              :model-value="draft.payer_member_id"
+              @update:model-value="setField('payer_member_id', $event)"
               :loading="loadingMembers"
               :aria-label="draft.kind === 'refund' ? '收款人' : '付款人'"
             >
@@ -558,7 +731,7 @@ defineExpose({ open, openRefund, refreshMembers })
                 <ElButton
                   link
                   size="small"
-                  :disabled="!members.length"
+                  :disabled="editingLocked || !members.length"
                   @click="toggleAllParticipants"
                   >{{
                     draft.participant_member_ids.length === members.length ? '清空' : '全选'
@@ -567,7 +740,8 @@ defineExpose({ open, openRefund, refreshMembers })
               </span>
             </template>
             <ElCheckboxGroup
-              v-model="draft.participant_member_ids"
+              :model-value="draft.participant_member_ids"
+              @update:model-value="setParticipants"
               class="participants"
               aria-label="参与人"
             >
@@ -608,9 +782,10 @@ defineExpose({ open, openRefund, refreshMembers })
         </div>
         <ElFormItem v-if="!isMobile" label="账单分类" required :error="errors.category_id">
           <ElSelect
-            v-model="draft.category_id"
+            :model-value="draft.category_id"
+            @update:model-value="setField('category_id', $event)"
             filterable
-            :disabled="categoryLocked"
+            :disabled="editingLocked || categoryLocked"
             placeholder="选择分类"
             aria-label="账单分类"
           >
@@ -626,7 +801,8 @@ defineExpose({ open, openRefund, refreshMembers })
         </ElFormItem>
         <ElFormItem v-if="!isMobile" label="备注" :error="errors.notes">
           <ElInput
-            v-model="draft.notes"
+            :model-value="draft.notes"
+            @update:model-value="setField('notes', $event)"
             type="textarea"
             :rows="2"
             maxlength="4000"
@@ -636,21 +812,26 @@ defineExpose({ open, openRefund, refreshMembers })
         </ElFormItem>
         <ElFormItem label="票据" :error="errors.attachment_asset_ids">
           <AssetPicker
-            v-model="draft.attachment_asset_ids"
+            :model-value="draft.attachment_asset_ids"
+            @update:model-value="setField('attachment_asset_ids', $event)"
             :trip-id="context.tripId"
             :max="10"
-            :disabled="saving || uncertainCreate || loading"
+            :disabled="editingLocked"
             @busy="preparingAttachments = $event"
           />
         </ElFormItem>
         <button type="submit" class="visually-hidden" tabindex="-1" aria-hidden="true">保存</button>
       </ElForm>
-      <section v-if="conflict" class="conflict-panel" aria-live="polite">
-        <h3>检查版本冲突</h3>
-        <p>你的输入已保留。下方对比仅列出你修改过的字段；重新提交时只保存这些改动。</p>
+      <section
+        v-if="conflict || needsReview || candidate || reviewError"
+        class="conflict-panel"
+        aria-live="polite"
+      >
+        <h3>核对账目和成员资料</h3>
+        <p>你的输入已保留。请读取并核对最新账目与成员；确认采用后，再保存你的修改。</p>
         <ElSkeleton v-if="loadingLatest" :rows="2" animated />
         <ElAlert v-if="latestError" :title="latestError" type="error" :closable="false" />
-        <table v-if="latest" class="conflict-table">
+        <table v-if="candidate?.entity || latest" class="conflict-table">
           <thead>
             <tr>
               <th>字段</th>
@@ -666,25 +847,63 @@ defineExpose({ open, openRefund, refreshMembers })
             </tr>
           </tbody>
         </table>
+        <ElAlert v-if="reviewError" :title="reviewError" type="error" :closable="false" />
+        <div v-if="candidate" aria-label="成员核对">
+          <p>
+            原成员：{{ members.map((m) => `${m.name} ${m.share_percent}%`).join('、') || '无' }}
+          </p>
+          <p>
+            最新成员（按顺序）：{{
+              candidate.snapshot.members.map((m) => `${m.name} ${m.share_percent}%`).join('、') ||
+              '无'
+            }}
+          </p>
+          <p>付款人与参与人不会自动替换，请检查已移除的成员。</p>
+        </div>
         <div class="conflict-actions tf-actions">
-          <ElButton :disabled="!latest || saving" @click="adoptLatest"
-            >放弃输入，载入最新版本</ElButton
+          <ElButton
+            :disabled="editingLocked || loadingLatest"
+            :loading="reviewing"
+            @click="readCandidate"
+            >读取最新资料</ElButton
+          >
+          <ElButton v-if="candidate" :disabled="editingLocked" @click="adoptCandidate(true)"
+            >保留我的改动并采用已核对基线</ElButton
+          >
+          <ElButton
+            v-if="candidate && isEditing"
+            :disabled="editingLocked"
+            @click="adoptCandidate(false)"
+            >放弃输入采用最新</ElButton
+          >
+          <ElButton v-if="candidate" :disabled="editingLocked" @click="candidate = null"
+            >取消核对</ElButton
           >
         </div>
       </section>
     </template>
     <template #footer>
+      <p v-if="uncertain" role="status">保存结果尚未确认，请原样重试，确认后再编辑或关闭。</p>
+      <ElButton
+        v-if="isMobile && uncertain"
+        type="primary"
+        :disabled="submitDisabled"
+        :loading="saving"
+        @click="save()"
+        >重试确认</ElButton
+      >
       <div v-if="isMobile" class="ledger-mobile-dock">
         <div class="ledger-amount-line">
           <label class="ledger-notes-field">
             <NotebookPen aria-hidden="true" />
             <input
-              v-model="draft.notes"
+              :value="draft.notes"
+              @input="setField('notes', ($event.target as HTMLInputElement).value)"
               aria-label="备注"
               placeholder="添加备注"
               maxlength="4000"
               enterkeyhint="done"
-              :disabled="saving || uncertainCreate || loading"
+              :disabled="editingLocked"
               :aria-invalid="!!errors.notes"
               @focus="notesFocused = true"
               @blur="notesFocused = false"
@@ -704,7 +923,7 @@ defineExpose({ open, openRefund, refreshMembers })
             type="date"
             :editable="false"
             :clearable="false"
-            :disabled="saving || uncertainCreate"
+            :disabled="editingLocked"
             value-format="YYYY-MM-DD"
             :format="draft.occurred_on === context.today.value ? '[今天]' : 'M月D日'"
             aria-label="选择账单日期"
@@ -715,10 +934,10 @@ defineExpose({ open, openRefund, refreshMembers })
           />
           <button
             type="button"
-            :disabled="saving || uncertainCreate"
+            :disabled="editingLocked"
             :aria-expanded="splitSettingsOpened"
             aria-label="选择分摊模式"
-            @click="splitSettingsOpened = true"
+            @click="!editingLocked && (splitSettingsOpened = true)"
           >
             <Users aria-hidden="true" />{{ splitModeLabels[draft.split_mode]
             }}<ChevronDown aria-hidden="true" />
@@ -727,32 +946,20 @@ defineExpose({ open, openRefund, refreshMembers })
         <p v-if="errors.occurred_on" class="mobile-field-error">{{ errors.occurred_on }}</p>
         <LedgerAmountKeypad
           v-if="!notesFocused"
-          v-model="draft.amount"
+          :model-value="draft.amount"
+          @update:model-value="setField('amount', $event)"
           :minor-units="context.minorUnits.value"
-          :disabled="saving || uncertainCreate || loading"
+          :disabled="editingLocked"
           :saving="saving"
           :submit-disabled="submitDisabled"
           :submit-label="submitLabel"
-          @submit="save(conflict)"
+          @submit="save()"
         />
       </div>
       <template v-else>
-        <ElButton
-          v-if="conflict"
-          type="primary"
-          :loading="saving"
-          :disabled="!latest || loadingLatest || preparingAttachments"
-          @click="save(true)"
-          >确认用我的改动更新最新版本</ElButton
-        >
-        <ElButton
-          v-else
-          type="primary"
-          :loading="saving"
-          :disabled="submitDisabled"
-          @click="save()"
-          >{{ uncertainCreate ? '重试保存' : isEditing ? '保存修改' : '保存' }}</ElButton
-        >
+        <ElButton type="primary" :loading="saving" :disabled="submitDisabled" @click="save()">{{
+          submitLabel
+        }}</ElButton>
       </template>
     </template>
   </ResponsiveEditorShell>

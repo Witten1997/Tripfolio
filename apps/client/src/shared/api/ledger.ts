@@ -2,6 +2,7 @@ import type { components, operations } from '@tripfolio/contracts/openapi/v1'
 
 import { ApiError } from '@/shared/api/auth'
 import { api } from '@/shared/api/client'
+import { CollectionBaseline, type CollectionGuard } from '@/shared/api/collectionGuards'
 import { versionHeaders, writeOutcome } from '@/shared/api/writes'
 
 export type LedgerEntry = components['schemas']['LedgerEntry']
@@ -9,6 +10,31 @@ export type LedgerCreate = components['schemas']['LedgerCreate']
 export type LedgerPatch = components['schemas']['LedgerPatch']
 export type LedgerKind = components['schemas']['LedgerKind']
 export type LedgerQuery = NonNullable<operations['listLedgerEntries']['parameters']['query']>
+
+export interface LedgerWriteContext {
+  readonly guards: readonly CollectionGuard[]
+}
+
+export function requiresLedgerMembers(patch: LedgerPatch): boolean {
+  return [
+    'amount',
+    'currency_code',
+    'payer_member_id',
+    'split_mode',
+    'participant_member_ids',
+  ].some((field) => Object.prototype.hasOwnProperty.call(patch, field))
+}
+
+function membersHeaders(tripId: string, sensitive: boolean, context?: LedgerWriteContext) {
+  if (!sensitive || !context) return undefined
+  if (
+    context.guards.length !== 1 ||
+    context.guards[0]?.kind !== 'members' ||
+    context.guards[0]?.scope_id !== tripId
+  )
+    throw new Error('账目需要本旅行的完整成员基线，请核对成员后再保存。')
+  return new CollectionBaseline({ complete: true, guards: context.guards }).headers
+}
 
 export const ledgerKindLabels: Record<LedgerKind, string> = {
   expense: '支出',
@@ -56,9 +82,15 @@ export async function getLedgerEntry(tripId: string, id: string): Promise<Ledger
   return data.data
 }
 
-export async function createLedgerEntry(tripId: string, input: LedgerCreate, operationId: string) {
+export async function createLedgerEntry(
+  tripId: string,
+  input: LedgerCreate,
+  operationId: string,
+  context?: LedgerWriteContext,
+) {
   const { data, error } = await api.POST('/trips/{trip_id}/ledger-entries', {
     params: { path: { trip_id: tripId }, header: { 'Idempotency-Key': operationId } },
+    headers: membersHeaders(tripId, true, context),
     body: input,
   })
   if (error || !data) throw new ApiError(error)
@@ -71,12 +103,14 @@ export async function updateLedgerEntry(
   version: string,
   patch: LedgerPatch,
   operationId: string,
+  context?: LedgerWriteContext,
 ) {
   const { data, error } = await api.PATCH('/trips/{trip_id}/ledger-entries/{entry_id}', {
     params: {
       path: { trip_id: tripId, entry_id: id },
       header: versionHeaders(operationId, version),
     },
+    headers: membersHeaders(tripId, requiresLedgerMembers(patch), context),
     body: patch,
   })
   if (error || !data) throw new ApiError(error)

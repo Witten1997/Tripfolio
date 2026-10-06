@@ -9,9 +9,10 @@ import PlacePicker from './PlacePicker.vue'
 import { listCategories } from '@/shared/api/categories'
 import { createItineraryItem } from '@/shared/api/itinerary'
 import { createLedgerEntry } from '@/shared/api/ledger'
+import { CollectionBaseline } from '@/shared/api/collectionGuards'
 
 const context = {
-  tripId: 'trip',
+  tripId: '11111111-1111-4111-8111-111111111111',
   trip: ref({ currency_code: 'CNY', timezone: 'Asia/Shanghai', destination: '北京' }),
   today: ref('2026-09-15'),
   minorUnits: ref(2),
@@ -32,20 +33,32 @@ vi.mock('@/shared/api/ledger', async (original) => ({
 }))
 vi.mock('@/shared/api/members', async (original) => ({
   ...(await original<typeof import('@/shared/api/members')>()),
-  listTripMembers: vi.fn(async () => [
-    {
-      id: 'm-self',
-      trip_id: 'trip',
-      name: '我',
-      share_percent: '100',
-      sort_order: 0,
-      is_self: true,
-      version: '1',
-      created_at: '2026-09-01T00:00:00Z',
-      updated_at: '2026-09-01T00:00:00Z',
-      deleted_at: null,
-    },
-  ]),
+  listTripMembersWithBaseline: vi.fn(async () => ({
+    members: [
+      {
+        id: '22222222-2222-4222-8222-222222222222',
+        trip_id: '11111111-1111-4111-8111-111111111111',
+        name: '我',
+        share_percent: '100',
+        sort_order: 0,
+        is_self: true,
+        version: '1',
+        created_at: '2026-09-01T00:00:00Z',
+        updated_at: '2026-09-01T00:00:00Z',
+        deleted_at: null,
+      },
+    ],
+    baseline: new CollectionBaseline({
+      complete: true,
+      guards: [
+        {
+          kind: 'members',
+          scope_id: '11111111-1111-4111-8111-111111111111',
+          revision: `sha256:${'a'.repeat(64)}`,
+        },
+      ],
+    }),
+  })),
 }))
 
 const Dialog = defineComponent({
@@ -113,7 +126,7 @@ describe('行程选点、详情与独立记账', () => {
     await button(view, '添加行程').trigger('click')
     await flushPromises()
     expect(createItineraryItem).toHaveBeenCalledWith(
-      'trip',
+      '11111111-1111-4111-8111-111111111111',
       expect.objectContaining({
         title: '景山公园',
         place_name: '景山公园',
@@ -178,18 +191,23 @@ describe('行程选点、详情与独立记账', () => {
     await button(ledger, '保存').trigger('click')
     await flushPromises()
     expect(createLedgerEntry).toHaveBeenCalledWith(
-      'trip',
+      '11111111-1111-4111-8111-111111111111',
       expect.objectContaining({
         notes: '景山公园',
         occurred_on: '2026-10-02',
         amount: '12.50',
         category_id: 'cat',
         kind: 'expense',
-        payer_member_id: 'm-self',
+        payer_member_id: '22222222-2222-4222-8222-222222222222',
         split_mode: 'personal',
-        participant_member_ids: ['m-self'],
+        participant_member_ids: ['22222222-2222-4222-8222-222222222222'],
       }),
       expect.any(String),
+      {
+        guards: [
+          { kind: 'members', scope_id: context.tripId, revision: `sha256:${'a'.repeat(64)}` },
+        ],
+      },
     )
     expect(createItineraryItem).not.toHaveBeenCalled()
     expect(context.reload).toHaveBeenCalledOnce()
