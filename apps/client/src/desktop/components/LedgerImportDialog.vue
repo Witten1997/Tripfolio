@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Download, FileSpreadsheet, Upload } from '@lucide/vue'
 import { ElAlert, ElButton, ElPagination, ElTable, ElTableColumn } from 'element-plus'
-import { computed, ref, shallowRef } from 'vue'
+import { computed, onBeforeUnmount, ref, shallowRef } from 'vue'
 
 import ResponsiveEditorShell from '@/desktop/components/ResponsiveEditorShell.vue'
 import { saveLedgerTemplate } from '@/platform/ledgerTemplate'
@@ -9,8 +9,8 @@ import { ApiError } from '@/shared/api/auth'
 import {
   commitLedgerImport,
   downloadLedgerTemplate,
-  previewLedgerImport,
-  type LedgerImportPreview,
+  prepareLedgerImport,
+  type PreparedLedgerImport,
 } from '@/shared/api/ledgerImport'
 import { actionError, type WriteResult } from '@/shared/api/writes'
 import { randomId } from '@/shared/randomId'
@@ -26,12 +26,20 @@ const saving = ref(false)
 const uncertain = ref(false)
 const needsPreview = ref(false)
 const failure = ref('')
-const file = shallowRef<File | null>(null)
-const preview = shallowRef<LedgerImportPreview | null>(null)
+const initialFile = shallowRef<File | null>(null)
+const prepared = shallowRef<PreparedLedgerImport | null>(null)
+const candidate = shallowRef<PreparedLedgerImport | null>(null)
+type Pending = {
+  readonly prepared: PreparedLedgerImport
+  readonly operationId: string
+  readonly count: number
+}
+const pending = shallowRef<Pending | null>(null)
+const file = computed(() => candidate.value?.file ?? prepared.value?.file ?? initialFile.value)
+const preview = computed(() => candidate.value?.preview ?? prepared.value?.preview ?? null)
 const picker = ref<HTMLInputElement>()
 const page = ref(1)
 const errorPage = ref(1)
-const operationId = ref('')
 const rows = computed(() => preview.value?.rows.slice((page.value - 1) * 25, page.value * 25) ?? [])
 const errors = computed(
   () => preview.value?.errors.slice((errorPage.value - 1) * 20, errorPage.value * 20) ?? [],
@@ -39,121 +47,199 @@ const errors = computed(
 const locked = computed(() => saving.value || previewing.value || uncertain.value)
 const canCommit = computed(
   () =>
-    !!preview.value?.count &&
-    !preview.value.errors.length &&
-    !needsPreview.value &&
-    !previewing.value,
+    !saving.value &&
+    !previewing.value &&
+    (uncertain.value
+      ? !!pending.value
+      : !!prepared.value?.preview.count &&
+        !prepared.value.preview.errors.length &&
+        !needsPreview.value &&
+        !candidate.value),
 )
 const errorRows = computed(() => new Set(preview.value?.errors.map((error) => error.row)))
 const modeLabel = (value: string) => splitModeLabels[value as SplitMode] ?? value
+let generation = 0
+let controller: AbortController | null = null
+let alive = true
+let originalPage = 1
+let originalErrorPage = 1
 
+function cancelReading() {
+  generation++
+  controller?.abort()
+  controller = null
+  previewing.value = false
+}
 function open() {
+  if (!alive || saving.value || uncertain.value || visible.value) return
+  generation++
   visible.value = true
 }
-
+function dismissCandidate() {
+  candidate.value = null
+  page.value = originalPage
+  errorPage.value = originalErrorPage
+}
 function close(done?: () => void) {
-  if (saving.value || previewing.value) return
-  // 保留文件、摘要和操作编号，关闭后重新打开仍可安全重试。
+  if (saving.value || uncertain.value) return
+  cancelReading()
+  if (candidate.value) dismissCandidate()
   visible.value = false
   done?.()
 }
+onBeforeUnmount(() => {
+  alive = false
+  cancelReading()
+})
 
 async function download() {
-  if (downloading.value) return
+  if (downloading.value || locked.value) return
   downloading.value = true
+  const turn = generation
   failure.value = ''
   try {
     const blob = await downloadLedgerTemplate(context.tripId)
-    await saveLedgerTemplate(blob)
+    if (turn === generation && visible.value && alive) await saveLedgerTemplate(blob)
   } catch (cause) {
-    failure.value = actionError(cause, '模板下载失败，请检查网络后重试')
+    if (turn === generation && alive)
+      failure.value = actionError(cause, '模板下载失败，请检查网络后重试')
   } finally {
     downloading.value = false
   }
 }
-
 async function choose(event: Event) {
   const input = event.target as HTMLInputElement
   const chosen = input.files?.[0]
   input.value = ''
-  if (!chosen || locked.value) return
-  failure.value = ''
+  if (!chosen || locked.value || !visible.value) return
   if (
     !chosen.name.toLowerCase().endsWith('.xlsx') ||
     chosen.size === 0 ||
     chosen.size > 5 * 1024 * 1024
   ) {
-    file.value = null
-    preview.value = null
-    operationId.value = ''
-    failure.value = '请选择不超过 5 MB 的 .xlsx 文件'
+    failure.value = '请选择不超过 5 MB 的 .xlsx 文件；原预览已保留。'
     return
   }
-  file.value = chosen
-  preview.value = null
-  operationId.value = randomId()
-  await refreshPreview()
+  if (!prepared.value) initialFile.value = chosen
+  await readPreview(chosen)
 }
-
-async function refreshPreview() {
-  if (!file.value || locked.value) return
+async function readPreview(chosen: File) {
+  if (locked.value || !visible.value) return
+  if (candidate.value) dismissCandidate()
+  cancelReading()
+  const turn = generation
+  controller = new AbortController()
+  const signal = controller.signal
   previewing.value = true
   failure.value = ''
-  preview.value = null
-  needsPreview.value = false
-  page.value = 1
-  errorPage.value = 1
   try {
-    preview.value = await previewLedgerImport(context.tripId, file.value)
-    operationId.value = randomId()
+    const next = await prepareLedgerImport(context.tripId, chosen, signal)
+    if (turn !== generation || !visible.value || !alive) return
+    if (prepared.value) {
+      originalPage = page.value
+      originalErrorPage = errorPage.value
+      candidate.value = next
+    } else {
+      prepared.value = next
+      initialFile.value = null
+      needsPreview.value = false
+      pending.value = null
+    }
+    page.value = errorPage.value = 1
   } catch (cause) {
-    failure.value = actionError(cause, '预览失败，请检查网络后重试')
+    if (turn === generation && alive)
+      failure.value = actionError(
+        cause,
+        cause instanceof Error ? cause.message : '预览失败，请保留文件重试',
+      )
   } finally {
-    previewing.value = false
+    if (turn === generation) previewing.value = false
   }
 }
-
+async function refreshPreview() {
+  const chosen = prepared.value?.file ?? initialFile.value
+  if (chosen) await readPreview(chosen)
+}
+function adoptCandidate() {
+  if (!candidate.value || locked.value) return
+  prepared.value = candidate.value
+  candidate.value = null
+  pending.value = null
+  initialFile.value = null
+  needsPreview.value = false
+  failure.value = ''
+  page.value = errorPage.value = 1
+}
+function keepOriginal() {
+  if (locked.value) return
+  dismissCandidate()
+}
 async function commit() {
-  if (!file.value || !preview.value || !canCommit.value || saving.value) return
+  if (!canCommit.value || !visible.value) return
+  const request =
+    pending.value ??
+    (prepared.value
+      ? Object.freeze({
+          prepared: prepared.value,
+          operationId: randomId(),
+          count: prepared.value.preview.count,
+        })
+      : null)
+  if (!request) return
+  pending.value = request
   saving.value = true
   failure.value = ''
+  let result: WriteResult
   try {
-    const result = await commitLedgerImport(
-      context.tripId,
-      file.value,
-      preview.value.digest,
-      operationId.value,
+    const { tripId, file: originalFile, preview: originalPreview, baseline } = request.prepared
+    result = await commitLedgerImport(
+      tripId,
+      originalFile,
+      originalPreview.digest,
+      request.operationId,
+      baseline,
     )
-    const count = preview.value.count
-    uncertain.value = false
-    visible.value = false
-    preview.value = null
-    file.value = null
-    operationId.value = ''
-    emit('saved', result, count)
   } catch (cause) {
     const status = cause instanceof ApiError ? cause.problem?.status : undefined
     const unknown =
-      !(cause instanceof ApiError) || !status || status >= 500 || status === 408 || status === 429
+      uncertain.value ||
+      !(cause instanceof ApiError) ||
+      !status ||
+      status >= 500 ||
+      status === 408 ||
+      status === 429
     uncertain.value = unknown
     if (unknown) {
-      failure.value = '暂未确认导入结果。请点击「重试确认」，本批次不会重复入账。'
+      failure.value = '暂未确认导入结果。请原样「重试确认」，确认前不能更换文件、重新预览或关闭。'
     } else {
       failure.value = actionError(cause, '导入失败，请重试')
       if (
         cause instanceof ApiError &&
-        ['IMPORT_PREVIEW_CHANGED', 'VALIDATION_FAILED', 'CURRENCY_MISMATCH'].includes(
-          cause.code ?? '',
-        )
-      ) {
+        [
+          'COLLECTION_CONFLICT',
+          'COLLECTION_BASE_REQUIRED',
+          'IMPORT_PREVIEW_CHANGED',
+          'IMPORT_PREVIEW_REQUIRED',
+          'VALIDATION_FAILED',
+          'CURRENCY_MISMATCH',
+        ].includes(cause.code ?? '')
+      )
         needsPreview.value = true
-      }
     }
+    return
   } finally {
     saving.value = false
   }
+  // 收据已确认后再通知父页；父页刷新失败不改变本批写入结果。
+  cancelReading()
+  uncertain.value = false
+  needsPreview.value = false
+  pending.value = null
+  prepared.value = candidate.value = null
+  initialFile.value = null
+  visible.value = false
+  if (alive) emit('saved', result, request.count)
 }
-
 defineExpose({ open })
 </script>
 
@@ -163,12 +249,12 @@ defineExpose({ open })
     title="导入账单"
     desktop-width="min(1040px, calc(100vw - 32px))"
     :before-close="close"
-    :close-on-press-escape="!saving && !previewing"
+    :close-on-press-escape="!saving && !uncertain"
   >
     <div class="ledger-import">
       <p class="import-intro">下载当前行程的模板，填写支出账单，上传后核对分摊结果再确认。</p>
       <div class="import-actions tf-actions">
-        <ElButton :loading="downloading" :disabled="saving" @click="download">
+        <ElButton :loading="downloading" :disabled="locked" @click="download">
           <Download :size="16" aria-hidden="true" />下载模板
         </ElButton>
         <ElButton type="primary" :loading="previewing" :disabled="locked" @click="picker?.click()">
@@ -199,11 +285,30 @@ defineExpose({ open })
         role="alert"
       />
       <ElButton
-        v-if="file && !uncertain && !previewing && (!preview || needsPreview)"
-        :disabled="saving"
+        v-if="file && !uncertain && !candidate"
+        :disabled="saving || previewing"
         @click="refreshPreview"
         >重新预览</ElButton
       >
+      <p v-if="previewing" role="status">正在读取新的导入预览；原文件、预览及提交信息已保留。</p>
+      <p v-if="needsPreview && !candidate">
+        原预览已保留。请重新预览，核对分摊结果后采用，再确认导入。
+      </p>
+      <section v-if="candidate" class="import-candidate" aria-label="待核对的新预览">
+        <ElAlert
+          type="warning"
+          :closable="false"
+          title="以下是新的预览，尚未替换原批次；请核对金额、成员分摊及提示。"
+        />
+        <p>
+          原文件：{{ prepared?.file.name }} · {{ prepared?.preview.count }} 笔 ·
+          {{ prepared?.preview.currency_code }} {{ prepared?.preview.total_amount }}
+        </p>
+        <div class="tf-actions">
+          <ElButton :disabled="locked" @click="keepOriginal">保留原预览</ElButton>
+          <ElButton type="primary" :disabled="locked" @click="adoptCandidate">采用新预览</ElButton>
+        </div>
+      </section>
       <template v-if="preview">
         <div class="import-summary" aria-live="polite">
           <span
@@ -280,7 +385,7 @@ defineExpose({ open })
       </template>
     </div>
     <template #footer>
-      <ElButton :disabled="saving || previewing" @click="close()">关闭</ElButton>
+      <ElButton :disabled="saving || uncertain" @click="close()">关闭</ElButton>
       <ElButton type="primary" :disabled="!canCommit" :loading="saving" @click="commit">
         {{ uncertain ? '重试确认' : `确认导入${preview?.count ? ` ${preview.count} 笔` : ''}` }}
       </ElButton>
