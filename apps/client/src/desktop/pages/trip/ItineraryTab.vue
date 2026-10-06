@@ -13,6 +13,7 @@ import {
 } from 'element-plus'
 import { Bike, CarFront, ChevronRight, Footprints, RotateCcw, Route, Settings2 } from '@lucide/vue'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { onBeforeRouteLeave, onBeforeRouteUpdate } from 'vue-router'
 import { VueDraggable, type DraggableEvent } from 'vue-draggable-plus'
 
 import IconAction from '@/desktop/components/IconAction.vue'
@@ -76,6 +77,23 @@ const dialog = ref<InstanceType<typeof ItineraryItemDialog>>()
 const busy = ref<string | null>(null)
 const notice = ref<string[]>([])
 const noticeType = ref<'success' | 'warning'>('success')
+const navigationFailure = ref<string | null>(null)
+function allowNavigation() {
+  if (!reordering.value && !hasPending.value && !uncertain.value) return true
+  navigationFailure.value = reordering.value
+    ? '排序正在保存，请等待结果后再离开。'
+    : uncertain.value
+      ? '排序结果尚未确认，请原样重试确认后再离开。'
+      : '当前排序尚未保存，请先核对最新安排并采用后再离开。'
+  return false
+}
+onBeforeRouteLeave(allowNavigation)
+onBeforeRouteUpdate((to, from) =>
+  to.params.tripId === from.params.tripId ? true : allowNavigation(),
+)
+watch([reordering, uncertain, hasPending], () => {
+  navigationFailure.value = null
+})
 const intents = new Map<string, ReturnType<typeof createWriteIntent>>()
 const routePlan = ref<RoutePlan | null>(null)
 const routeFailure = ref<string | null>(null)
@@ -614,6 +632,13 @@ onUnmounted(() => {
       :title="routeFailure"
       show-icon
       @close="routeFailure = null"
+    />
+    <ElAlert
+      v-if="navigationFailure"
+      type="warning"
+      :title="navigationFailure"
+      :closable="false"
+      show-icon
     />
     <ElAlert
       v-if="notice.length"

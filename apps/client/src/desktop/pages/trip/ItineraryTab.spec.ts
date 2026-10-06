@@ -4,6 +4,7 @@ import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { ElMessageBox, type MessageBoxData } from 'element-plus'
 import { createPinia } from 'pinia'
 import { ref } from 'vue'
+import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { ItineraryItem } from '@/shared/api/itinerary'
@@ -178,6 +179,110 @@ async function drag(view: VueWrapper) {
   await vi.waitFor(() => expect(view.find('[aria-label="待处理的行程排序"]').exists()).toBe(true))
 }
 const posts = () => requests.filter((r) => r.method === 'POST')
+
+async function routed() {
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      { path: '/trips/:tripId/itinerary', component: ItineraryTab },
+      { path: '/trips/:tripId/ledger', component: { template: '<p>账单页</p>' } },
+      { path: '/trips/:tripId/map', component: { template: '<p>地图页</p>' } },
+    ],
+  })
+  await router.push(`/trips/${tripId}/ledger`)
+  await router.push(`/trips/${tripId}/itinerary`)
+  const view = mount(RouterView, {
+    global: { plugins: [createPinia(), router], stubs: { ItineraryItemDialog: true } },
+  })
+  views.push(view)
+  await ready(view)
+  return { view, router }
+}
+
+describe('行程排序真实路由保护', () => {
+  it.each([390, 1440])('%ipx 保存中和未知结果不允许离开或换旅行，重放成功后放行', async (width) => {
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn(() => ({
+        matches: width < 768,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      })),
+    )
+    const slow = deferred<Response>()
+    writeResponse = () => slow.promise
+    const { view, router } = await routed()
+    const initial = router.currentRoute.value.fullPath
+    await drag(view)
+    const original = posts()[0]!
+    const originalBody = await original.clone().text()
+    const assertBlocked = async () => {
+      for (const target of [
+        `/trips/${tripId}/ledger`,
+        `/trips/${tripId}/map`,
+        '/trips/another-trip/itinerary',
+      ]) {
+        await router.push(target)
+        expect(router.currentRoute.value.fullPath).toBe(initial)
+        expect(titles(view, day2)).toEqual(['行程1', '行程3'])
+      }
+      await router.replace('/trips/another-trip/itinerary')
+      expect(router.currentRoute.value.fullPath).toBe(initial)
+      router.back()
+      await flushPromises()
+      expect(router.currentRoute.value.fullPath).toBe(initial)
+    }
+    await assertBlocked()
+    expect(posts()).toHaveLength(1)
+    slow.reject(new TypeError('response lost'))
+    await vi.waitFor(() => expect(button(view, '原样重试')).toBeDefined())
+    await assertBlocked()
+    await router.replace(`${initial}?view=compact#day`)
+    expect(router.currentRoute.value.query.view).toBe('compact')
+    expect(router.currentRoute.value.hash).toBe('#day')
+    await router.replace(initial)
+    expect(posts()).toHaveLength(1)
+    writeResponse = async () => problem('COLLECTION_CONFLICT', 412)
+    await button(view, '原样重试').trigger('click')
+    await flushPromises()
+    await assertBlocked()
+    expect(button(view, '原样重试')).toBeDefined()
+    expect(button(view, '核对最新安排')).toBeUndefined()
+    writeResponse = async () => success()
+    await button(view, '原样重试').trigger('click')
+    await vi.waitFor(() =>
+      expect(view.find('[aria-label="待处理的行程排序"]').exists()).toBe(false),
+    )
+    expect(posts()).toHaveLength(3)
+    for (const request of posts()) {
+      expect(await request.clone().text()).toBe(originalBody)
+      for (const name of ['Idempotency-Key', 'If-Match', 'X-Collection-Guards']) {
+        expect(request.headers.get(name)).toBe(original.headers.get(name))
+      }
+    }
+    await router.push(`/trips/${tripId}/ledger`)
+    expect(view.text()).toContain('账单页')
+  })
+
+  it('明确冲突保留草稿并提示核对，采用后可离开；无待保存状态可正常切换旅行', async () => {
+    const { view, router } = await routed()
+    await drag(view)
+    const initial = router.currentRoute.value.fullPath
+    await router.push(`/trips/${tripId}/ledger`)
+    expect(router.currentRoute.value.fullPath).toBe(initial)
+    expect(view.text()).toContain('核对最新安排')
+    await button(view, '核对最新安排').trigger('click')
+    await vi.waitFor(() => expect(button(view, '采用最新安排并重新排序')).toBeDefined())
+    vi.spyOn(ElMessageBox, 'confirm').mockResolvedValueOnce('confirm' as MessageBoxData)
+    await button(view, '采用最新安排并重新排序').trigger('click')
+    await flushPromises()
+    await router.push('/trips/another-trip/itinerary')
+    expect(router.currentRoute.value.params.tripId).toBe('another-trip')
+    await router.push('/trips/another-trip/ledger')
+    expect(view.text()).toContain('账单页')
+    expect(posts()).toHaveLength(1)
+  })
+})
 
 describe('行程排序入口', () => {
   it('完整集合未就绪不挂可拖动列表，加载完成后才允许排序', async () => {
