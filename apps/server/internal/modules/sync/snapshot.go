@@ -146,7 +146,7 @@ func (s *Service) SnapshotItems(ctx context.Context, a actor.Actor, protocol str
 			}
 			out.NextCursor = &next
 		} else if meta.Purpose == "baseline" {
-			next, err := s.BaselineCursor(a.AccountID, meta.SyncEpoch, high)
+			next, err := s.completedBaselineCursor(a.AccountID, meta, high, end)
 			if err != nil {
 				return apperr.Internal(err)
 			}

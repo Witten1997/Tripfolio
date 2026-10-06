@@ -21,11 +21,26 @@ func (s *Service) commitCursor(owner, epoch, operation uuid.UUID, seq string) (s
 }
 
 type cursor struct {
-	Protocol int       `json:"protocol"`
-	Epoch    uuid.UUID `json:"epoch"`
-	Purpose  string    `json:"purpose"`
-	After    string    `json:"after_seq"`
-	Upper    *string   `json:"through_seq,omitempty"`
+	Protocol        int        `json:"protocol"`
+	Epoch           uuid.UUID  `json:"epoch"`
+	Purpose         string     `json:"purpose"`
+	After           string     `json:"after_seq"`
+	Upper           *string    `json:"through_seq,omitempty"`
+	SnapshotID      *uuid.UUID `json:"snapshot_id,omitempty"`
+	TerminalOrdinal *string    `json:"terminal_ordinal,omitempty"`
+}
+
+// completedBaselineCursor binds activation evidence to this published snapshot.
+// It remains a changes checkpoint, but ordinary checkpoints cannot activate sync.
+func (s *Service) completedBaselineCursor(owner uuid.UUID, meta Snapshot, high, end int64) (string, error) {
+	if owner == uuid.Nil || meta.ID == uuid.Nil || meta.SyncEpoch == uuid.Nil || high < 0 || end < 0 {
+		return "", paging.ErrInvalidCursor
+	}
+	ordinal := strconv.FormatInt(end, 10)
+	return s.codec.Encode(owner, changesScope, cursor{
+		Protocol: ProtocolVersion, Epoch: meta.SyncEpoch, Purpose: "checkpoint",
+		After: strconv.FormatInt(high, 10), SnapshotID: &meta.ID, TerminalOrdinal: &ordinal,
+	})
 }
 
 func decimal(s string) (int64, bool) {

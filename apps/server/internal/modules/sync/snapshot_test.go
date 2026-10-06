@@ -46,6 +46,10 @@ func TestSnapshotCursorPurposeAndCompletion(t *testing.T) {
 	if last.HasMore || last.NextCursor != nil || last.BaselineCursor == nil || last.HighWaterSeq != high {
 		t.Fatalf("missing exact completed checkpoint: %+v", last)
 	}
+	bound, _, _, err := s.decode(a.AccountID, *last.BaselineCursor)
+	if err != nil || bound.SnapshotID == nil || *bound.SnapshotID != m.meta.ID || bound.TerminalOrdinal == nil || *bound.TerminalOrdinal != "2" {
+		t.Fatalf("missing activation binding: %+v, %v", bound, err)
+	}
 	_, err = s.SnapshotItems(ctx, a, "2", m.meta.ID, *last.BaselineCursor, 1)
 	expectCode(t, err, "INVALID_CURSOR")
 	_, err = s.SnapshotItems(ctx, a, "2", uuid.New(), *first.NextCursor, 1)
@@ -72,4 +76,27 @@ func TestSnapshotCursorPurposeAndCompletion(t *testing.T) {
 	m.meta.Status = "invalidated"
 	_, err = s.SnapshotItems(ctx, a, "2", m.meta.ID, "", 1)
 	expectCode(t, err, "SNAPSHOT_INVALIDATED")
+}
+
+func TestEmptySnapshotBaselineBinding(t *testing.T) {
+	s, v, a := syncFixture(t)
+	now, high := s.clock.Now(), "0"
+	m := &snapshotMemory{meta: Snapshot{ID: uuid.New(), Purpose: "baseline", Status: "ready", SchemaVersion: 2, SyncEpoch: v.state.Epoch, HighWaterSeq: &high, ItemCount: "0", CapturedAt: &now, ExpiresAt: now.Add(time.Hour)}}
+	s.WithSnapshots(m)
+	page, err := s.SnapshotItems(context.Background(), a, "2", m.meta.ID, "", 1)
+	if err != nil || page.BaselineCursor == nil || page.HasMore {
+		t.Fatalf("empty baseline: %+v %v", page, err)
+	}
+	c, _, _, err := s.decode(a.AccountID, *page.BaselineCursor)
+	if err != nil || c.SnapshotID == nil || *c.SnapshotID != m.meta.ID || c.TerminalOrdinal == nil || *c.TerminalOrdinal != "0" {
+		t.Fatalf("empty binding: %+v %v", c, err)
+	}
+	ordinary, err := s.BaselineCursor(a.AccountID, v.state.Epoch, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, _, _, err = s.decode(a.AccountID, ordinary)
+	if err != nil || c.SnapshotID != nil || c.TerminalOrdinal != nil {
+		t.Fatalf("legacy checkpoint changed: %+v %v", c, err)
+	}
 }
