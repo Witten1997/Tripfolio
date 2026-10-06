@@ -318,6 +318,36 @@ func TestSyncActivationCLI(t *testing.T) {
 	expectStatus(t, repeated, 200, "")
 	var initial, replay syncmodule.PushOutput
 	if json.Unmarshal(applied.Raw, &initial) != nil || json.Unmarshal(repeated.Raw, &replay) != nil || len(initial.Results) != 1 || len(replay.Results) != 1 || initial.Results[0].Status != "applied" || replay.Results[0].Status != "replayed" || !reflect.DeepEqual(initial.Results[0].Result, replay.Results[0].Result) {
+		for _, phase := range []struct {
+			name string
+			out  syncmodule.PushOutput
+		}{{"initial", initial}, {"replay", replay}} {
+			t.Logf("push diagnostic phase=%s count=%d", phase.name, len(phase.out.Results))
+			for _, item := range phase.out.Results {
+				code := "none"
+				if item.Error != nil {
+					code = item.Error.Code
+				}
+				t.Logf("push diagnostic phase=%s status=%s error_code=%s result_present=%t", phase.name, item.Status, code, item.Result != nil)
+			}
+		}
+		diagnosticLogin := f.do(request{method: "POST", path: "/auth/login", body: map[string]any{"email": email, "password": password, "client": map[string]any{"kind": "android", "device_id": uuid.NewString()}}})
+		if diagnosticLogin.Status == 200 {
+			diagnostic := f.do(request{method: "POST", path: "/trips", token: diagnosticLogin.data()["access_token"].(string), headers: map[string]string{"Idempotency-Key": uuid.NewString()}, body: map[string]any{"id": uuid.NewString(), "name": "CLI timezone diagnostic", "start_date": "2026-10-01", "end_date": "2026-10-04", "timezone": "Asia/Shanghai", "currency_code": "CNY"}})
+			var problem struct {
+				Code   string `json:"code"`
+				Errors []struct {
+					Field string `json:"field"`
+					Code  string `json:"code"`
+				} `json:"errors"`
+			}
+			if json.Unmarshal(diagnostic.Raw, &problem) == nil {
+				t.Logf("REST diagnostic status=%d code=%s", diagnostic.Status, problem.Code)
+				for _, field := range problem.Errors {
+					t.Logf("REST diagnostic field=%s code=%s", field.Field, field.Code)
+				}
+			}
+		}
 		t.Fatal("CLI enabled write/replay mismatch")
 	}
 	webLogin := f.do(request{method: "POST", path: "/auth/login", body: map[string]any{"email": email, "password": password, "client": webClientBody()}})

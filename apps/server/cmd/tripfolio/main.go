@@ -19,6 +19,7 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+	_ "time/tzdata"
 
 	"tripfolio/server/internal/bootstrap"
 	"tripfolio/server/internal/config"
