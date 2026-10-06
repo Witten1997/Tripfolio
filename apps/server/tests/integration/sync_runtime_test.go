@@ -216,14 +216,18 @@ func TestRunServeSyncRuntime(t *testing.T) {
 	for {
 		response := do(http.MethodGet, "/sync/snapshots/"+snapshotID.String(), token, nil, nil)
 		expectStatus(t, response, 200, "")
-		if err := json.Unmarshal(response.Raw, &wrapped); err != nil {
+		var snapshot syncmodule.Snapshot
+		if err := json.Unmarshal(response.Raw, &snapshot); err != nil {
 			t.Fatal(err)
 		}
-		if wrapped.Data.Status == "ready" {
+		if snapshot.ID != snapshotID || snapshot.SyncEpoch != epoch {
+			t.Fatal("snapshot metadata identity changed")
+		}
+		if snapshot.Status == "ready" {
 			break
 		}
-		if wrapped.Data.Status == "failed" || wrapped.Data.Status == "expired" {
-			t.Fatalf("snapshot did not publish: %+v", wrapped.Data)
+		if snapshot.Status == "failed" || snapshot.Status == "expired" || snapshot.Status == "invalidated" {
+			t.Fatalf("snapshot did not publish: %+v", snapshot)
 		}
 		if time.Now().After(deadline) {
 			t.Fatal("real River worker did not publish snapshot")
