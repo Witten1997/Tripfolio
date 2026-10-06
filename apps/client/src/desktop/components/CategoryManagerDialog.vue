@@ -40,21 +40,33 @@ const {
   loadingLatest,
   draft,
   dirty,
+  hasPendingOrder,
+  orderUnknown,
+  orderState,
+  savedOrderCount,
+  pendingOrderCount,
+  latestOrder,
+  loadingOrder,
+  sameOrderMembers,
+  canReorder,
 } = manager
 const busy = computed(() => saving.value || !!deleting.value || reordering.value)
-const locked = computed(() => busy.value || uncertainCreate.value)
-const cardsDisabled = computed(() => saving.value || !!deleting.value || uncertainCreate.value)
+const locked = computed(() => busy.value || uncertainCreate.value || hasPendingOrder.value)
+const cardsDisabled = locked
 
 const { cards, dragging, onStart, onEnd, move } = useCategoryCards(manager)
 
 async function discardChanges(closing = false) {
+  if (orderUnknown.value) return false
   if (uncertainCreate.value && !closing) return false
-  if (!dirty.value && !uncertainCreate.value) return true
+  if (!dirty.value && !uncertainCreate.value && !hasPendingOrder.value) return true
   try {
     await ElMessageBox.confirm(
       uncertainCreate.value
         ? '创建结果尚未确认，分类可能已经保存。关闭后请先重新打开分类管理并刷新列表核对，避免重复创建。'
-        : '尚有未保存的分类输入，是否放弃？',
+        : hasPendingOrder.value
+          ? `已保存 ${savedOrderCount.value} 条排序，仍有待处理顺序。放弃待保存排序和未保存输入？已保存的部分不会撤回。`
+          : '尚有未保存的分类输入，是否放弃？',
       uncertainCreate.value ? '关闭分类管理' : '放弃分类输入',
       {
         confirmButtonText: uncertainCreate.value ? '关闭并核对列表' : '放弃输入',
@@ -69,7 +81,7 @@ async function discardChanges(closing = false) {
 }
 
 async function requestClose(done?: () => void) {
-  if (busy.value || !(await discardChanges(true))) return
+  if (busy.value || orderUnknown.value || !(await discardChanges(true))) return
   manager.close(true)
   done?.()
 }
@@ -103,6 +115,23 @@ async function adoptLatest() {
   if (await discardChanges()) manager.adoptLatest()
 }
 
+async function adoptOrder(keepTarget: boolean) {
+  if (!latestOrder.value || loadingOrder.value || busy.value || orderUnknown.value) return
+  const candidate = latestOrder.value
+  try {
+    await ElMessageBox.confirm(
+      keepTarget
+        ? '已核对最新分类，保留当前目标顺序并采用新的基线？采用后仍需点击保存。'
+        : '放弃尚未保存的目标顺序并采用最新列表？已保存的部分保留，名称和图标输入不会清除。',
+      '核对分类顺序',
+      { confirmButtonText: '确认采用', cancelButtonText: '返回核对' },
+    )
+    if (latestOrder.value === candidate) manager.adoptOrder(keepTarget)
+  } catch {
+    /* cancelled */
+  }
+}
+
 defineExpose({ open: manager.open })
 </script>
 
@@ -112,7 +141,7 @@ defineExpose({ open: manager.open })
     title="账单分类管理"
     width="min(840px, calc(100vw - 32px))"
     :close-on-click-modal="false"
-    :close-on-press-escape="!busy"
+    :close-on-press-escape="!busy && !orderUnknown"
     :before-close="requestClose"
     destroy-on-close
   >
@@ -141,6 +170,62 @@ defineExpose({ open: manager.open })
         <ElButton type="primary" :disabled="locked || loading" @click="start()">新增分类</ElButton>
       </div>
     </div>
+    <section
+      v-if="hasPendingOrder || savedOrderCount"
+      class="category-order-status"
+      aria-live="polite"
+    >
+      <p>
+        排序：已保存 {{ savedOrderCount }} 条，待保存 {{ pendingOrderCount }} 条<span
+          v-if="orderUnknown"
+          >，当前请求结果未确认</span
+        >。
+      </p>
+      <div class="tf-actions">
+        <ElButton
+          v-if="orderState === 'unknown'"
+          :loading="reordering"
+          @click="manager.continueOrder"
+          >原样重试排序</ElButton
+        >
+        <ElButton
+          v-if="orderState === 'read_failed'"
+          :loading="reordering"
+          @click="manager.continueOrder"
+          >重试读取已保存结果</ElButton
+        >
+        <ElButton v-if="orderState === 'ready'" :loading="reordering" @click="manager.continueOrder"
+          >保存待排顺序</ElButton
+        >
+        <ElButton
+          v-if="hasPendingOrder && !orderUnknown"
+          :disabled="busy"
+          :loading="loadingOrder"
+          @click="manager.reviewOrder"
+          >核对最新分类</ElButton
+        >
+      </div>
+      <div v-if="latestOrder">
+        <p>
+          最新列表：{{
+            [...latestOrder.items]
+              .sort((a, b) => a.sort_order - b.sort_order)
+              .map((item) => item.name)
+              .join('、')
+          }}
+        </p>
+        <p v-if="!sameOrderMembers">
+          分类已有新增或删除，不能直接套用旧顺序。请采用最新列表后重新排序。
+        </p>
+        <ElButton :disabled="!sameOrderMembers || busy || loadingOrder" @click="adoptOrder(true)"
+          >保留目标顺序并采用</ElButton
+        >
+        <ElButton :disabled="busy || loadingOrder" @click="adoptOrder(false)"
+          >放弃待排顺序并采用</ElButton
+        >
+        <ElButton @click="manager.cancelOrderReview">取消核对</ElButton>
+      </div>
+    </section>
     <ElSkeleton v-if="loading && !items.length" :rows="5" animated />
     <ElAlert
       v-if="loadError"
@@ -169,7 +254,7 @@ defineExpose({ open: manager.open })
           :force-fallback="true"
           :delay="150"
           :touch-start-threshold="3"
-          :disabled="locked || loading"
+          :disabled="!canReorder"
           :aria-busy="reordering"
           aria-label="账单分类，按住卡片拖动可调整顺序"
           @start="onStart"
@@ -250,7 +335,7 @@ defineExpose({ open: manager.open })
             type="danger"
             plain
             :loading="deleting === baseline.id"
-            :disabled="saving || reordering || uncertainCreate"
+            :disabled="locked"
             @click="remove"
             >删除分类</ElButton
           >
@@ -258,7 +343,7 @@ defineExpose({ open: manager.open })
             v-if="conflict"
             type="primary"
             :loading="saving"
-            :disabled="!latest || loadingLatest || metadata.status !== 'ready'"
+            :disabled="locked || !latest || loadingLatest || metadata.status !== 'ready'"
             @click="manager.save(true)"
             >确认用我的改动更新</ElButton
           >
@@ -270,6 +355,7 @@ defineExpose({ open: manager.open })
             :loading="saving"
             :disabled="
               busy ||
+              hasPendingOrder ||
               (!uncertainCreate && metadata.status !== 'ready') ||
               (baseline !== null && !dirty)
             "
@@ -278,11 +364,18 @@ defineExpose({ open: manager.open })
         </div>
       </section>
     </div>
-    <template #footer><ElButton :disabled="busy" @click="requestClose()">关闭</ElButton></template>
+    <template #footer
+      ><ElButton :disabled="busy || orderUnknown" @click="requestClose()">关闭</ElButton></template
+    >
   </ElDialog>
 </template>
 
 <style scoped>
+.category-order-status {
+  margin-bottom: 16px;
+  font-size: 13px;
+  line-height: 1.7;
+}
 .category-intro {
   margin: 0 0 20px;
   color: var(--tf-text-3);

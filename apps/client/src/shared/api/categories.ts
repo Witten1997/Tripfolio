@@ -3,6 +3,8 @@ import type { components } from '@tripfolio/contracts/openapi/v1'
 import { ApiError } from '@/shared/api/auth'
 import { api } from '@/shared/api/client'
 import { versionHeaders, writeOutcome } from '@/shared/api/writes'
+import type { CollectionBaseline } from '@/shared/api/collectionGuards'
+import { useSessionStore } from '@/shared/stores/session'
 
 export type ExpenseCategory = components['schemas']['ExpenseCategory']
 export type CategoryCreate = components['schemas']['ExpenseCategoryCreate']
@@ -52,9 +54,20 @@ export async function updateCategory(
   version: string,
   patch: CategoryPatch,
   operationId: string,
+  baseline?: CollectionBaseline,
 ) {
+  if (
+    baseline &&
+    (!Object.hasOwn(patch, 'sort_order') ||
+      baseline.guards.length !== 1 ||
+      baseline.guards[0]?.kind !== 'categories' ||
+      baseline.guards[0]?.scope_id !== useSessionStore().account?.id)
+  ) {
+    throw new Error('分类排序基线不属于当前账号。')
+  }
   const { data, error } = await api.PATCH('/expense-categories/{category_id}', {
     params: { path: { category_id: id }, header: versionHeaders(operationId, version) },
+    headers: baseline?.headers,
     body: patch,
   })
   if (error || !data) throw new ApiError(error)

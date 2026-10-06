@@ -40,14 +40,24 @@ const {
   loadingLatest,
   draft,
   dirty,
+  hasPendingOrder,
+  orderUnknown,
+  orderState,
+  savedOrderCount,
+  pendingOrderCount,
+  latestOrder,
+  loadingOrder,
+  sameOrderMembers,
+  canReorder,
 } = manager
 const { cards, dragging, onStart, onEnd, move } = useCategoryCards(manager)
 const busy = computed(() => saving.value || !!deleting.value || reordering.value)
-const locked = computed(() => busy.value || uncertainCreate.value)
-const cardsDisabled = computed(() => saving.value || !!deleting.value || uncertainCreate.value)
+const locked = computed(() => busy.value || uncertainCreate.value || hasPendingOrder.value)
+const cardsDisabled = locked
 const saveDisabled = computed(
   () =>
     busy.value ||
+    hasPendingOrder.value ||
     (!uncertainCreate.value && metadata.status !== 'ready') ||
     (!!baseline.value && !dirty.value) ||
     (conflict.value && (!latest.value || loadingLatest.value)),
@@ -56,17 +66,20 @@ const saveDisabled = computed(
 onMounted(() => void manager.open())
 onUnmounted(() => manager.close(true))
 onBeforeRouteLeave(async () => {
-  if (busy.value) return false
+  if (busy.value || orderUnknown.value) return false
   return discardChanges()
 })
 
 async function discardChanges() {
-  if (!dirty.value && !uncertainCreate.value) return true
+  if (orderUnknown.value) return false
+  if (!dirty.value && !uncertainCreate.value && !hasPendingOrder.value) return true
   try {
     await ElMessageBox.confirm(
       uncertainCreate.value
         ? '创建结果尚未确认，分类可能已经保存。离开后请先刷新分类列表核对，避免重复创建。'
-        : '尚有未保存的分类修改，是否放弃？',
+        : hasPendingOrder.value
+          ? `已保存 ${savedOrderCount.value} 条排序。放弃待保存顺序和未保存输入？已保存部分不会撤回。`
+          : '尚有未保存的分类修改，是否放弃？',
       '离开编辑',
       {
         confirmButtonText: uncertainCreate.value ? '离开并核对' : '放弃修改',
@@ -81,7 +94,7 @@ async function discardChanges() {
 }
 
 async function closeEditor(done?: () => void) {
-  if (busy.value || !(await discardChanges())) return
+  if (busy.value || hasPendingOrder.value || !(await discardChanges())) return
   if (uncertainCreate.value) {
     manager.close(true)
     await manager.open()
@@ -116,6 +129,23 @@ async function remove() {
 async function adoptLatest() {
   if (!busy.value && (await discardChanges())) manager.adoptLatest()
 }
+
+async function adoptOrder(keepTarget: boolean) {
+  if (!latestOrder.value || loadingOrder.value || busy.value || orderUnknown.value) return
+  const candidate = latestOrder.value
+  try {
+    await ElMessageBox.confirm(
+      keepTarget
+        ? '已核对最新分类，保留目标顺序并采用新基线？采用后需再点击保存。'
+        : '放弃待保存的目标顺序并采用最新列表？已保存部分保留，名称和图标输入不会清除。',
+      '核对分类顺序',
+      { confirmButtonText: '确认采用', cancelButtonText: '返回核对' },
+    )
+    if (latestOrder.value === candidate) manager.adoptOrder(keepTarget)
+  } catch {
+    /* cancelled */
+  }
+}
 </script>
 
 <template>
@@ -139,6 +169,56 @@ async function adoptLatest() {
         <Plus aria-hidden="true" />新增分类
       </ElButton>
     </div>
+
+    <section
+      v-if="hasPendingOrder || savedOrderCount"
+      class="category-order-status"
+      aria-live="polite"
+    >
+      <p>
+        排序：已保存 {{ savedOrderCount }} 条，待保存 {{ pendingOrderCount }} 条<span
+          v-if="orderUnknown"
+          >，当前请求结果未确认</span
+        >。
+      </p>
+      <ElButton v-if="orderState === 'unknown'" :loading="reordering" @click="manager.continueOrder"
+        >原样重试排序</ElButton
+      >
+      <ElButton
+        v-if="orderState === 'read_failed'"
+        :loading="reordering"
+        @click="manager.continueOrder"
+        >重试读取已保存结果</ElButton
+      >
+      <ElButton v-if="orderState === 'ready'" :loading="reordering" @click="manager.continueOrder"
+        >保存待排顺序</ElButton
+      >
+      <ElButton
+        v-if="hasPendingOrder && !orderUnknown"
+        :disabled="busy"
+        :loading="loadingOrder"
+        @click="manager.reviewOrder"
+        >核对最新分类</ElButton
+      >
+      <div v-if="latestOrder">
+        <p>
+          最新列表：{{
+            [...latestOrder.items]
+              .sort((a, b) => a.sort_order - b.sort_order)
+              .map((item) => item.name)
+              .join('、')
+          }}
+        </p>
+        <p v-if="!sameOrderMembers">分类已有新增或删除，请采用最新列表后重新排序。</p>
+        <ElButton :disabled="!sameOrderMembers || busy || loadingOrder" @click="adoptOrder(true)"
+          >保留目标顺序并采用</ElButton
+        >
+        <ElButton :disabled="busy || loadingOrder" @click="adoptOrder(false)"
+          >放弃待排顺序并采用</ElButton
+        >
+        <ElButton @click="manager.cancelOrderReview">取消核对</ElButton>
+      </div>
+    </section>
 
     <ElAlert v-if="loadError" type="error" :closable="false" show-icon>
       <template #title>{{ loadError }}</template>
@@ -169,7 +249,7 @@ async function adoptLatest() {
       :force-fallback="true"
       :delay="150"
       :touch-start-threshold="3"
-      :disabled="loading || locked"
+      :disabled="!canReorder"
       :aria-busy="loading || reordering"
       aria-label="账单分类，按住卡片拖动可调整顺序"
       @start="onStart"
@@ -196,7 +276,7 @@ async function adoptLatest() {
       :model-value="active"
       :title="baseline ? '编辑分类' : '新增分类'"
       :before-close="closeEditor"
-      :close-on-press-escape="!busy"
+      :close-on-press-escape="!busy && !orderUnknown"
       class="mobile-category-editor"
       desktop-width="min(480px, calc(100vw - 32px))"
     >
@@ -260,7 +340,7 @@ async function adoptLatest() {
             type="danger"
             plain
             :loading="!!deleting"
-            :disabled="saving || reordering || uncertainCreate"
+            :disabled="locked"
             @click="remove"
             ><Trash2 aria-hidden="true" />删除</ElButton
           >
@@ -279,6 +359,10 @@ async function adoptLatest() {
 </template>
 
 <style scoped>
+.category-order-status {
+  font-size: 13px;
+  line-height: 1.7;
+}
 .mobile-categories-page {
   display: flex;
   flex-direction: column;
