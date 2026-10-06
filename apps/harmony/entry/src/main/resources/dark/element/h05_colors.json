@@ -1,0 +1,11 @@
+{
+  "color": [
+    { "name": "h05_canvas", "value": "#101D1B" },
+    { "name": "h05_surface", "value": "#1C302C" },
+    { "name": "h05_text", "value": "#E7F3EF" },
+    { "name": "h05_secondary_text", "value": "#B1C7C0" },
+    { "name": "h05_accent", "value": "#8DE0CC" },
+    { "name": "h05_selected_surface", "value": "#294D43" },
+    { "name": "h05_outline", "value": "#3B554C" }
+  ]
+}
