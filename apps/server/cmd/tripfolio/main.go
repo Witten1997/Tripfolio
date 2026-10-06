@@ -38,6 +38,8 @@ func run(args []string) int {
 	}
 
 	switch command {
+	case "sync":
+		return runSyncCommand(rest)
 	case "backup":
 		if err := bootstrap.RunBackupCLI(rest, os.Stdout); err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -112,6 +114,35 @@ func run(args []string) int {
 	}
 }
 
+func runSyncCommand(args []string) int {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	fail := func() int {
+		fmt.Fprintln(os.Stderr, "同步维护操作失败，请核对参数、持久密钥、数据库和发布验收资料")
+		return 1
+	}
+	if len(args) > 0 && args[0] == "release-info" {
+		if bootstrap.RunSyncReleaseInfo(ctx, args, os.Stdout) != nil {
+			return fail()
+		}
+		return 0
+	}
+	if len(args) == 0 || args[0] != "activate" {
+		return fail()
+	}
+	if _, err := config.LoadDotEnv(os.Getenv); err != nil {
+		return fail()
+	}
+	cfg, err := config.Load(os.Getenv)
+	if err != nil {
+		return fail()
+	}
+	if bootstrap.RunSyncCLI(ctx, cfg, args, os.Stdin, os.Stdout) != nil {
+		return fail()
+	}
+	return 0
+}
+
 // newLogger 在生产用 JSON（便于日志系统采集），其余环境用文本（本地与容器排障都更好读）。
 func newLogger(cfg config.Config) *slog.Logger {
 	opts := &slog.HandlerOptions{Level: cfg.LogLevel}
@@ -161,6 +192,8 @@ func usage(w io.Writer) {
   tripfolio migrate down             回退最近一次业务迁移（仅开发环境）
   tripfolio healthcheck              请求本机 /health/ready，供容器健康检查使用
   tripfolio version                  打印版本
+  tripfolio sync release-info        打印当前可执行文件与内嵌网页指纹
+  tripfolio sync activate --account UUID --snapshot UUID --proof-file 文件或-
   tripfolio backup keygen            生成备份加密密钥（单独保管）
   tripfolio backup decrypt --input 文件.dump.age --output 文件.dump   离线解密备份
   tripfolio admin grant --email 邮箱 --reason 原因   授予现有账号超级管理员资格
