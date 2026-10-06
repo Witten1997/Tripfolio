@@ -14,7 +14,7 @@ function webClient(): ClientInfo {
   return { kind: 'web', device_id: deviceId(), device_name: navigator.userAgent.slice(0, 120) }
 }
 
-/** 从非 HttpOnly 的 CSRF Cookie 读取值（页面刷新后内存为空时使用）。 */
+/** 读取当前 CSRF Cookie；其他标签页刷新会话也会轮转它。 */
 export function readCsrfCookie(): string | null {
   const match = document.cookie
     .split(';')
@@ -36,7 +36,7 @@ export function refreshSession(): Promise<boolean> {
   // 清理放在 .finally 里而不是函数体内：函数体没有 await 时会同步结束，早于下面的赋值。
   const run = (async () => {
     const session = useSessionStore()
-    const csrf = session.csrfToken ?? readCsrfCookie()
+    const csrf = readCsrfCookie()
     if (!csrf) return false
     try {
       const { data } = await api.POST('/auth/refresh', {
