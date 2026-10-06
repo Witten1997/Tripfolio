@@ -267,6 +267,85 @@ describe('成员基线和恢复', () => {
     expect(put).toHaveBeenCalledTimes(1)
   })
 
+  it.each([401, 403, 412, 428])('未知成员提交后%s不解除原请求或核对门禁', async (status) => {
+    const puts: Request[] = []
+    transport.mockImplementation(async (request) => {
+      if (request.method === 'GET') return json(200, { data: [self], scope_revisions: guards })
+      puts.push(request.clone())
+      if (puts.length === 1) throw new Error('offline')
+      if (puts.length === 2)
+        return problem(
+          status === 412
+            ? 'COLLECTION_CONFLICT'
+            : status === 428
+              ? 'COLLECTION_BASE_REQUIRED'
+              : 'FORBIDDEN',
+          status,
+        )
+      return json(200, { data: receipt(null, [], true) })
+    })
+    const m = useTripMembers(tripId)
+    await m.open()
+    m.rows[0]!.name = '提交内容'
+    await m.save()
+    await m.save()
+    expect(m.uncertain.value).toBe(true)
+    expect(m.editingLocked.value).toBe(true)
+    expect(m.canSave.value).toBe(true)
+    const count = transport.mock.calls.length
+    await m.loadLatest()
+    await m.load()
+    m.close()
+    await m.open()
+    m.add()
+    m.adoptLatest()
+    expect(transport).toHaveBeenCalledTimes(count)
+    expect(m.baseline.value!.guards).toEqual(guards)
+    m.rows[0]!.name = '外部修改不进入重试'
+    expect(await m.save()).toBe(true)
+    for (const sent of puts.slice(1)) {
+      expect(await sent.clone().json()).toEqual(await puts[0]!.clone().json())
+      expect(sent.headers.get('Idempotency-Key')).toBe(puts[0]!.headers.get('Idempotency-Key'))
+      expect(sent.headers.get('X-Collection-Guards')).toBe(
+        puts[0]!.headers.get('X-Collection-Guards'),
+      )
+    }
+    expect(m.uncertain.value).toBe(false)
+  })
+
+  it('再次核对失败或关闭取消后，旧候选和迟到响应均不可采用', async () => {
+    transport.mockResolvedValue(json(200, { data: [self], scope_revisions: guards }))
+    const m = useTripMembers(tripId)
+    await m.open()
+    m.rows[0]!.name = '保留输入'
+    const original = m.baseline.value
+    transport.mockImplementation(async () =>
+      json(200, { data: [{ ...self, name: '远端' }], scope_revisions: nextGuards }),
+    )
+    await m.loadLatest()
+    expect(m.latest.value).not.toBeNull()
+    expect(m.rows[0]!.name).toBe('保留输入')
+    transport.mockRejectedValueOnce(new Error('offline'))
+    await m.loadLatest()
+    expect(m.latest.value).toBeNull()
+    m.adoptLatest()
+    expect(m.baseline.value).toBe(original)
+    expect(m.rows[0]!.name).toBe('保留输入')
+    await m.loadLatest()
+    expect(m.latest.value).not.toBeNull()
+    const late = deferred<Response>()
+    transport.mockReturnValueOnce(late.promise)
+    const checking = m.loadLatest()
+    expect(m.latest.value).toBeNull()
+    m.close()
+    late.resolve(json(200, { data: [{ ...self, name: '迟到' }], scope_revisions: nextGuards }))
+    await checking
+    expect(m.latest.value).toBeNull()
+    m.adoptLatest()
+    expect(m.rows[0]!.name).toBe('保留输入')
+    expect(m.baseline.value).toBe(original)
+  })
+
   it('核对加载失败保留姓名、比例、排序及原guard', async () => {
     transport
       .mockResolvedValueOnce(json(200, { data: [self], scope_revisions: guards }))

@@ -343,6 +343,75 @@ describe('照片完整基线编辑', () => {
     await e.save()
     expect(writes()[1]!.headers.get('Idempotency-Key')).not.toBe(oldKey)
   })
+
+  it.each([401, 403, 412, 428])('未知照片创建/更新后%s仍只允许原样重试', async (status) => {
+    for (const kind of ['create', 'update']) {
+      const e = usePhotoEditor(trip, () => day)
+      await e.open(kind === 'update' ? current : undefined)
+      if (kind === 'update') await e.prepareSensitive()
+      e.draft.asset_id = uuid(999)
+      e.draft.sort_order = 7
+      failure = 'network'
+      await e.save()
+      const start = writes().length - 1
+      const original = await signature(writes()[start]!)
+      failure = status
+      await e.save()
+      expect(e.uncertain.value).toBe(true)
+      expect(e.locked.value).toBe(true)
+      const count = requests.length
+      e.close()
+      await e.open(photo(2))
+      await e.checkLatest()
+      await e.chooseDay(next)
+      e.adoptCandidate()
+      expect(e.opened.value).toBe(true)
+      expect(requests).toHaveLength(count)
+      e.draft.sort_order = 9
+      failure = null
+      expect(await e.save()).not.toBeNull()
+      expect(await signature(writes()[start + 1]!)).toEqual(original)
+      expect(await signature(writes()[start + 2]!)).toEqual(original)
+      expect(e.uncertain.value).toBe(false)
+      expect(e.opened.value).toBe(false)
+    }
+  })
+
+  it('新核对失败清旧候选，取消在途核对与关闭后均不可采用', async () => {
+    const e = await editing()
+    e.draft.caption = '保留草稿'
+    const original = e.baseline.value
+    await e.checkLatest()
+    expect(e.candidate.value).not.toBeNull()
+    pageHook = () => Response.json({ status: 503, code: 'UNAVAILABLE' }, { status: 503 })
+    await e.checkLatest()
+    expect(e.candidate.value).toBeNull()
+    e.adoptCandidate()
+    expect(e.draft.caption).toBe('保留草稿')
+    for (const action of ['cancel', 'close']) {
+      pageHook = null
+      await e.checkLatest()
+      expect(e.candidate.value).not.toBeNull()
+      let release!: () => void
+      const held = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      pageHook = async (_, body) => {
+        await held
+        return Response.json(body)
+      }
+      const checking = e.checkLatest()
+      await vi.waitFor(() => expect(e.checking.value).toBe(true))
+      if (action === 'cancel') e.cancelCandidate()
+      else e.close()
+      release()
+      await checking
+      expect(e.candidate.value).toBeNull()
+      e.adoptCandidate()
+      expect(e.baseline.value).toBe(original)
+      expect(e.draft.caption).toBe('保留草稿')
+    }
+  })
   it('目标读取失败或关闭后的迟到响应不改变草稿', async () => {
     const e = await editing()
     await e.prepareSensitive()

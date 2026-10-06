@@ -315,7 +315,11 @@ export function useItemEditor<
         '网络连接中断，结果尚未确认。保留当前内容重试可避免重复提交。',
       )
       errors.value = fieldErrors(cause)
-      const uncertain = !(cause instanceof ApiError) || (cause.problem?.status ?? 500) >= 500
+      // 后一次拒绝不能证明先前丢失的响应没有对应成功提交。
+      const uncertain =
+        !!(pendingCreate || pendingUpdate) ||
+        !(cause instanceof ApiError) ||
+        (cause.problem?.status ?? 500) >= 500
       if (request.submission.kind === 'create') {
         uncertainCreate.value = uncertain
         pendingCreate = uncertain ? request : null
@@ -328,7 +332,12 @@ export function useItemEditor<
           error.value = '保存结果尚未确认，请原样重试，确认后再编辑内容或核对新基线。'
         }
       }
-      if (cause instanceof ApiError && cause.code === 'VERSION_CONFLICT') {
+      if (
+        !pendingCreate &&
+        !pendingUpdate &&
+        cause instanceof ApiError &&
+        cause.code === 'VERSION_CONFLICT'
+      ) {
         conflict.value = true
         latest.value = null
         await loadLatest()

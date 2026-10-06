@@ -48,6 +48,7 @@ export function usePhotoEditor(tripId: string, today: () => string) {
     controller?.abort()
     controller = null
     preparing.value = checking.value = false
+    candidate.value = null
   }
   function beginReading() {
     stopReading()
@@ -55,7 +56,7 @@ export function usePhotoEditor(tripId: string, today: () => string) {
     return { turn: generation, signal: controller.signal }
   }
   function markFailure(cause: unknown) {
-    uncertainUpdate.value = !(cause instanceof ApiError) || (cause.problem?.status ?? 500) >= 500
+    uncertainUpdate.value ||= !(cause instanceof ApiError) || (cause.problem?.status ?? 500) >= 500
     if (
       cause instanceof ApiError &&
       ['COLLECTION_BASE_REQUIRED', 'COLLECTION_CONFLICT', 'VERSION_CONFLICT'].includes(
@@ -241,7 +242,7 @@ export function usePhotoEditor(tripId: string, today: () => string) {
   }
   function adoptCandidate() {
     const latest = candidate.value
-    if (!latest || locked.value || checking.value || preparing.value) return
+    if (!latest || !core.opened.value || locked.value || checking.value || preparing.value) return
     try {
       requireDays(latest.days, latest.photo, latest.photo.recorded_on)
     } catch (cause) {
@@ -307,7 +308,7 @@ export function usePhotoEditor(tripId: string, today: () => string) {
     checkLatest,
     adoptCandidate,
     cancelCandidate: () => {
-      if (!locked.value) candidate.value = null
+      if (!locked.value) stopReading()
     },
   }
 }

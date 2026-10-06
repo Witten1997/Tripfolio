@@ -164,6 +164,7 @@ export function useTripMembers(tripId: string) {
     if (!opened.value || saving.value || uncertain.value || loading.value || checking.value) return
     const request = ++generation
     checking.value = true
+    latest.value = null
     latestError.value = null
     try {
       const result = await listTripMembersWithBaseline(tripId)
@@ -212,6 +213,7 @@ export function useTripMembers(tripId: string) {
     generation++
     opened.value = false
     loading.value = checking.value = false
+    latest.value = null
   }
 
   function add() {
@@ -287,7 +289,7 @@ export function useTripMembers(tripId: string) {
       return true
     } catch (cause) {
       const status = cause instanceof ApiError ? cause.problem?.status : undefined
-      uncertain.value = !status || status >= 500 || status === 408 || status === 429
+      uncertain.value ||= !status || status >= 500 || status === 408 || status === 429
       pending = uncertain.value ? request : null
       error.value = uncertain.value
         ? '保存结果尚未确认。请原样重试，确认前不能修改成员或重新加载。'
