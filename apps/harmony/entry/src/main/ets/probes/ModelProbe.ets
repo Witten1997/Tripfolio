@@ -17,10 +17,12 @@ interface ProbeRequest {
 
 interface ProbeDelta {
   content?: string;
+  reasoning_content?: string;
 }
 
 interface ProbeChoice {
   delta?: ProbeDelta;
+  finish_reason?: string;
 }
 
 interface ProbeChunk {
@@ -47,7 +49,11 @@ export struct ModelProbe {
   private ended: boolean = false;
   private code: number = 0;
   private eventStream: boolean = false;
+  private contentTypeSeen: boolean = false;
   private protocolError: boolean = false;
+  private dataFrames: number = 0;
+  private reasoningChars: number = 0;
+  private finishReason: string = '未收到';
 
   aboutToDisappear(): void {
     this.cancel('页面已离开，请求已取消；不自动重试。');
@@ -90,6 +96,7 @@ export struct ModelProbe {
         }
       });
       if (data.length > 0) {
+        this.dataFrames++;
         const payload = data.join('\n');
         if (payload === '[DONE]') {
           this.done = true;
@@ -102,6 +109,14 @@ export struct ModelProbe {
               this.protocolError = true;
             } else {
               for (const choice of chunk.choices) {
+                const reason = choice?.finish_reason;
+                if (typeof reason === 'string') {
+                  this.finishReason = ['stop', 'length', 'tool_calls', 'content_filter'].includes(reason) ? reason : '其他';
+                }
+                const reasoning = choice?.delta?.reasoning_content;
+                if (typeof reasoning === 'string') {
+                  this.reasoningChars += reasoning.length;
+                }
                 const content = choice?.delta?.content;
                 if (content !== undefined && content !== null) {
                   if (typeof content !== 'string') {
@@ -128,17 +143,54 @@ export struct ModelProbe {
     }
   }
 
+  private receiveHeaders(headers: Object): void {
+    const values = headers as Record<string, string>;
+    let found: boolean = false;
+    let eventStream: boolean = true;
+    for (const name of Object.keys(values)) {
+      if (name.toLowerCase() === 'content-type') {
+        const value = values[name];
+        found = true;
+        eventStream = eventStream && typeof value === 'string' &&
+          value.split(';')[0].trim().toLowerCase() === 'text/event-stream';
+      }
+    }
+    if (found) {
+      this.contentTypeSeen = true;
+      this.eventStream = eventStream;
+    }
+  }
+
   private finish(): void {
     if (!this.ended || this.code === 0 || !this.busy) {
       return;
     }
     if (this.code < 200 || this.code >= 300) {
       this.cancel(`HTTP ${this.code}；请求未通过，不显示服务端错误正文。`);
-    } else if (!this.eventStream || this.protocolError || !this.done || this.buffer.trim().length > 0 ||
-      this.output.length === 0) {
-      this.cancel(`HTTP ${this.code}；SSE 类型、帧或结束标记校验未通过，保留片段，不判成功。`);
     } else {
-      this.cancel(`HTTP ${this.code}，收到完整 SSE 结束标记，共 ${this.bytes} 字节。取消、断网及错误场景需分别实测。`);
+      const issues: string[] = [];
+      if (!this.eventStream) {
+        issues.push(this.contentTypeSeen ? '响应媒体类型不是 text/event-stream' : '未收到 Content-Type');
+      }
+      if (this.protocolError) {
+        issues.push('SSE 数据帧无效');
+      }
+      if (!this.done) {
+        issues.push('缺少 [DONE] 结束标记');
+      }
+      if (this.buffer.trim().length > 0) {
+        issues.push('流尾有未完成数据');
+      }
+      if (this.output.length === 0) {
+        issues.push('未收到回答正文');
+      }
+      const summary = `${this.bytes} 字节，${this.dataFrames} 个数据帧，回答 ${this.output.length} 字符，` +
+        `推理 ${this.reasoningChars} 字符，结束原因 ${this.finishReason}。`;
+      if (issues.length > 0) {
+        this.cancel(`HTTP ${this.code}；${issues.join('；')}。${summary}保留片段，不判成功。`);
+      } else {
+        this.cancel(`HTTP ${this.code}，收到完整 SSE 结束标记。${summary}取消、断网及错误场景需分别实测。`);
+      }
     }
   }
 
@@ -163,7 +215,11 @@ export struct ModelProbe {
     this.ended = false;
     this.code = 0;
     this.eventStream = false;
+    this.contentTypeSeen = false;
     this.protocolError = false;
+    this.dataFrames = 0;
+    this.reasoningChars = 0;
+    this.finishReason = '未收到';
     this.result = '请求进行中，可随时取消；无自动重试。';
     this.timer = setTimeout(() => this.cancel('达到 60 秒总时限，已取消；结果不完整。'), 60000);
     try {
@@ -174,9 +230,7 @@ export struct ModelProbe {
         if (generation !== this.generation) {
           return;
         }
-        const values = headers as Record<string, string>;
-        const type = values['content-type'] ?? values['Content-Type'] ?? '';
-        this.eventStream = typeof type === 'string' && type.toLowerCase().includes('text/event-stream');
+        this.receiveHeaders(headers);
       });
       request.on('dataReceive', (chunk: ArrayBuffer) => {
         if (generation !== this.generation) {
